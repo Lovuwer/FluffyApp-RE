@@ -195,6 +195,6 @@ Sentinel/
 
 ## License
 
-Copyright © 2024 Sentinel Security. All rights reserved.
+Copyright © 2025 Sentinel Security. All rights reserved.
 
 This software is proprietary and confidential. Unauthorized copying, distribution, or use is strictly prohibited.
