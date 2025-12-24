@@ -26,7 +26,50 @@ target_link_libraries(SDKTests
         gtest_main
 )
 
-# Cortex tests (only if Cortex is being built)
+# Cortex component tests (built independently of Qt GUI)
+# PatchGenerator tests
+add_executable(PatchGeneratorTests
+    Cortex/test_patchgenerator.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/Cortex/PatchGen/PatchGenerator.cpp
+)
+
+target_include_directories(PatchGeneratorTests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/Cortex
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(PatchGeneratorTests
+    PRIVATE
+        SentinelCore
+        gtest
+        gtest_main
+)
+
+# VMDeobfuscator tests
+add_executable(VMDeobfuscatorTests
+    Cortex/test_vmdeobfuscator.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/Cortex/VMDeobfuscator/VMDeobfuscator.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/Cortex/VMDeobfuscator/DynamicTracer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/Cortex/VMDeobfuscator/SymbolicEngine.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/Cortex/VMDeobfuscator/SSALifter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/Cortex/VMDeobfuscator/PatternMatcher.cpp
+)
+
+target_include_directories(VMDeobfuscatorTests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/Cortex
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(VMDeobfuscatorTests
+    PRIVATE
+        SentinelCore
+        gtest
+        gtest_main
+)
+
+# BinaryDiffer tests (existing, only if Cortex is being built)
 if(SENTINEL_BUILD_CORTEX)
     add_executable(CortexTests
         Cortex/test_binarydiff.cpp
@@ -44,18 +87,22 @@ if(SENTINEL_BUILD_CORTEX)
             gtest
             gtest_main
     )
-    
-    gtest_discover_tests(CortexTests)
 endif()
 
 # Register tests with CTest
 include(GoogleTest)
 gtest_discover_tests(CoreTests)
 gtest_discover_tests(SDKTests)
+gtest_discover_tests(PatchGeneratorTests)
+gtest_discover_tests(VMDeobfuscatorTests)
+
+if(SENTINEL_BUILD_CORTEX)
+    gtest_discover_tests(CortexTests)
+endif()
 
 # Add test target
 add_custom_target(run_tests
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-    DEPENDS CoreTests SDKTests
+    DEPENDS CoreTests SDKTests PatchGeneratorTests VMDeobfuscatorTests
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )

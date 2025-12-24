@@ -586,6 +586,17 @@ public:
     /// Move assignment
     Result& operator=(Result&&) noexcept = default;
     
+    /// Static method to create success result (for API compatibility)
+    [[nodiscard]] static Result Success(T value) {
+        return Result(std::move(value));
+    }
+    
+    /// Static method to create error result (for API compatibility)
+    [[nodiscard]] static Result Error(ErrorCode code, const std::string& message = "") {
+        (void)message; // Message not stored in this implementation
+        return Result(code);
+    }
+    
     /// Check if result is success
     [[nodiscard]] bool isSuccess() const noexcept {
         return std::holds_alternative<T>(m_data);
@@ -685,6 +696,17 @@ public:
     
     /// Construct from error code
     Result(ErrorCode error) : m_error(error) {}
+    
+    /// Static method to create success result (for API compatibility)
+    [[nodiscard]] static Result Success() {
+        return Result();
+    }
+    
+    /// Static method to create error result (for API compatibility)
+    [[nodiscard]] static Result Error(ErrorCode code, const std::string& message = "") {
+        (void)message; // Message not stored in this implementation
+        return Result(code);
+    }
     
     /// Check if result is success
     [[nodiscard]] bool isSuccess() const noexcept {
