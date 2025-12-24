@@ -7,12 +7,19 @@
  * TODO: Implement actual functionality according to production readiness plan
  */
 
-#include "Internal/Context.hpp"
+#include "Internal/Detection.hpp"
 
 namespace Sentinel {
 namespace SDK {
 
-// Stub implementation - To be implemented
+// PacketEncryption stub implementation
+void PacketEncryption::Initialize() {}
+void PacketEncryption::Shutdown() {}
+ErrorCode PacketEncryption::Encrypt(const void*, size_t, void*, size_t*) { return ErrorCode::Success; }
+ErrorCode PacketEncryption::Decrypt(const void*, size_t, void*, size_t*) { return ErrorCode::Success; }
+uint32_t PacketEncryption::GetNextSequence() { return ++current_sequence_; }
+bool PacketEncryption::ValidateSequence(uint32_t) { return true; }
+void PacketEncryption::DeriveSessionKey() {}
 
 } // namespace SDK
 } // namespace Sentinel

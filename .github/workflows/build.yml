@@ -1,0 +1,61 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ main, develop, 'copilot/**' ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build-linux:
+    name: Build on Linux
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          cmake \
+          build-essential \
+          ninja-build \
+          libssl-dev
+    
+    - name: Configure CMake
+      run: |
+        cmake -B build \
+          -G "Ninja" \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DSENTINEL_BUILD_CORTEX=OFF \
+          -DSENTINEL_BUILD_WATCHTOWER=OFF \
+          -DSENTINEL_BUILD_TESTS=OFF
+    
+    - name: Build
+      run: cmake --build build --config Release
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: sentinel-linux
+        path: |
+          build/lib/libSentinelCore.a
+          build/lib/libSentinelSDK.so
+          build/lib/libSentinelSDK_static.a
+        retention-days: 7
+
+  # Future: Add Windows build
+  # build-windows:
+  #   name: Build on Windows
+  #   runs-on: windows-latest
+  #   steps:
+  #   - name: Checkout code
+  #     uses: actions/checkout@v4
+  #   - name: Configure CMake
+  #     run: cmake -B build -G "Visual Studio 17 2022" -DCMAKE_BUILD_TYPE=Release
+  #   - name: Build
+  #     run: cmake --build build --config Release

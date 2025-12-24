@@ -1,10 +1,101 @@
 # Sentinel Security Ecosystem
 
+[![Build Status](https://github.com/Lovuwer/Sentiel-RE/actions/workflows/build.yml/badge.svg)](https://github.com/Lovuwer/Sentiel-RE/actions)
+
+## 🚧 Work In Progress - Phase 1: Foundation Setup
+
+This project is currently under active development following a comprehensive production readiness plan. See [Production Readiness Plan](#production-readiness-status) for current status and roadmap.
+
 ## Military-Grade Game Security Platform
 
 **Version:** 1.0.0  
 **License:** Proprietary  
-**Platform:** Windows x64
+**Platform:** Windows x64, Linux (partial support)
+
+---
+
+## 🔧 Quick Start
+
+### Prerequisites
+
+**Linux:**
+```bash
+sudo apt-get update
+sudo apt-get install -y cmake build-essential ninja-build libssl-dev
+```
+
+**Windows:**
+- Visual Studio 2022 (or later) with C++20 support
+- CMake 3.21+
+- Qt 6.5+ (optional, for Cortex GUI)
+
+### Building
+
+```bash
+# Clone the repository
+git clone https://github.com/Lovuwer/Sentiel-RE.git
+cd Sentiel-RE
+
+# Configure CMake
+cmake -B build -G "Ninja" \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DSENTINEL_BUILD_CORTEX=OFF \
+  -DSENTINEL_BUILD_WATCHTOWER=OFF \
+  -DSENTINEL_BUILD_TESTS=OFF
+
+# Build
+cmake --build build --config Release
+
+# Install (optional)
+sudo cmake --install build
+```
+
+### Build Options
+
+- `SENTINEL_BUILD_CORTEX` - Build Sentinel Cortex GUI (requires Qt6, default: ON)
+- `SENTINEL_BUILD_SDK` - Build Sentinel SDK library (default: ON)
+- `SENTINEL_BUILD_WATCHTOWER` - Build Sentinel Watchtower module (default: ON)
+- `SENTINEL_BUILD_TESTS` - Build unit tests (default: ON)
+- `SENTINEL_BUILD_DOCS` - Build documentation (default: ON)
+
+### Running Tests
+
+```bash
+# Enable tests in CMake configuration
+cmake -B build -DSENTINEL_BUILD_TESTS=ON
+
+# Build and run tests
+cmake --build build
+cd build && ctest --output-on-failure
+```
+
+---
+
+## Production Readiness Status
+
+### ✅ Completed (Phase 1 - Foundation)
+- [x] Fixed CMake build system errors
+- [x] Created stub implementations for Core library modules
+- [x] Created stub implementations for SDK modules
+- [x] Fixed platform-specific code guards
+- [x] Added .gitignore and build infrastructure
+- [x] Created GitHub Actions CI/CD workflow
+- [x] Created basic test infrastructure
+- [x] Project builds successfully on Linux
+
+### 🚧 In Progress
+- [ ] Complete Core library implementations (Crypto, Memory, Network, Utils)
+- [ ] Complete SDK implementations (Heartbeat, Detection, Protection)
+- [ ] Add comprehensive unit tests with 80%+ coverage
+
+### 📋 Planned
+- Phase 2: Core Library Implementation (Months 1-3)
+- Phase 3: Analysis Engine (Months 4-8)
+- Phase 4: SDK Implementation (Months 8-14)
+- Phase 5: Cortex GUI (Months 6-10)
+- Phase 6+: Watchtower, Cloud Infrastructure, Security Hardening
+
+For detailed roadmap, see the [Production Readiness Plan](docs/PRODUCTION_READINESS.md).
 
 ---
 

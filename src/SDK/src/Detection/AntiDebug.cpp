@@ -12,7 +12,21 @@
 namespace Sentinel {
 namespace SDK {
 
-// Stub implementation - To be implemented
+// AntiDebugDetector stub implementation
+void AntiDebugDetector::Initialize() {}
+void AntiDebugDetector::Shutdown() {}
+std::vector<ViolationEvent> AntiDebugDetector::Check() { return {}; }
+std::vector<ViolationEvent> AntiDebugDetector::FullCheck() { return {}; }
+bool AntiDebugDetector::CheckIsDebuggerPresent() { return false; }
+bool AntiDebugDetector::CheckRemoteDebugger() { return false; }
+bool AntiDebugDetector::CheckDebugPort() { return false; }
+bool AntiDebugDetector::CheckDebugObject() { return false; }
+bool AntiDebugDetector::CheckHardwareBreakpoints() { return false; }
+bool AntiDebugDetector::CheckTimingAnomaly() { return false; }
+bool AntiDebugDetector::CheckSEHIntegrity() { return false; }
+bool AntiDebugDetector::CheckPEB() { return false; }
+bool AntiDebugDetector::CheckNtGlobalFlag() { return false; }
+bool AntiDebugDetector::CheckHeapFlags() { return false; }
 
 } // namespace SDK
 } // namespace Sentinel

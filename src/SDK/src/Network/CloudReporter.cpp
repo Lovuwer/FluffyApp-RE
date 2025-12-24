@@ -7,12 +7,21 @@
  * TODO: Implement actual functionality according to production readiness plan
  */
 
-#include "Internal/Context.hpp"
+#include "Internal/Detection.hpp"
+#include <cstring>
 
 namespace Sentinel {
 namespace SDK {
 
-// Stub implementation - To be implemented
+// CloudReporter stub implementation
+CloudReporter::CloudReporter(const char* endpoint) : endpoint_(endpoint ? endpoint : "") {}
+CloudReporter::~CloudReporter() {}
+
+void CloudReporter::QueueEvent(const ViolationEvent&) {}
+ErrorCode CloudReporter::ReportCustomEvent(const char*, const char*) { return ErrorCode::Success; }
+void CloudReporter::Flush() {}
+void CloudReporter::ReportThread() {}
+ErrorCode CloudReporter::SendBatch() { return ErrorCode::Success; }
 
 } // namespace SDK
 } // namespace Sentinel

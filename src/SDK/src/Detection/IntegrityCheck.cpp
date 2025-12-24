@@ -12,7 +12,16 @@
 namespace Sentinel {
 namespace SDK {
 
-// Stub implementation - To be implemented
+// IntegrityChecker stub implementation
+void IntegrityChecker::Initialize() {}
+void IntegrityChecker::Shutdown() {}
+void IntegrityChecker::RegisterRegion(const MemoryRegion&) {}
+void IntegrityChecker::UnregisterRegion(uintptr_t) {}
+std::vector<ViolationEvent> IntegrityChecker::QuickCheck() { return {}; }
+std::vector<ViolationEvent> IntegrityChecker::FullScan() { return {}; }
+bool IntegrityChecker::VerifyRegion(const MemoryRegion&) { return true; }
+bool IntegrityChecker::VerifyCodeSection() { return true; }
+bool IntegrityChecker::VerifyImportTable() { return true; }
 
 } // namespace SDK
 } // namespace Sentinel

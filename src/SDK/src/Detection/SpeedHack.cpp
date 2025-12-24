@@ -12,7 +12,14 @@
 namespace Sentinel {
 namespace SDK {
 
-// Stub implementation - To be implemented
+// SpeedHackDetector stub implementation
+void SpeedHackDetector::Initialize() {}
+void SpeedHackDetector::Shutdown() {}
+void SpeedHackDetector::UpdateBaseline() {}
+bool SpeedHackDetector::ValidateFrame() { return true; }
+uint64_t SpeedHackDetector::GetSystemTime() { return 0; }
+uint64_t SpeedHackDetector::GetPerformanceCounter() { return 0; }
+uint64_t SpeedHackDetector::GetRDTSC() { return 0; }
 
 } // namespace SDK
 } // namespace Sentinel
