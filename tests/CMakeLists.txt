@@ -26,6 +26,28 @@ target_link_libraries(SDKTests
         gtest_main
 )
 
+# Cortex tests (only if Cortex is being built)
+if(SENTINEL_BUILD_CORTEX)
+    add_executable(CortexTests
+        Cortex/test_binarydiff.cpp
+    )
+    
+    target_include_directories(CortexTests
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../src/Cortex
+    )
+    
+    target_link_libraries(CortexTests
+        PRIVATE
+            SentinelCore
+            capstone
+            gtest
+            gtest_main
+    )
+    
+    gtest_discover_tests(CortexTests)
+endif()
+
 # Register tests with CTest
 include(GoogleTest)
 gtest_discover_tests(CoreTests)
