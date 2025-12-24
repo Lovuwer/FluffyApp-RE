@@ -8,6 +8,8 @@
  * @copyright Copyright (c) 2024 Sentinel Security. All rights reserved.
  */
 
+#ifdef _WIN32
+
 #include <Sentinel/Core/MemoryScanner.hpp>
 #include <Windows.h>
 #include <Psapi.h>
@@ -496,3 +498,4 @@ ProcessId MemoryScanner::getProcessId() const noexcept {
 }
 
 } // namespace Sentinel::Memory
+#endif // _WIN32

@@ -44,7 +44,11 @@
     #endif
 #endif
 
-#define SENTINEL_CALL __stdcall
+#ifdef _WIN32
+    #define SENTINEL_CALL __stdcall
+#else
+    #define SENTINEL_CALL
+#endif
 
 #include <cstdint>
 #include <cstddef>

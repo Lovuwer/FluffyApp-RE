@@ -1,0 +1,5 @@
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/SentinelTargets.cmake")
+
+check_required_components(Sentinel)

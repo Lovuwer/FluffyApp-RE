@@ -8,6 +8,8 @@
  * @copyright Copyright (c) 2024 Sentinel Security. All rights reserved.
  */
 
+#ifdef _WIN32
+
 #include <Sentinel/Core/MemoryWriter.hpp>
 #include <Windows.h>
 #include <TlHelp32.h>
@@ -497,3 +499,4 @@ Result<void> revertPatch(MemoryWriter& writer, const PatchEntry& patch, Address 
 }
 
 } // namespace Sentinel::Memory
+#endif // _WIN32

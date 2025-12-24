@@ -15,6 +15,8 @@
 #include <thread>
 #include <memory>
 #include <string>
+#include <cstring>
+#include <algorithm>
 #include <unordered_map>
 
 #ifdef _WIN32
@@ -463,7 +465,7 @@ SENTINEL_API uint64_t SENTINEL_CALL ProtectFunction(void* function_address, cons
     
     // Store first N bytes for hook detection
     protection.prologue_size = std::min(size_t(16), Internal::GetPrologueSize(function_address));
-    memcpy(protection.original_prologue, function_address, protection.prologue_size);
+    memcpy(protection.original_prologue.data(), function_address, protection.prologue_size);
     
     g_context->protected_functions[handle] = protection;
     g_context->stats.protected_functions++;

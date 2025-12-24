@@ -1,8 +1,8 @@
-/**
- * Sentinel SDK - CMake Build Configuration
- * 
- * Copyright (c) 2024 Sentinel Security. All rights reserved.
- */
+# ============================================================================
+# Sentinel SDK - CMake Build Configuration
+# 
+# Copyright (c) 2024 Sentinel Security. All rights reserved.
+# ============================================================================
 
 cmake_minimum_required(VERSION 3.21)
 
@@ -26,6 +26,7 @@ option(SENTINEL_SDK_ENABLE_PROFILING "Enable performance profiling" OFF)
 # Source files
 set(SDK_SOURCES
     src/SentinelSDK.cpp
+    src/Internal/InternalUtils.cpp
     src/Core/Heartbeat.cpp
     src/Core/MemoryProtection.cpp
     src/Core/FunctionProtection.cpp
@@ -44,11 +45,13 @@ set(SDK_SOURCES
 
 set(SDK_HEADERS
     include/SentinelSDK.hpp
-    src/Internal/Config.hpp
     src/Internal/Context.hpp
     src/Internal/Detection.hpp
     src/Internal/Protection.hpp
 )
+
+# Header files for IDE organization only (not compiled)
+set_source_files_properties(${SDK_HEADERS} PROPERTIES HEADER_FILE_ONLY TRUE)
 
 # Include directories
 set(SDK_INCLUDE_DIRS
@@ -195,9 +198,9 @@ endif()
 
 # ==================== Examples ====================
 
-if(SENTINEL_SDK_BUILD_EXAMPLES)
-    add_subdirectory(examples)
-endif()
+# if(SENTINEL_SDK_BUILD_EXAMPLES)
+#     add_subdirectory(examples)
+# endif()
 
 # ==================== Tests ====================
 
