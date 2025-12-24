@@ -1,8 +1,8 @@
-/**
- * Sentinel Watchtower - CMake Build Configuration
- * 
- * Copyright (c) 2024 Sentinel Security. All rights reserved.
- */
+# ============================================================================
+# Sentinel Watchtower - CMake Build Configuration
+# 
+# Copyright (c) 2024 Sentinel Security. All rights reserved.
+# ============================================================================
 
 cmake_minimum_required(VERSION 3.21)
 

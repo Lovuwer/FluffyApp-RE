@@ -52,11 +52,6 @@ target_link_libraries(SentinelCore
     PUBLIC
         nlohmann_json::nlohmann_json
         spdlog::spdlog
-    PRIVATE
-        bcrypt.lib
-        crypt32.lib
-        winhttp.lib
-        ws2_32.lib
 )
 
 target_compile_definitions(SentinelCore
@@ -68,17 +63,29 @@ target_compile_definitions(SentinelCore
         NOMINMAX
 )
 
-# Precompiled header
-target_precompile_headers(SentinelCore
-    PRIVATE
-        <Windows.h>
-        <cstdint>
-        <string>
-        <vector>
-        <memory>
-        <optional>
-        <functional>
-)
+# Precompiled header (only on Windows)
+if(WIN32)
+    target_precompile_headers(SentinelCore
+        PRIVATE
+            <Windows.h>
+            <cstdint>
+            <string>
+            <vector>
+            <memory>
+            <optional>
+            <functional>
+    )
+else()
+    target_precompile_headers(SentinelCore
+        PRIVATE
+            <cstdint>
+            <string>
+            <vector>
+            <memory>
+            <optional>
+            <functional>
+    )
+endif()
 
 # Set output name
 set_target_properties(SentinelCore PROPERTIES
