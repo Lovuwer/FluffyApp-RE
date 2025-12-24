@@ -387,21 +387,21 @@ VMDeobfuscatorEngine::~VMDeobfuscatorEngine() = default;
 VMDeobfuscatorEngine::VMDeobfuscatorEngine(VMDeobfuscatorEngine&&) noexcept = default;
 VMDeobfuscatorEngine& VMDeobfuscatorEngine::operator=(VMDeobfuscatorEngine&&) noexcept = default;
 
-Result<DeobfuscationResult> VMDeobfuscatorEngine::analyze(
+Sentinel::Result<DeobfuscationResult> VMDeobfuscatorEngine::analyze(
     const std::string& binaryPath,
     Address vmEntryPoint,
     const DeobfuscatorOptions& options) {
     
     if (!m_impl->initialized) {
-        return Result<DeobfuscationResult>::Error(
-            Core::ErrorCode::NotInitialized, "Engine not initialized");
+        return Sentinel::Result<DeobfuscationResult>::Error(
+            Sentinel::Core::ErrorCode::NotInitialized, "Engine not initialized");
     }
     
     // Read binary
     std::ifstream file(binaryPath, std::ios::binary);
     if (!file) {
-        return Result<DeobfuscationResult>::Error(
-            Core::ErrorCode::FileNotFound, "Cannot open binary file");
+        return Sentinel::Result<DeobfuscationResult>::Error(
+            Sentinel::Core::ErrorCode::FileNotFound, "Cannot open binary file");
     }
     
     std::vector<uint8_t> code((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
@@ -409,7 +409,7 @@ Result<DeobfuscationResult> VMDeobfuscatorEngine::analyze(
     return analyzeMemory(code, 0x400000, vmEntryPoint, options);
 }
 
-Result<DeobfuscationResult> VMDeobfuscatorEngine::analyzeMemory(
+Sentinel::Result<DeobfuscationResult> VMDeobfuscatorEngine::analyzeMemory(
     ByteSpan code,
     Address baseAddress,
     Address vmEntryPoint,
@@ -487,14 +487,14 @@ Result<DeobfuscationResult> VMDeobfuscatorEngine::analyzeMemory(
         options.progressCallback("Analysis complete", m_impl->progress);
     }
     
-    return Result<DeobfuscationResult>::Success(result);
+    return Sentinel::Result<DeobfuscationResult>::Success(result);
 }
 
-Result<VMDetectionResult> VMDeobfuscatorEngine::detectProtector(const std::string& binaryPath) {
+Sentinel::Result<VMDetectionResult> VMDeobfuscatorEngine::detectProtector(const std::string& binaryPath) {
     std::ifstream file(binaryPath, std::ios::binary);
     if (!file) {
-        return Result<VMDetectionResult>::Error(
-            Core::ErrorCode::FileNotFound, "Cannot open binary file");
+        return Sentinel::Result<VMDetectionResult>::Error(
+            Sentinel::Core::ErrorCode::FileNotFound, "Cannot open binary file");
     }
     
     std::vector<uint8_t> code((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
@@ -502,66 +502,66 @@ Result<VMDetectionResult> VMDeobfuscatorEngine::detectProtector(const std::strin
     return detectProtectorInMemory(code, 0x400000);
 }
 
-Result<VMDetectionResult> VMDeobfuscatorEngine::detectProtectorInMemory(
+Sentinel::Result<VMDetectionResult> VMDeobfuscatorEngine::detectProtectorInMemory(
     ByteSpan code,
     Address baseAddress) {
     
     auto result = m_impl->detectProtectorFromCode(code);
-    return Result<VMDetectionResult>::Success(result);
+    return Sentinel::Result<VMDetectionResult>::Success(result);
 }
 
-Result<std::vector<Address>> VMDeobfuscatorEngine::findVMEntryPoints(const std::string& binaryPath) {
+Sentinel::Result<std::vector<Address>> VMDeobfuscatorEngine::findVMEntryPoints(const std::string& binaryPath) {
     std::vector<Address> entryPoints;
     
     // Stub implementation - would scan for VM entry patterns
     entryPoints.push_back(0x401000); // Example entry point
     
-    return Result<std::vector<Address>>::Success(entryPoints);
+    return Sentinel::Result<std::vector<Address>>::Success(entryPoints);
 }
 
-Result<ExecutionTrace> VMDeobfuscatorEngine::traceExecution(
+Sentinel::Result<ExecutionTrace> VMDeobfuscatorEngine::traceExecution(
     const std::string& binaryPath,
     Address entryPoint,
     const DeobfuscatorOptions& options) {
     
     std::ifstream file(binaryPath, std::ios::binary);
     if (!file) {
-        return Result<ExecutionTrace>::Error(
-            Core::ErrorCode::FileNotFound, "Cannot open binary file");
+        return Sentinel::Result<ExecutionTrace>::Error(
+            Sentinel::Core::ErrorCode::FileNotFound, "Cannot open binary file");
     }
     
     std::vector<uint8_t> code((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     
     auto trace = m_impl->simulateExecution(code, entryPoint, options);
-    return Result<ExecutionTrace>::Success(trace);
+    return Sentinel::Result<ExecutionTrace>::Success(trace);
 }
 
-Result<std::map<Address, VirtualOpcodeType>> VMDeobfuscatorEngine::analyzeHandlers(
+Sentinel::Result<std::map<Address, VirtualOpcodeType>> VMDeobfuscatorEngine::analyzeHandlers(
     const ExecutionTrace& trace) {
     
     auto handlers = m_impl->analyzeHandlersFromTrace(trace);
-    return Result<std::map<Address, VirtualOpcodeType>>::Success(handlers);
+    return Sentinel::Result<std::map<Address, VirtualOpcodeType>>::Success(handlers);
 }
 
-Result<VirtualCFG> VMDeobfuscatorEngine::buildVirtualCFG(
+Sentinel::Result<VirtualCFG> VMDeobfuscatorEngine::buildVirtualCFG(
     const ExecutionTrace& trace,
     const std::map<Address, VirtualOpcodeType>& handlers) {
     
     auto cfg = m_impl->buildCFGFromTrace(trace, handlers);
-    return Result<VirtualCFG>::Success(cfg);
+    return Sentinel::Result<VirtualCFG>::Success(cfg);
 }
 
-Result<SSAFunction> VMDeobfuscatorEngine::liftToSSA(
+Sentinel::Result<SSAFunction> VMDeobfuscatorEngine::liftToSSA(
     const VirtualCFG& cfg,
     const DeobfuscatorOptions& options) {
     
     auto func = m_impl->liftCFGToSSA(cfg, options);
-    return Result<SSAFunction>::Success(func);
+    return Sentinel::Result<SSAFunction>::Success(func);
 }
 
-Result<std::string> VMDeobfuscatorEngine::generatePseudoC(const SSAFunction& ssaFunc) {
+Sentinel::Result<std::string> VMDeobfuscatorEngine::generatePseudoC(const SSAFunction& ssaFunc) {
     auto code = m_impl->generatePseudoC(ssaFunc);
-    return Result<std::string>::Success(code);
+    return Sentinel::Result<std::string>::Success(code);
 }
 
 bool VMDeobfuscatorEngine::isReady() const noexcept {

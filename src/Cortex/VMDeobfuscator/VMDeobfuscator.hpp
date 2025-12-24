@@ -479,7 +479,7 @@ public:
      * @param options Analysis options
      * @return Deobfuscation result or error
      */
-    [[nodiscard]] Result<DeobfuscationResult> analyze(
+    [[nodiscard]] Sentinel::Result<DeobfuscationResult> analyze(
         const std::string& binaryPath,
         Address vmEntryPoint = 0,
         const DeobfuscatorOptions& options = {}
@@ -493,7 +493,7 @@ public:
      * @param options Analysis options
      * @return Deobfuscation result or error
      */
-    [[nodiscard]] Result<DeobfuscationResult> analyzeMemory(
+    [[nodiscard]] Sentinel::Result<DeobfuscationResult> analyzeMemory(
         ByteSpan code,
         Address baseAddress,
         Address vmEntryPoint,
@@ -509,7 +509,7 @@ public:
      * @param binaryPath Path to binary
      * @return Detection result
      */
-    [[nodiscard]] Result<VMDetectionResult> detectProtector(
+    [[nodiscard]] Sentinel::Result<VMDetectionResult> detectProtector(
         const std::string& binaryPath
     );
     
@@ -519,7 +519,7 @@ public:
      * @param baseAddress Base address
      * @return Detection result
      */
-    [[nodiscard]] Result<VMDetectionResult> detectProtectorInMemory(
+    [[nodiscard]] Sentinel::Result<VMDetectionResult> detectProtectorInMemory(
         ByteSpan code,
         Address baseAddress
     );
@@ -529,7 +529,7 @@ public:
      * @param binaryPath Path to binary
      * @return Vector of entry point addresses
      */
-    [[nodiscard]] Result<std::vector<Address>> findVMEntryPoints(
+    [[nodiscard]] Sentinel::Result<std::vector<Address>> findVMEntryPoints(
         const std::string& binaryPath
     );
     
@@ -544,7 +544,7 @@ public:
      * @param options Tracing options
      * @return Execution trace or error
      */
-    [[nodiscard]] Result<ExecutionTrace> traceExecution(
+    [[nodiscard]] Sentinel::Result<ExecutionTrace> traceExecution(
         const std::string& binaryPath,
         Address entryPoint,
         const DeobfuscatorOptions& options = {}
@@ -559,7 +559,7 @@ public:
      * @param trace Execution trace to analyze
      * @return Map of handler addresses to opcodes
      */
-    [[nodiscard]] Result<std::map<Address, VirtualOpcodeType>> analyzeHandlers(
+    [[nodiscard]] Sentinel::Result<std::map<Address, VirtualOpcodeType>> analyzeHandlers(
         const ExecutionTrace& trace
     );
     
@@ -569,7 +569,7 @@ public:
      * @param handlers Handler mapping
      * @return Virtual control flow graph
      */
-    [[nodiscard]] Result<VirtualCFG> buildVirtualCFG(
+    [[nodiscard]] Sentinel::Result<VirtualCFG> buildVirtualCFG(
         const ExecutionTrace& trace,
         const std::map<Address, VirtualOpcodeType>& handlers
     );
@@ -580,7 +580,7 @@ public:
      * @param options Lifting options
      * @return SSA function
      */
-    [[nodiscard]] Result<SSAFunction> liftToSSA(
+    [[nodiscard]] Sentinel::Result<SSAFunction> liftToSSA(
         const VirtualCFG& cfg,
         const DeobfuscatorOptions& options = {}
     );
@@ -590,7 +590,7 @@ public:
      * @param ssaFunc SSA function
      * @return Pseudo-C code string
      */
-    [[nodiscard]] Result<std::string> generatePseudoC(
+    [[nodiscard]] Sentinel::Result<std::string> generatePseudoC(
         const SSAFunction& ssaFunc
     );
     
