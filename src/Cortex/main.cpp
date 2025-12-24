@@ -79,6 +79,16 @@ void registerQmlTypes() {
         }
     );
     
+    // Alias for DisassemblerController (used in QML)
+    qmlRegisterSingletonType<Sentinel::Cortex::AnalyzerController>(
+        "Sentinel.Cortex", 1, 0, "DisassemblerController",
+        [](QQmlEngine* engine, QJSEngine* scriptEngine) -> QObject* {
+            Q_UNUSED(engine)
+            Q_UNUSED(scriptEngine)
+            return new Sentinel::Cortex::AnalyzerController();
+        }
+    );
+    
     qmlRegisterSingletonType<Sentinel::Cortex::DiffController>(
         "Sentinel.Cortex", 1, 0, "DiffController",
         [](QQmlEngine* engine, QJSEngine* scriptEngine) -> QObject* {
@@ -90,6 +100,16 @@ void registerQmlTypes() {
     
     qmlRegisterSingletonType<Sentinel::Cortex::VMTraceController>(
         "Sentinel.Cortex", 1, 0, "VMTraceController",
+        [](QQmlEngine* engine, QJSEngine* scriptEngine) -> QObject* {
+            Q_UNUSED(engine)
+            Q_UNUSED(scriptEngine)
+            return new Sentinel::Cortex::VMTraceController();
+        }
+    );
+    
+    // Alias for VMController (used in QML)
+    qmlRegisterSingletonType<Sentinel::Cortex::VMTraceController>(
+        "Sentinel.Cortex", 1, 0, "VMController",
         [](QQmlEngine* engine, QJSEngine* scriptEngine) -> QObject* {
             Q_UNUSED(engine)
             Q_UNUSED(scriptEngine)
