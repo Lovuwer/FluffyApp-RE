@@ -153,9 +153,9 @@ PatchGenerator::~PatchGenerator() = default;
 PatchGenerator::PatchGenerator(PatchGenerator&&) noexcept = default;
 PatchGenerator& PatchGenerator::operator=(PatchGenerator&&) noexcept = default;
 
-Sentinel::Core::Result<void> PatchGenerator::Initialize() {
+Sentinel::Result<void> PatchGenerator::Initialize() {
     // Initialize any resources needed
-    return Sentinel::Core::Result<void>::Success();
+    return Sentinel::Result<void>::Success();
 }
 
 void PatchGenerator::Shutdown() {
@@ -164,14 +164,14 @@ void PatchGenerator::Shutdown() {
 
 // ==================== Patch Creation ====================
 
-Core::Result<PatchOperation> PatchGenerator::CreateInlinePatch(
+Sentinel::Result<PatchOperation> PatchGenerator::CreateInlinePatch(
     uint64_t address,
     const std::vector<uint8_t>& original,
     const std::vector<uint8_t>& replacement,
     const std::string& name) {
     
     if (original.empty() || replacement.empty()) {
-        return Core::Result<PatchOperation>::Error(Sentinel::Core::ErrorCode::InvalidParameter, "Empty bytes");
+        return Sentinel::Result<PatchOperation>::Error(Sentinel::ErrorCode::InvalidParameter, "Empty bytes");
     }
     
     PatchOperation patch;
@@ -189,16 +189,16 @@ Core::Result<PatchOperation> PatchGenerator::CreateInlinePatch(
         static_cast<uint8_t>(address >> 8), static_cast<uint8_t>(address)
     });
     
-    return Core::Result<PatchOperation>::Success(patch);
+    return Sentinel::Result<PatchOperation>::Success(patch);
 }
 
-Core::Result<PatchOperation> PatchGenerator::CreateDetourPatch(
+Sentinel::Result<PatchOperation> PatchGenerator::CreateDetourPatch(
     uint64_t target_address,
     const std::vector<uint8_t>& hook_handler,
     const std::string& name) {
     
     if (hook_handler.empty()) {
-        return Core::Result<PatchOperation>::Error(Sentinel::Core::ErrorCode::InvalidParameter, "Empty hook handler");
+        return Sentinel::Result<PatchOperation>::Error(Sentinel::ErrorCode::InvalidParameter, "Empty hook handler");
     }
     
     PatchOperation patch;
@@ -228,10 +228,10 @@ Core::Result<PatchOperation> PatchGenerator::CreateDetourPatch(
     
     patch.description = "Function detour at 0x" + std::to_string(target_address);
     
-    return Core::Result<PatchOperation>::Success(patch);
+    return Sentinel::Result<PatchOperation>::Success(patch);
 }
 
-Core::Result<PatchOperation> PatchGenerator::CreateSignaturePatch(
+Sentinel::Result<PatchOperation> PatchGenerator::CreateSignaturePatch(
     const std::string& pattern,
     const std::string& mask,
     const std::vector<uint8_t>& replacement,
@@ -239,7 +239,7 @@ Core::Result<PatchOperation> PatchGenerator::CreateSignaturePatch(
     const std::string& name) {
     
     if (pattern.empty() || replacement.empty()) {
-        return Core::Result<PatchOperation>::Error(Sentinel::Core::ErrorCode::InvalidParameter, "Empty pattern or replacement");
+        return Sentinel::Result<PatchOperation>::Error(Sentinel::ErrorCode::InvalidParameter, "Empty pattern or replacement");
     }
     
     PatchOperation patch;
@@ -253,16 +253,16 @@ Core::Result<PatchOperation> PatchGenerator::CreateSignaturePatch(
     patch.patch_bytes = replacement;
     patch.description = "Signature-based patch: " + pattern;
     
-    return Core::Result<PatchOperation>::Success(patch);
+    return Sentinel::Result<PatchOperation>::Success(patch);
 }
 
-Core::Result<PatchOperation> PatchGenerator::CreateNopPatch(
+Sentinel::Result<PatchOperation> PatchGenerator::CreateNopPatch(
     uint64_t address,
     size_t size,
     const std::string& name) {
     
     if (size == 0) {
-        return Core::Result<PatchOperation>::Error(Sentinel::Core::ErrorCode::InvalidParameter, "Zero size");
+        return Sentinel::Result<PatchOperation>::Error(Sentinel::ErrorCode::InvalidParameter, "Zero size");
     }
     
     PatchOperation patch;
@@ -274,10 +274,10 @@ Core::Result<PatchOperation> PatchGenerator::CreateNopPatch(
     patch.patch_bytes = GenerateNops(size, patch.arch);
     patch.description = "NOP " + std::to_string(size) + " bytes at 0x" + std::to_string(address);
     
-    return Core::Result<PatchOperation>::Success(patch);
+    return Sentinel::Result<PatchOperation>::Success(patch);
 }
 
-Core::Result<PatchOperation> PatchGenerator::CreateReturnPatch(
+Sentinel::Result<PatchOperation> PatchGenerator::CreateReturnPatch(
     uint64_t address,
     std::optional<uint64_t> return_value,
     const std::string& name) {
@@ -307,16 +307,16 @@ Core::Result<PatchOperation> PatchGenerator::CreateReturnPatch(
     
     patch.description = "Force return at 0x" + std::to_string(address);
     
-    return Core::Result<PatchOperation>::Success(patch);
+    return Sentinel::Result<PatchOperation>::Success(patch);
 }
 
-Core::Result<PatchOperation> PatchGenerator::CreateCodecavePatch(
+Sentinel::Result<PatchOperation> PatchGenerator::CreateCodecavePatch(
     uint64_t target_address,
     const std::vector<uint8_t>& cave_code,
     const std::string& name) {
     
     if (cave_code.empty()) {
-        return Core::Result<PatchOperation>::Error(Sentinel::Core::ErrorCode::InvalidParameter, "Empty cave code");
+        return Sentinel::Result<PatchOperation>::Error(Sentinel::ErrorCode::InvalidParameter, "Empty cave code");
     }
     
     PatchOperation patch;
@@ -328,12 +328,12 @@ Core::Result<PatchOperation> PatchGenerator::CreateCodecavePatch(
     patch.hook_code = cave_code;
     patch.description = "Code cave injection at 0x" + std::to_string(target_address);
     
-    return Core::Result<PatchOperation>::Success(patch);
+    return Sentinel::Result<PatchOperation>::Success(patch);
 }
 
 // ==================== Automatic Patch Generation ====================
 
-Core::Result<PatchSet> PatchGenerator::GenerateFromDiff(
+Sentinel::Result<PatchSet> PatchGenerator::GenerateFromDiff(
     const std::string& source_path,
     const std::string& target_path,
     PatchProgressCallback progress) {
@@ -343,7 +343,7 @@ Core::Result<PatchSet> PatchGenerator::GenerateFromDiff(
     std::ifstream target(target_path, std::ios::binary);
     
     if (!source || !target) {
-        return Core::Result<PatchSet>::Error(Sentinel::Core::ErrorCode::FileNotFound, "Failed to open files");
+        return Sentinel::Result<PatchSet>::Error(Sentinel::ErrorCode::FileNotFound, "Failed to open files");
     }
     
     std::vector<uint8_t> source_data((std::istreambuf_iterator<char>(source)), std::istreambuf_iterator<char>());
@@ -375,27 +375,27 @@ Core::Result<PatchSet> PatchGenerator::GenerateFromDiff(
         progress(1.0f, "Complete");
     }
     
-    return Core::Result<PatchSet>::Success(patchSet);
+    return Sentinel::Result<PatchSet>::Success(patchSet);
 }
 
-Core::Result<PatchSet> PatchGenerator::GenerateBypassPatches(const std::string& binary_path) {
+Sentinel::Result<PatchSet> PatchGenerator::GenerateBypassPatches(const std::string& binary_path) {
     PatchSet patchSet = CreatePatchSet("BypassPatches", binary_path);
     patchSet.description = "Anti-tampering bypass patches";
     
     // This would require sophisticated binary analysis
     // For now, return empty set as stub
     
-    return Core::Result<PatchSet>::Success(patchSet);
+    return Sentinel::Result<PatchSet>::Success(patchSet);
 }
 
-Core::Result<PatchOperation> PatchGenerator::GenerateIntegrityBypass(uint64_t check_address) {
+Sentinel::Result<PatchOperation> PatchGenerator::GenerateIntegrityBypass(uint64_t check_address) {
     // NOP out the integrity check
     return CreateNopPatch(check_address, 5, "IntegrityBypass");
 }
 
 // ==================== Code Generation ====================
 
-Core::Result<std::vector<uint8_t>> PatchGenerator::GenerateHookHandler(
+Sentinel::Result<std::vector<uint8_t>> PatchGenerator::GenerateHookHandler(
     uint64_t callback_address,
     PatchArchitecture arch) {
     
@@ -420,10 +420,10 @@ Core::Result<std::vector<uint8_t>> PatchGenerator::GenerateHookHandler(
         };
     }
     
-    return Core::Result<std::vector<uint8_t>>::Success(handler);
+    return Sentinel::Result<std::vector<uint8_t>>::Success(handler);
 }
 
-Core::Result<std::vector<uint8_t>> PatchGenerator::GenerateTrampoline(
+Sentinel::Result<std::vector<uint8_t>> PatchGenerator::GenerateTrampoline(
     const std::vector<uint8_t>& original_bytes,
     uint64_t original_address,
     PatchArchitecture arch) {
@@ -436,10 +436,10 @@ Core::Result<std::vector<uint8_t>> PatchGenerator::GenerateTrampoline(
         trampoline.insert(trampoline.end(), jump_back.value().begin(), jump_back.value().end());
     }
     
-    return Core::Result<std::vector<uint8_t>>::Success(trampoline);
+    return Sentinel::Result<std::vector<uint8_t>>::Success(trampoline);
 }
 
-Core::Result<std::vector<uint8_t>> PatchGenerator::GenerateJump(
+Sentinel::Result<std::vector<uint8_t>> PatchGenerator::GenerateJump(
     uint64_t from,
     uint64_t to,
     PatchArchitecture arch) {
@@ -474,10 +474,10 @@ Core::Result<std::vector<uint8_t>> PatchGenerator::GenerateJump(
         }
     }
     
-    return Core::Result<std::vector<uint8_t>>::Success(jump);
+    return Sentinel::Result<std::vector<uint8_t>>::Success(jump);
 }
 
-Core::Result<std::vector<uint8_t>> PatchGenerator::GenerateCall(
+Sentinel::Result<std::vector<uint8_t>> PatchGenerator::GenerateCall(
     uint64_t from,
     uint64_t to,
     PatchArchitecture arch) {
@@ -498,7 +498,7 @@ Core::Result<std::vector<uint8_t>> PatchGenerator::GenerateCall(
         }
     }
     
-    return Core::Result<std::vector<uint8_t>>::Success(call);
+    return Sentinel::Result<std::vector<uint8_t>>::Success(call);
 }
 
 // ==================== Patch Management ====================
@@ -518,18 +518,18 @@ void PatchGenerator::AddPatchToSet(PatchSet& set, const PatchOperation& patch) {
     set.modified_timestamp = std::chrono::system_clock::now().time_since_epoch().count();
 }
 
-Core::Result<void> PatchGenerator::RemovePatchFromSet(PatchSet& set, const std::string& patch_id) {
+Sentinel::Result<void> PatchGenerator::RemovePatchFromSet(PatchSet& set, const std::string& patch_id) {
     auto it = std::find_if(set.patches.begin(), set.patches.end(),
         [&patch_id](const PatchOperation& p) { return p.id == patch_id; });
     
     if (it == set.patches.end()) {
-        return Core::Result<void>::Error(Sentinel::Core::ErrorCode::NotFound, "Patch not found");
+        return Sentinel::Result<void>::Error(Sentinel::ErrorCode::NotFound, "Patch not found");
     }
     
     set.patches.erase(it);
     set.modified_timestamp = std::chrono::system_clock::now().time_since_epoch().count();
     
-    return Core::Result<void>::Success();
+    return Sentinel::Result<void>::Success();
 }
 
 std::vector<std::string> PatchGenerator::ValidatePatchSet(const PatchSet& set) {
@@ -553,7 +553,7 @@ std::vector<std::string> PatchGenerator::ValidatePatchSet(const PatchSet& set) {
 
 // ==================== Export ====================
 
-Core::Result<void> PatchGenerator::ExportPatchSet(
+Sentinel::Result<void> PatchGenerator::ExportPatchSet(
     const PatchSet& set,
     const std::string& output_path,
     PatchOutputFormat format) {
@@ -565,18 +565,18 @@ Core::Result<void> PatchGenerator::ExportPatchSet(
             {
                 std::ofstream out(output_path, std::ios::binary);
                 if (!out) {
-                    return Core::Result<void>::Error(Sentinel::Core::ErrorCode::FileAccessDenied, "Cannot open output file");
+                    return Sentinel::Result<void>::Error(Sentinel::ErrorCode::FileAccessDenied, "Cannot open output file");
                 }
                 
                 for (const auto& patch : set.patches) {
                     out.write(reinterpret_cast<const char*>(patch.patch_bytes.data()), patch.patch_bytes.size());
                 }
             }
-            return Core::Result<void>::Success();
+            return Sentinel::Result<void>::Success();
             
         case PatchOutputFormat::JSON:
             // JSON export would be implemented here
-            return Core::Result<void>::Success();
+            return Sentinel::Result<void>::Success();
             
         case PatchOutputFormat::CppSource:
             return ExportAsCpp(set, output_path);
@@ -588,14 +588,14 @@ Core::Result<void> PatchGenerator::ExportPatchSet(
             return ExportAsCheatEngine(set, output_path);
             
         default:
-            return Core::Result<void>::Error(Sentinel::Core::ErrorCode::NotImplemented, "Format not implemented");
+            return Sentinel::Result<void>::Error(Sentinel::ErrorCode::NotImplemented, "Format not implemented");
     }
 }
 
-Core::Result<void> PatchGenerator::ExportAsCpp(const PatchSet& set, const std::string& output_path) {
+Sentinel::Result<void> PatchGenerator::ExportAsCpp(const PatchSet& set, const std::string& output_path) {
     std::ofstream out(output_path);
     if (!out) {
-        return Core::Result<void>::Error(Sentinel::Core::ErrorCode::FileAccessDenied, "Cannot open output file");
+        return Sentinel::Result<void>::Error(Sentinel::ErrorCode::FileAccessDenied, "Cannot open output file");
     }
     
     out << "// Generated patch set: " << set.name << "\n\n";
@@ -619,13 +619,13 @@ Core::Result<void> PatchGenerator::ExportAsCpp(const PatchSet& set, const std::s
     
     out << "} // namespace Patches\n";
     
-    return Core::Result<void>::Success();
+    return Sentinel::Result<void>::Success();
 }
 
-Core::Result<void> PatchGenerator::ExportAsAssembly(const PatchSet& set, const std::string& output_path) {
+Sentinel::Result<void> PatchGenerator::ExportAsAssembly(const PatchSet& set, const std::string& output_path) {
     std::ofstream out(output_path);
     if (!out) {
-        return Core::Result<void>::Error(Sentinel::Core::ErrorCode::FileAccessDenied, "Cannot open output file");
+        return Sentinel::Result<void>::Error(Sentinel::ErrorCode::FileAccessDenied, "Cannot open output file");
     }
     
     out << "; Generated patch set: " << set.name << "\n\n";
@@ -642,18 +642,18 @@ Core::Result<void> PatchGenerator::ExportAsAssembly(const PatchSet& set, const s
         out << "\n\n";
     }
     
-    return Core::Result<void>::Success();
+    return Sentinel::Result<void>::Success();
 }
 
-Core::Result<void> PatchGenerator::ExportAsDLL(const PatchSet& set, const std::string& output_path) {
+Sentinel::Result<void> PatchGenerator::ExportAsDLL(const PatchSet& set, const std::string& output_path) {
     // This would require generating a full DLL project
-    return Core::Result<void>::Error(Sentinel::Core::ErrorCode::NotImplemented, "DLL export not yet implemented");
+    return Sentinel::Result<void>::Error(Sentinel::ErrorCode::NotImplemented, "DLL export not yet implemented");
 }
 
-Core::Result<void> PatchGenerator::ExportAsCheatEngine(const PatchSet& set, const std::string& output_path) {
+Sentinel::Result<void> PatchGenerator::ExportAsCheatEngine(const PatchSet& set, const std::string& output_path) {
     std::ofstream out(output_path);
     if (!out) {
-        return Core::Result<void>::Error(Sentinel::Core::ErrorCode::FileAccessDenied, "Cannot open output file");
+        return Sentinel::Result<void>::Error(Sentinel::ErrorCode::FileAccessDenied, "Cannot open output file");
     }
     
     out << "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n";
@@ -672,23 +672,23 @@ Core::Result<void> PatchGenerator::ExportAsCheatEngine(const PatchSet& set, cons
     out << "  </CheatEntries>\n";
     out << "</CheatTable>\n";
     
-    return Core::Result<void>::Success();
+    return Sentinel::Result<void>::Success();
 }
 
 // ==================== Import ====================
 
-Core::Result<PatchSet> PatchGenerator::ImportPatchSet(const std::string& input_path) {
+Sentinel::Result<PatchSet> PatchGenerator::ImportPatchSet(const std::string& input_path) {
     // Would parse JSON/binary patch files
-    return Core::Result<PatchSet>::Error(Sentinel::Core::ErrorCode::NotImplemented, "Import not yet implemented");
+    return Sentinel::Result<PatchSet>::Error(Sentinel::ErrorCode::NotImplemented, "Import not yet implemented");
 }
 
-Core::Result<PatchSet> PatchGenerator::ImportFromIDAScript(const std::string& script_path) {
-    return Core::Result<PatchSet>::Error(Sentinel::Core::ErrorCode::NotImplemented, "IDA import not yet implemented");
+Sentinel::Result<PatchSet> PatchGenerator::ImportFromIDAScript(const std::string& script_path) {
+    return Sentinel::Result<PatchSet>::Error(Sentinel::ErrorCode::NotImplemented, "IDA import not yet implemented");
 }
 
 // ==================== Application ====================
 
-Core::Result<std::vector<PatchApplicationResult>> PatchGenerator::ApplyToFile(
+Sentinel::Result<std::vector<PatchApplicationResult>> PatchGenerator::ApplyToFile(
     const PatchSet& set,
     const std::string& target_path) {
     
@@ -701,8 +701,8 @@ Core::Result<std::vector<PatchApplicationResult>> PatchGenerator::ApplyToFile(
         result.success = false;
         result.message = "Cannot open target file";
         results.push_back(result);
-        return Core::Result<std::vector<PatchApplicationResult>>::Error(
-            Sentinel::Core::ErrorCode::FileAccessDenied, "Cannot open file");
+        return Sentinel::Result<std::vector<PatchApplicationResult>>::Error(
+            Sentinel::ErrorCode::FileAccessDenied, "Cannot open file");
     }
     
     for (const auto& patch : set.patches) {
@@ -738,25 +738,25 @@ Core::Result<std::vector<PatchApplicationResult>> PatchGenerator::ApplyToFile(
         results.push_back(result);
     }
     
-    return Core::Result<std::vector<PatchApplicationResult>>::Success(results);
+    return Sentinel::Result<std::vector<PatchApplicationResult>>::Success(results);
 }
 
-Core::Result<std::vector<PatchApplicationResult>> PatchGenerator::ApplyToProcess(
+Sentinel::Result<std::vector<PatchApplicationResult>> PatchGenerator::ApplyToProcess(
     const PatchSet& set,
     uint32_t process_id) {
     
     // Would require Windows API calls (WriteProcessMemory, etc.)
-    return Core::Result<std::vector<PatchApplicationResult>>::Error(
-        Sentinel::Core::ErrorCode::NotImplemented, "Process patching not yet implemented");
+    return Sentinel::Result<std::vector<PatchApplicationResult>>::Error(
+        Sentinel::ErrorCode::NotImplemented, "Process patching not yet implemented");
 }
 
-Core::Result<void> PatchGenerator::RevertPatches(
+Sentinel::Result<void> PatchGenerator::RevertPatches(
     const std::vector<PatchApplicationResult>& results,
     const std::string& target_path) {
     
     std::fstream file(target_path, std::ios::in | std::ios::out | std::ios::binary);
     if (!file) {
-        return Core::Result<void>::Error(Sentinel::Core::ErrorCode::FileAccessDenied, "Cannot open file");
+        return Sentinel::Result<void>::Error(Sentinel::ErrorCode::FileAccessDenied, "Cannot open file");
     }
     
     for (const auto& result : results) {
@@ -766,7 +766,7 @@ Core::Result<void> PatchGenerator::RevertPatches(
         }
     }
     
-    return Core::Result<void>::Success();
+    return Sentinel::Result<void>::Success();
 }
 
 // ==================== Private Methods ====================
@@ -798,14 +798,14 @@ size_t PatchGenerator::GetMinPatchSize(PatchArchitecture arch) const {
     }
 }
 
-Core::Result<std::vector<uint8_t>> PatchGenerator::AssembleX86(const std::string& code) {
+Sentinel::Result<std::vector<uint8_t>> PatchGenerator::AssembleX86(const std::string& code) {
     // Would use an assembler library
-    return Core::Result<std::vector<uint8_t>>::Error(Sentinel::Core::ErrorCode::NotImplemented, "Assembly not implemented");
+    return Sentinel::Result<std::vector<uint8_t>>::Error(Sentinel::ErrorCode::NotImplemented, "Assembly not implemented");
 }
 
-Core::Result<std::vector<uint8_t>> PatchGenerator::AssembleX64(const std::string& code) {
+Sentinel::Result<std::vector<uint8_t>> PatchGenerator::AssembleX64(const std::string& code) {
     // Would use an assembler library
-    return Core::Result<std::vector<uint8_t>>::Error(Sentinel::Core::ErrorCode::NotImplemented, "Assembly not implemented");
+    return Sentinel::Result<std::vector<uint8_t>>::Error(Sentinel::ErrorCode::NotImplemented, "Assembly not implemented");
 }
 
 std::vector<uint8_t> PatchGenerator::GenerateNops(size_t count, PatchArchitecture arch) {

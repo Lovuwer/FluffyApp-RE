@@ -212,7 +212,7 @@ public:
     /**
      * Initialize the generator
      */
-    Sentinel::Core::Result<void> Initialize();
+    Sentinel::Result<void> Initialize();
     
     /**
      * Shutdown
@@ -229,7 +229,7 @@ public:
      * @param name Patch name
      * @return Patch operation or error
      */
-    Sentinel::Core::Result<PatchOperation> CreateInlinePatch(
+    Sentinel::Result<PatchOperation> CreateInlinePatch(
         uint64_t address,
         const std::vector<uint8_t>& original,
         const std::vector<uint8_t>& replacement,
@@ -242,7 +242,7 @@ public:
      * @param name Patch name
      * @return Patch operation with trampoline
      */
-    Sentinel::Core::Result<PatchOperation> CreateDetourPatch(
+    Sentinel::Result<PatchOperation> CreateDetourPatch(
         uint64_t target_address,
         const std::vector<uint8_t>& hook_handler,
         const std::string& name = "");
@@ -255,7 +255,7 @@ public:
      * @param offset Offset from pattern to patch
      * @param name Patch name
      */
-    Sentinel::Core::Result<PatchOperation> CreateSignaturePatch(
+    Sentinel::Result<PatchOperation> CreateSignaturePatch(
         const std::string& pattern,
         const std::string& mask,
         const std::vector<uint8_t>& replacement,
@@ -268,7 +268,7 @@ public:
      * @param size Number of bytes to NOP
      * @param name Patch name
      */
-    Sentinel::Core::Result<PatchOperation> CreateNopPatch(
+    Sentinel::Result<PatchOperation> CreateNopPatch(
         uint64_t address,
         size_t size,
         const std::string& name = "");
@@ -279,7 +279,7 @@ public:
      * @param return_value Optional return value
      * @param name Patch name
      */
-    Sentinel::Core::Result<PatchOperation> CreateReturnPatch(
+    Sentinel::Result<PatchOperation> CreateReturnPatch(
         uint64_t address,
         std::optional<uint64_t> return_value = std::nullopt,
         const std::string& name = "");
@@ -290,7 +290,7 @@ public:
      * @param cave_code Code to execute in cave
      * @param name Patch name
      */
-    Sentinel::Core::Result<PatchOperation> CreateCodecavePatch(
+    Sentinel::Result<PatchOperation> CreateCodecavePatch(
         uint64_t target_address,
         const std::vector<uint8_t>& cave_code,
         const std::string& name = "");
@@ -304,7 +304,7 @@ public:
      * @param progress Optional progress callback
      * @return Patch set or error
      */
-    Sentinel::Core::Result<PatchSet> GenerateFromDiff(
+    Sentinel::Result<PatchSet> GenerateFromDiff(
         const std::string& source_path,
         const std::string& target_path,
         PatchProgressCallback progress = nullptr);
@@ -314,7 +314,7 @@ public:
      * @param binary_path Path to protected binary
      * @return Patch set for bypassing protections
      */
-    Sentinel::Core::Result<PatchSet> GenerateBypassPatches(
+    Sentinel::Result<PatchSet> GenerateBypassPatches(
         const std::string& binary_path);
     
     /**
@@ -322,7 +322,7 @@ public:
      * @param check_address Address of integrity check
      * @return Patch to bypass the check
      */
-    Sentinel::Core::Result<PatchOperation> GenerateIntegrityBypass(
+    Sentinel::Result<PatchOperation> GenerateIntegrityBypass(
         uint64_t check_address);
     
     // ==================== Code Generation ====================
@@ -333,7 +333,7 @@ public:
      * @param arch Target architecture
      * @return Generated assembly bytes
      */
-    Sentinel::Core::Result<std::vector<uint8_t>> GenerateHookHandler(
+    Sentinel::Result<std::vector<uint8_t>> GenerateHookHandler(
         uint64_t callback_address,
         PatchArchitecture arch);
     
@@ -344,7 +344,7 @@ public:
      * @param arch Target architecture
      * @return Trampoline bytes
      */
-    Sentinel::Core::Result<std::vector<uint8_t>> GenerateTrampoline(
+    Sentinel::Result<std::vector<uint8_t>> GenerateTrampoline(
         const std::vector<uint8_t>& original_bytes,
         uint64_t original_address,
         PatchArchitecture arch);
@@ -356,7 +356,7 @@ public:
      * @param arch Target architecture
      * @return Jump instruction bytes
      */
-    Sentinel::Core::Result<std::vector<uint8_t>> GenerateJump(
+    Sentinel::Result<std::vector<uint8_t>> GenerateJump(
         uint64_t from,
         uint64_t to,
         PatchArchitecture arch);
@@ -368,7 +368,7 @@ public:
      * @param arch Target architecture
      * @return Call instruction bytes
      */
-    Sentinel::Core::Result<std::vector<uint8_t>> GenerateCall(
+    Sentinel::Result<std::vector<uint8_t>> GenerateCall(
         uint64_t from,
         uint64_t to,
         PatchArchitecture arch);
@@ -397,7 +397,7 @@ public:
      * @param set Patch set to modify
      * @param patch_id ID of patch to remove
      */
-    Sentinel::Core::Result<void> RemovePatchFromSet(PatchSet& set, const std::string& patch_id);
+    Sentinel::Result<void> RemovePatchFromSet(PatchSet& set, const std::string& patch_id);
     
     /**
      * Validate patch set
@@ -414,7 +414,7 @@ public:
      * @param output_path Output file path
      * @param format Output format
      */
-    Sentinel::Core::Result<void> ExportPatchSet(
+    Sentinel::Result<void> ExportPatchSet(
         const PatchSet& set,
         const std::string& output_path,
         PatchOutputFormat format);
@@ -424,7 +424,7 @@ public:
      * @param set Patch set
      * @param output_path Output file path
      */
-    Sentinel::Core::Result<void> ExportAsCpp(
+    Sentinel::Result<void> ExportAsCpp(
         const PatchSet& set,
         const std::string& output_path);
     
@@ -433,7 +433,7 @@ public:
      * @param set Patch set
      * @param output_path Output file path
      */
-    Sentinel::Core::Result<void> ExportAsAssembly(
+    Sentinel::Result<void> ExportAsAssembly(
         const PatchSet& set,
         const std::string& output_path);
     
@@ -442,7 +442,7 @@ public:
      * @param set Patch set
      * @param output_path Output directory
      */
-    Sentinel::Core::Result<void> ExportAsDLL(
+    Sentinel::Result<void> ExportAsDLL(
         const PatchSet& set,
         const std::string& output_path);
     
@@ -451,7 +451,7 @@ public:
      * @param set Patch set
      * @param output_path Output file path
      */
-    Sentinel::Core::Result<void> ExportAsCheatEngine(
+    Sentinel::Result<void> ExportAsCheatEngine(
         const PatchSet& set,
         const std::string& output_path);
     
@@ -462,14 +462,14 @@ public:
      * @param input_path Input file path
      * @return Patch set or error
      */
-    Sentinel::Core::Result<PatchSet> ImportPatchSet(const std::string& input_path);
+    Sentinel::Result<PatchSet> ImportPatchSet(const std::string& input_path);
     
     /**
      * Import from IDA script
      * @param script_path Path to IDAPython script
      * @return Patch set or error
      */
-    Sentinel::Core::Result<PatchSet> ImportFromIDAScript(const std::string& script_path);
+    Sentinel::Result<PatchSet> ImportFromIDAScript(const std::string& script_path);
     
     // ==================== Application ====================
     
@@ -479,7 +479,7 @@ public:
      * @param target_path Target file path
      * @return Results for each patch
      */
-    Sentinel::Core::Result<std::vector<PatchApplicationResult>> ApplyToFile(
+    Sentinel::Result<std::vector<PatchApplicationResult>> ApplyToFile(
         const PatchSet& set,
         const std::string& target_path);
     
@@ -489,7 +489,7 @@ public:
      * @param process_id Target process ID
      * @return Results for each patch
      */
-    Sentinel::Core::Result<std::vector<PatchApplicationResult>> ApplyToProcess(
+    Sentinel::Result<std::vector<PatchApplicationResult>> ApplyToProcess(
         const PatchSet& set,
         uint32_t process_id);
     
@@ -498,7 +498,7 @@ public:
      * @param results Previous application results
      * @param target_path Target file path
      */
-    Sentinel::Core::Result<void> RevertPatches(
+    Sentinel::Result<void> RevertPatches(
         const std::vector<PatchApplicationResult>& results,
         const std::string& target_path);
     
@@ -518,8 +518,8 @@ private:
     PatchArchitecture DetectArchitecture(const std::string& binary_path);
     size_t GetMinPatchSize(PatchArchitecture arch) const;
     
-    Sentinel::Core::Result<std::vector<uint8_t>> AssembleX86(const std::string& code);
-    Sentinel::Core::Result<std::vector<uint8_t>> AssembleX64(const std::string& code);
+    Sentinel::Result<std::vector<uint8_t>> AssembleX86(const std::string& code);
+    Sentinel::Result<std::vector<uint8_t>> AssembleX64(const std::string& code);
     
     std::vector<uint8_t> GenerateNops(size_t count, PatchArchitecture arch);
 };

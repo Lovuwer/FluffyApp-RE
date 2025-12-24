@@ -394,14 +394,14 @@ Sentinel::Result<DeobfuscationResult> VMDeobfuscatorEngine::analyze(
     
     if (!m_impl->initialized) {
         return Sentinel::Result<DeobfuscationResult>::Error(
-            Sentinel::Core::ErrorCode::NotInitialized, "Engine not initialized");
+            Sentinel::ErrorCode::NotInitialized, "Engine not initialized");
     }
     
     // Read binary
     std::ifstream file(binaryPath, std::ios::binary);
     if (!file) {
         return Sentinel::Result<DeobfuscationResult>::Error(
-            Sentinel::Core::ErrorCode::FileNotFound, "Cannot open binary file");
+            Sentinel::ErrorCode::FileNotFound, "Cannot open binary file");
     }
     
     std::vector<uint8_t> code((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
@@ -494,7 +494,7 @@ Sentinel::Result<VMDetectionResult> VMDeobfuscatorEngine::detectProtector(const 
     std::ifstream file(binaryPath, std::ios::binary);
     if (!file) {
         return Sentinel::Result<VMDetectionResult>::Error(
-            Sentinel::Core::ErrorCode::FileNotFound, "Cannot open binary file");
+            Sentinel::ErrorCode::FileNotFound, "Cannot open binary file");
     }
     
     std::vector<uint8_t> code((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
@@ -527,7 +527,7 @@ Sentinel::Result<ExecutionTrace> VMDeobfuscatorEngine::traceExecution(
     std::ifstream file(binaryPath, std::ios::binary);
     if (!file) {
         return Sentinel::Result<ExecutionTrace>::Error(
-            Sentinel::Core::ErrorCode::FileNotFound, "Cannot open binary file");
+            Sentinel::ErrorCode::FileNotFound, "Cannot open binary file");
     }
     
     std::vector<uint8_t> code((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
