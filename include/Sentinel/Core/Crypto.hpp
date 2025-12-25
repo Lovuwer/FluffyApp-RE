@@ -219,16 +219,33 @@ private:
  * 
  * Provides authenticated encryption with associated data (AEAD).
  * 
+ * **Security guarantees:**
+ * - Automatic nonce generation ensures nonce uniqueness within a single process
+ * - Keys MUST be ephemeral (single process lifetime) to prevent nonce reuse
+ * - Nonce reuse with the same key is CATASTROPHIC in AES-GCM and breaks all security
+ * - NEVER reuse keys across process restarts without implementing stateful nonce management
+ * 
+ * **Key lifetime requirements:**
+ * - Keys should be generated fresh for each process or session
+ * - If persistent keys are required, implement counter-based or HKDF-derived nonces
+ * - Random nonces are only safe when keys are ephemeral
+ * 
  * @example
  * ```cpp
- * AESCipher cipher(key);
+ * // Generate ephemeral key
+ * SecureRandom rng;
+ * auto keyResult = rng.generateAESKey();
+ * AESCipher cipher(keyResult.value());
  * 
- * // Encrypt
+ * // Encrypt (nonce generated automatically)
  * auto encrypted = cipher.encrypt(plaintext);
  * 
  * // Decrypt
  * auto decrypted = cipher.decrypt(encrypted.value());
  * ```
+ * 
+ * @warning Key reuse across process restarts with random nonces can lead to nonce collision!
+ * @warning Nonce reuse breaks ALL security properties of AES-GCM (confidentiality and authenticity)!
  */
 class AESCipher {
 public:
@@ -248,9 +265,15 @@ public:
     
     /**
      * @brief Encrypt data with AES-256-GCM
+     * 
+     * Automatically generates a cryptographically secure random nonce for each encryption.
+     * The nonce is prepended to the output.
+     * 
      * @param plaintext Data to encrypt
      * @param associatedData Additional authenticated data (optional)
      * @return Encrypted data (nonce + ciphertext + tag) or error
+     * 
+     * @note This is the ONLY safe public encryption method - it prevents nonce reuse
      */
     Result<ByteBuffer> encrypt(
         ByteSpan plaintext,
@@ -259,9 +282,14 @@ public:
     
     /**
      * @brief Decrypt data with AES-256-GCM
+     * 
+     * Extracts the nonce from the input and verifies the authentication tag.
+     * 
      * @param ciphertext Encrypted data (nonce + ciphertext + tag)
      * @param associatedData Additional authenticated data (optional)
      * @return Decrypted data or error
+     * 
+     * @note Returns error on authentication failure - NO plaintext is exposed
      */
     Result<ByteBuffer> decrypt(
         ByteSpan ciphertext,
@@ -269,9 +297,23 @@ public:
     );
     
     /**
-     * @brief Encrypt with explicit nonce
+     * @brief Change the encryption key
+     * @param key New AES-256 key
+     * 
+     * @warning When changing keys, ensure the new key is also ephemeral
+     */
+    void setKey(const AESKey& key);
+
+private:
+    /**
+     * @brief Encrypt with explicit nonce (INTERNAL USE ONLY)
+     * 
+     * @warning DANGEROUS: This method allows nonce reuse if called improperly
+     * @warning Only use for testing with NIST test vectors
+     * @warning NEVER expose this method to production code
+     * 
      * @param plaintext Data to encrypt
-     * @param nonce 12-byte nonce (must be unique per encryption)
+     * @param nonce 12-byte nonce (must be unique per encryption with this key)
      * @param associatedData Additional authenticated data (optional)
      * @return Ciphertext + tag (without nonce) or error
      */
@@ -282,7 +324,8 @@ public:
     );
     
     /**
-     * @brief Decrypt with explicit nonce
+     * @brief Decrypt with explicit nonce (INTERNAL USE ONLY)
+     * 
      * @param ciphertext Ciphertext + tag
      * @param nonce 12-byte nonce used for encryption
      * @param associatedData Additional authenticated data (optional)
@@ -293,16 +336,13 @@ public:
         const AESNonce& nonce,
         ByteSpan associatedData = {}
     );
-    
-    /**
-     * @brief Change the encryption key
-     * @param key New AES-256 key
-     */
-    void setKey(const AESKey& key);
 
-private:
     class Impl;
     std::unique_ptr<Impl> m_impl;
+    
+    // Test-only accessor class for validating NIST test vectors
+    // This class is defined in the test file to access private methods
+    friend class AESCipherTestAccessor;
 };
 
 // ============================================================================
@@ -488,9 +528,19 @@ Result<ByteBuffer> fromBase64(const std::string& base64);
 
 /**
  * @brief Constant-time comparison of byte arrays
+ * 
+ * This function is provided for comparing non-AEAD authentication values
+ * (e.g., HMAC tags, password hashes) in constant time to prevent timing attacks.
+ * 
  * @param a First array
  * @param b Second array
  * @return true if equal
+ * 
+ * @warning DO NOT use this for AEAD (AES-GCM) tag comparison!
+ * @warning OpenSSL's EVP_DecryptFinal_ex already performs constant-time tag verification.
+ * @warning Manual AEAD tag comparison bypasses cryptographic library guarantees and is unsafe.
+ * 
+ * @note For AEAD operations, always use the decrypt() method which handles tag verification internally.
  */
 bool constantTimeCompare(ByteSpan a, ByteSpan b) noexcept;
 

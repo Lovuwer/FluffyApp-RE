@@ -9,19 +9,43 @@
  * 
  * Provides authenticated encryption with AES-256-GCM:
  * - 256-bit key (32 bytes)
- * - 96-bit nonce (12 bytes) - automatically generated
+ * - 96-bit nonce (12 bytes) - automatically generated from CSPRNG
  * - 128-bit authentication tag (16 bytes)
  * - Optional Additional Authenticated Data (AAD)
  * 
  * Security properties:
  * - Confidentiality: Ciphertext reveals nothing about plaintext
  * - Authenticity: Tag verification prevents tampering
- * - Nonce uniqueness: Always generates fresh random nonce
+ * - Nonce uniqueness: Always generates fresh random nonce per encryption
+ * 
+ * CRITICAL SECURITY REQUIREMENTS:
+ * =================================
+ * 
+ * 1. NONCE REUSE IS CATASTROPHIC IN AES-GCM
+ *    - Reusing a nonce with the same key breaks ALL security properties
+ *    - Attackers can recover the authentication key and forge messages
+ *    - Attackers can recover plaintext from ciphertexts
+ * 
+ * 2. KEY LIFETIME CONSTRAINTS
+ *    - Keys MUST be ephemeral (single process lifetime only)
+ *    - Random nonces are safe ONLY when keys are not reused across restarts
+ *    - If persistent keys are needed, implement counter-based or HKDF-derived nonces
+ * 
+ * 3. NONCE GENERATION STRATEGY
+ *    - Current implementation: Cryptographically secure random nonces (96 bits)
+ *    - Safe for: Single-process lifetime, ephemeral keys
+ *    - Unsafe for: Persistent keys, distributed systems without coordination
+ * 
+ * 4. RESTART SAFETY
+ *    - Process restart with same key = potential nonce collision
+ *    - Always generate fresh keys on process startup
+ *    - For persistent encryption, use key derivation per session
  * 
  * Defends against:
- * - Ciphertext tampering (GCM authentication tag)
+ * - Ciphertext tampering (GCM authentication tag verified by OpenSSL)
  * - Plaintext recovery without key
- * - Nonce reuse (catastrophic in GCM) - prevented by design
+ * - Timing attacks (OpenSSL performs constant-time tag verification)
+ * - Nonce reuse (prevented by API design - encryptWithNonce is private)
  */
 
 #include <Sentinel/Core/Crypto.hpp>
@@ -59,6 +83,15 @@ void secureZero(void* data, size_t size) noexcept {
  * 
  * Compares two byte arrays without early exit, preventing timing side-channels
  * that could leak information about the data being compared.
+ * 
+ * **Important usage notes:**
+ * - Use for comparing HMAC tags, password hashes, or other non-AEAD MACs
+ * - DO NOT use for AES-GCM authentication tags (OpenSSL handles this internally)
+ * - OpenSSL's EVP_DecryptFinal_ex performs constant-time AEAD tag verification
+ * - Manual AEAD tag comparison bypasses cryptographic library protections
+ * 
+ * For AES-GCM decryption, always use the decrypt() method which internally
+ * calls EVP_DecryptFinal_ex for secure tag verification.
  */
 bool constantTimeCompare(ByteSpan a, ByteSpan b) noexcept {
     if (a.size() != b.size()) {
