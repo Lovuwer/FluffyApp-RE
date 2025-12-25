@@ -146,6 +146,7 @@ target_compile_definitions(SentinelCortex
     PRIVATE
         SENTINEL_CORTEX
         QT_QML_DEBUG
+        SENTINEL_VERSION_STRING="${PROJECT_VERSION}"
         $<$<CONFIG:Release>:QT_NO_DEBUG_OUTPUT>
 )
 
