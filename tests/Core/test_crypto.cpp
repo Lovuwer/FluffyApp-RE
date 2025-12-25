@@ -31,6 +31,9 @@ namespace Sentinel::Crypto {
  * This class is used ONLY for testing NIST test vectors and validating
  * the low-level encryption/decryption with known nonces.
  * 
+ * Uses friend access to AESCipher class to access private methods that
+ * would otherwise expose catastrophic nonce reuse vulnerabilities if public.
+ * 
  * WARNING: This accessor should NEVER be used in production code!
  * The encryptWithNonce/decryptWithNonce methods are intentionally private
  * to prevent catastrophic nonce reuse.

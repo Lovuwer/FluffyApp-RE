@@ -341,7 +341,7 @@ private:
     std::unique_ptr<Impl> m_impl;
     
     // Test-only accessor class for validating NIST test vectors
-    // This class is defined in the test file to access private methods
+    // Defined in tests/Core/test_crypto.cpp to access private methods via friend mechanism
     friend class AESCipherTestAccessor;
 };
 
