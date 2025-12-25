@@ -54,6 +54,19 @@ target_link_libraries(SentinelCore
         spdlog::spdlog
 )
 
+# Link OpenSSL if available
+if(OpenSSL_FOUND)
+    target_link_libraries(SentinelCore
+        PRIVATE
+            OpenSSL::SSL
+            OpenSSL::Crypto
+    )
+    target_compile_definitions(SentinelCore
+        PRIVATE
+            SENTINEL_USE_OPENSSL
+    )
+endif()
+
 target_compile_definitions(SentinelCore
     PRIVATE
         SENTINEL_CORE_EXPORTS
