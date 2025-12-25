@@ -126,7 +126,7 @@ public:
         std::copy(ciphertext.begin(), ciphertext.begin() + 12, nonce.begin());
         
         // Extract ciphertext + tag (remaining bytes)
-        ByteSpan ctWithTag = ciphertext.subspan(12);
+        ByteSpan ctWithTag{ciphertext.data() + 12, ciphertext.size() - 12};
         
         // Perform decryption with nonce
         return decryptWithNonce(ctWithTag, nonce, associatedData);
@@ -221,8 +221,8 @@ public:
         
         // Extract tag (last 16 bytes)
         size_t ctLen = ciphertext.size() - 16;
-        ByteSpan ct = ciphertext.subspan(0, ctLen);
-        ByteSpan tag = ciphertext.subspan(ctLen, 16);
+        ByteSpan ct{ciphertext.data(), ctLen};
+        ByteSpan tag{ciphertext.data() + ctLen, 16};
         
         // Create context
         EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
