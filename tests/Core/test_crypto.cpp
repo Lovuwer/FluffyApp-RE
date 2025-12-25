@@ -20,6 +20,40 @@ using namespace Sentinel;
 using namespace Sentinel::Crypto;
 
 // ============================================================================
+// Test Helper - Friend class to access private encryptWithNonce API
+// ============================================================================
+
+/**
+ * @brief Test helper to access unsafe/private AESCipher methods
+ * 
+ * This class is a friend of AESCipher and provides controlled access
+ * to the private encryptWithNonce/decryptWithNonce methods for testing.
+ * 
+ * **WARNING:** These methods expose catastrophic nonce-reuse risk.
+ * Only use in controlled test environments with known-unique nonces.
+ */
+class AESCipherTest {
+public:
+    static Result<ByteBuffer> encryptWithNonce(
+        AESCipher& cipher,
+        ByteSpan plaintext,
+        const AESNonce& nonce,
+        ByteSpan associatedData = {}
+    ) {
+        return cipher.encryptWithNonce(plaintext, nonce, associatedData);
+    }
+    
+    static Result<ByteBuffer> decryptWithNonce(
+        AESCipher& cipher,
+        ByteSpan ciphertext,
+        const AESNonce& nonce,
+        ByteSpan associatedData = {}
+    ) {
+        return cipher.decryptWithNonce(ciphertext, nonce, associatedData);
+    }
+};
+
+// ============================================================================
 // Unit Tests
 // ============================================================================
 
@@ -937,7 +971,7 @@ TEST(AESCipher, NIST_GCM_TestVector1) {
     
     ByteSpan emptyPlaintext{};
     
-    auto encryptResult = cipher.encryptWithNonce(emptyPlaintext, nonce);
+    auto encryptResult = AESCipherTest::encryptWithNonce(cipher, emptyPlaintext, nonce);
     ASSERT_TRUE(encryptResult.isSuccess());
     
     // Extract tag (last 16 bytes)
@@ -970,7 +1004,7 @@ TEST(AESCipher, NIST_GCM_TestVector2) {
     
     ByteSpan plaintextSpan{plaintext, 16};
     
-    auto encryptResult = cipher.encryptWithNonce(plaintextSpan, nonce);
+    auto encryptResult = AESCipherTest::encryptWithNonce(cipher, plaintextSpan, nonce);
     ASSERT_TRUE(encryptResult.isSuccess());
     
     // Verify ciphertext (first 16 bytes)
@@ -1013,11 +1047,11 @@ TEST(AESCipher, EncryptWithNonce_CustomNonce) {
     ByteSpan plaintextSpan{reinterpret_cast<const Byte*>(plaintext.data()), plaintext.size()};
     
     // Encrypt with custom nonce
-    auto encryptResult = cipher.encryptWithNonce(plaintextSpan, nonceResult.value());
+    auto encryptResult = AESCipherTest::encryptWithNonce(cipher, plaintextSpan, nonceResult.value());
     ASSERT_TRUE(encryptResult.isSuccess());
     
     // Decrypt with same nonce
-    auto decryptResult = cipher.decryptWithNonce(encryptResult.value(), nonceResult.value());
+    auto decryptResult = AESCipherTest::decryptWithNonce(cipher, encryptResult.value(), nonceResult.value());
     ASSERT_TRUE(decryptResult.isSuccess());
     
     EXPECT_EQ(decryptResult.value().size(), plaintext.size());
@@ -1039,14 +1073,14 @@ TEST(AESCipher, SetKey_ChangesEncryption) {
     // Encrypt with key1
     auto nonceResult = rng.generateNonce();
     ASSERT_TRUE(nonceResult.isSuccess());
-    auto encryptResult1 = cipher.encryptWithNonce(plaintextSpan, nonceResult.value());
+    auto encryptResult1 = AESCipherTest::encryptWithNonce(cipher, plaintextSpan, nonceResult.value());
     ASSERT_TRUE(encryptResult1.isSuccess());
     
     // Change key
     cipher.setKey(key2Result.value());
     
     // Encrypt with key2 (same nonce for comparison)
-    auto encryptResult2 = cipher.encryptWithNonce(plaintextSpan, nonceResult.value());
+    auto encryptResult2 = AESCipherTest::encryptWithNonce(cipher, plaintextSpan, nonceResult.value());
     ASSERT_TRUE(encryptResult2.isSuccess());
     
     // Ciphertexts should be different
