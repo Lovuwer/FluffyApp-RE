@@ -277,6 +277,8 @@ public:
         
         // Set expected tag value
         // CRITICAL: Must be done BEFORE EVP_DecryptFinal_ex
+        // Note: const_cast is required for OpenSSL API compatibility
+        // OpenSSL does not modify the tag data when setting it
         if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16, 
                                 const_cast<Byte*>(tag.data())) != 1) {
             EVP_CIPHER_CTX_free(ctx);

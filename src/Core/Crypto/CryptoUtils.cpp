@@ -83,6 +83,12 @@ std::string toBase64(ByteSpan data) {
     BIO* bio = BIO_new(BIO_s_mem());
     BIO* b64 = BIO_new(BIO_f_base64());
     
+    if (bio == nullptr || b64 == nullptr) {
+        if (bio) BIO_free(bio);
+        if (b64) BIO_free(b64);
+        return "";
+    }
+    
     // No newlines in output
     BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
     
@@ -108,6 +114,12 @@ Result<ByteBuffer> fromBase64(const std::string& base64) {
     
     BIO* bio = BIO_new_mem_buf(base64.data(), static_cast<int>(base64.length()));
     BIO* b64 = BIO_new(BIO_f_base64());
+    
+    if (bio == nullptr || b64 == nullptr) {
+        if (bio) BIO_free(bio);
+        if (b64) BIO_free(b64);
+        return ErrorCode::InvalidBase64;
+    }
     
     // No newlines in input
     BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
