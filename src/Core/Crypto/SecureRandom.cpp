@@ -3,9 +3,9 @@
  * @brief Cryptographically secure random number generator implementation
  * @author Sentinel Security Team
  * @version 1.0.0
- * @date 2025
+ * @date 2024
  * 
- * @copyright Copyright (c) 2025 Sentinel Security. All rights reserved.
+ * @copyright Copyright (c) 2024 Sentinel Security. All rights reserved.
  * 
  * Provides cryptographically secure random number generation using:
  * - Windows: BCryptGenRandom with BCRYPT_USE_SYSTEM_PREFERRED_RNG
