@@ -15,6 +15,7 @@
 #include <Sentinel/Core/Crypto.hpp>
 #include <openssl/hmac.h>
 #include <openssl/evp.h>
+#include <openssl/crypto.h>
 
 namespace Sentinel::Crypto {
 
@@ -49,6 +50,11 @@ public:
     }
     
     Result<ByteBuffer> compute(ByteSpan data) {
+        // Validate key size is reasonable (HMAC allows any size, but be safe)
+        if (m_key.size() > INT_MAX) {
+            return ErrorCode::InvalidKey;
+        }
+        
         unsigned int len = 0;
         ByteBuffer result(EVP_MAX_MD_SIZE);
         
@@ -117,12 +123,14 @@ bool constantTimeCompare(ByteSpan a, ByteSpan b) noexcept {
         return false;
     }
     
-    volatile unsigned char result = 0;
-    for (size_t i = 0; i < a.size(); i++) {
-        result |= a[i] ^ b[i];
+    // Use OpenSSL's CRYPTO_memcmp for constant-time comparison
+    // This is more robust than volatile and is specifically designed
+    // to resist timing attacks
+    if (a.size() == 0) {
+        return true; // Empty arrays are equal
     }
     
-    return result == 0;
+    return CRYPTO_memcmp(a.data(), b.data(), a.size()) == 0;
 }
 
 } // namespace Sentinel::Crypto

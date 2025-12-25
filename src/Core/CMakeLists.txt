@@ -52,9 +52,16 @@ target_link_libraries(SentinelCore
     PUBLIC
         nlohmann_json::nlohmann_json
         spdlog::spdlog
-        OpenSSL::Crypto
-        OpenSSL::SSL
 )
+
+# Link OpenSSL if available (required for HMAC implementation)
+if(OpenSSL_FOUND)
+    target_link_libraries(SentinelCore
+        PUBLIC
+            OpenSSL::Crypto
+            OpenSSL::SSL
+    )
+endif()
 
 target_compile_definitions(SentinelCore
     PRIVATE
