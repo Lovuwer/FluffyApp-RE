@@ -264,3 +264,388 @@ TEST(SecureRandom, SequentialGenerations_AreDifferent) {
     EXPECT_NE(result1.value(), result2.value())
         << "Sequential generations produced identical output";
 }
+
+// ============================================================================
+// HashEngine Tests
+// ============================================================================
+
+// ============================================================================
+// Known Answer Tests (KAT)
+// ============================================================================
+
+TEST(HashEngine, SHA256_EmptyString_MatchesRFC) {
+    // RFC 4634 test vector: SHA-256 of empty string
+    // Expected: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    const Byte expected[32] = {
+        0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14,
+        0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24,
+        0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c,
+        0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55
+    };
+    
+    HashEngine hasher(HashAlgorithm::SHA256);
+    auto result = hasher.hash(ByteSpan{});
+    
+    ASSERT_TRUE(result.isSuccess()) << "Hash computation failed";
+    ASSERT_EQ(result.value().size(), 32u) << "Wrong hash size";
+    
+    EXPECT_EQ(std::memcmp(result.value().data(), expected, 32), 0)
+        << "SHA-256 of empty string doesn't match RFC 4634";
+}
+
+TEST(HashEngine, SHA256_HelloWorld_MatchesKnown) {
+    // Known test vector: SHA-256 of "Hello, World!"
+    // Expected: dffd6021bb2bd5b0af676290809ec3a53191dd81c7f70a4b28688a362182986f
+    const Byte expected[32] = {
+        0xdf, 0xfd, 0x60, 0x21, 0xbb, 0x2b, 0xd5, 0xb0,
+        0xaf, 0x67, 0x62, 0x90, 0x80, 0x9e, 0xc3, 0xa5,
+        0x31, 0x91, 0xdd, 0x81, 0xc7, 0xf7, 0x0a, 0x4b,
+        0x28, 0x68, 0x8a, 0x36, 0x21, 0x82, 0x98, 0x6f
+    };
+    
+    std::string data = "Hello, World!";
+    
+    HashEngine hasher(HashAlgorithm::SHA256);
+    auto result = hasher.hash(data);
+    
+    ASSERT_TRUE(result.isSuccess()) << "Hash computation failed";
+    ASSERT_EQ(result.value().size(), 32u) << "Wrong hash size";
+    
+    EXPECT_EQ(std::memcmp(result.value().data(), expected, 32), 0)
+        << "SHA-256 of 'Hello, World!' doesn't match known vector";
+}
+
+TEST(HashEngine, SHA512_MatchesKnown) {
+    // Known test vector: SHA-512 of "abc"
+    // Expected: ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a
+    //           2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f
+    const Byte expected[64] = {
+        0xdd, 0xaf, 0x35, 0xa1, 0x93, 0x61, 0x7a, 0xba,
+        0xcc, 0x41, 0x73, 0x49, 0xae, 0x20, 0x41, 0x31,
+        0x12, 0xe6, 0xfa, 0x4e, 0x89, 0xa9, 0x7e, 0xa2,
+        0x0a, 0x9e, 0xee, 0xe6, 0x4b, 0x55, 0xd3, 0x9a,
+        0x21, 0x92, 0x99, 0x2a, 0x27, 0x4f, 0xc1, 0xa8,
+        0x36, 0xba, 0x3c, 0x23, 0xa3, 0xfe, 0xeb, 0xbd,
+        0x45, 0x4d, 0x44, 0x23, 0x64, 0x3c, 0xe8, 0x0e,
+        0x2a, 0x9a, 0xc9, 0x4f, 0xa5, 0x4c, 0xa4, 0x9f
+    };
+    
+    std::string data = "abc";
+    
+    HashEngine hasher(HashAlgorithm::SHA512);
+    auto result = hasher.hash(data);
+    
+    ASSERT_TRUE(result.isSuccess()) << "Hash computation failed";
+    ASSERT_EQ(result.value().size(), 64u) << "Wrong hash size";
+    
+    EXPECT_EQ(std::memcmp(result.value().data(), expected, 64), 0)
+        << "SHA-512 of 'abc' doesn't match known vector";
+}
+
+TEST(HashEngine, SHA384_MatchesKnown) {
+    // Known test vector: SHA-384 of "abc"
+    // Expected: cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed
+    //           8086072ba1e7cc2358baeca134c825a7
+    const Byte expected[48] = {
+        0xcb, 0x00, 0x75, 0x3f, 0x45, 0xa3, 0x5e, 0x8b,
+        0xb5, 0xa0, 0x3d, 0x69, 0x9a, 0xc6, 0x50, 0x07,
+        0x27, 0x2c, 0x32, 0xab, 0x0e, 0xde, 0xd1, 0x63,
+        0x1a, 0x8b, 0x60, 0x5a, 0x43, 0xff, 0x5b, 0xed,
+        0x80, 0x86, 0x07, 0x2b, 0xa1, 0xe7, 0xcc, 0x23,
+        0x58, 0xba, 0xec, 0xa1, 0x34, 0xc8, 0x25, 0xa7
+    };
+    
+    std::string data = "abc";
+    
+    HashEngine hasher(HashAlgorithm::SHA384);
+    auto result = hasher.hash(data);
+    
+    ASSERT_TRUE(result.isSuccess()) << "Hash computation failed";
+    ASSERT_EQ(result.value().size(), 48u) << "Wrong hash size";
+    
+    EXPECT_EQ(std::memcmp(result.value().data(), expected, 48), 0)
+        << "SHA-384 of 'abc' doesn't match known vector";
+}
+
+// ============================================================================
+// Streaming Tests
+// ============================================================================
+
+TEST(HashEngine, StreamingEqualsOneShot) {
+    std::string data = "The quick brown fox jumps over the lazy dog";
+    
+    // One-shot hash
+    HashEngine hasher1(HashAlgorithm::SHA256);
+    auto result1 = hasher1.hash(data);
+    ASSERT_TRUE(result1.isSuccess());
+    
+    // Streaming hash - split into three chunks
+    HashEngine hasher2(HashAlgorithm::SHA256);
+    ASSERT_TRUE(hasher2.init().isSuccess());
+    ASSERT_TRUE(hasher2.update(ByteSpan{reinterpret_cast<const Byte*>(data.data()), 15}).isSuccess());
+    ASSERT_TRUE(hasher2.update(ByteSpan{reinterpret_cast<const Byte*>(data.data() + 15), 15}).isSuccess());
+    ASSERT_TRUE(hasher2.update(ByteSpan{reinterpret_cast<const Byte*>(data.data() + 30), data.size() - 30}).isSuccess());
+    auto result2 = hasher2.finalize();
+    ASSERT_TRUE(result2.isSuccess());
+    
+    // Compare results
+    EXPECT_EQ(result1.value(), result2.value())
+        << "Streaming hash doesn't match one-shot hash";
+}
+
+TEST(HashEngine, StreamingMultipleChunks) {
+    // Test with many small chunks
+    HashEngine hasher(HashAlgorithm::SHA256);
+    ASSERT_TRUE(hasher.init().isSuccess());
+    
+    std::string data = "abcdefghijklmnopqrstuvwxyz";
+    
+    // Update one byte at a time
+    for (char c : data) {
+        Byte b = static_cast<Byte>(c);
+        ASSERT_TRUE(hasher.update(&b, 1).isSuccess());
+    }
+    
+    auto result = hasher.finalize();
+    ASSERT_TRUE(result.isSuccess());
+    
+    // Compare with one-shot
+    HashEngine hasher2(HashAlgorithm::SHA256);
+    auto result2 = hasher2.hash(data);
+    ASSERT_TRUE(result2.isSuccess());
+    
+    EXPECT_EQ(result.value(), result2.value());
+}
+
+// ============================================================================
+// Static Helper Tests
+// ============================================================================
+
+TEST(HashEngine, StaticSHA256_Works) {
+    std::string data = "test data";
+    ByteSpan dataSpan{reinterpret_cast<const Byte*>(data.data()), data.size()};
+    
+    auto result = HashEngine::sha256(dataSpan);
+    ASSERT_TRUE(result.isSuccess());
+    
+    // Verify it's a SHA256Hash (32 bytes)
+    EXPECT_EQ(result.value().size(), 32u);
+    
+    // Compare with regular method
+    HashEngine hasher(HashAlgorithm::SHA256);
+    auto result2 = hasher.hash(data);
+    ASSERT_TRUE(result2.isSuccess());
+    
+    const auto& hash1 = result.value();
+    const auto& hash2 = result2.value();
+    EXPECT_EQ(std::memcmp(hash1.data(), hash2.data(), 32), 0);
+}
+
+TEST(HashEngine, StaticSHA512_Works) {
+    std::string data = "test data";
+    ByteSpan dataSpan{reinterpret_cast<const Byte*>(data.data()), data.size()};
+    
+    auto result = HashEngine::sha512(dataSpan);
+    ASSERT_TRUE(result.isSuccess());
+    
+    // Verify it's a SHA512Hash (64 bytes)
+    EXPECT_EQ(result.value().size(), 64u);
+    
+    // Compare with regular method
+    HashEngine hasher(HashAlgorithm::SHA512);
+    auto result2 = hasher.hash(data);
+    ASSERT_TRUE(result2.isSuccess());
+    
+    const auto& hash1 = result.value();
+    const auto& hash2 = result2.value();
+    EXPECT_EQ(std::memcmp(hash1.data(), hash2.data(), 64), 0);
+}
+
+// ============================================================================
+// Edge Cases
+// ============================================================================
+
+TEST(HashEngine, LargeData_10MB_Succeeds) {
+    // Generate 10MB of data
+    constexpr size_t dataSize = 10 * 1024 * 1024;
+    ByteBuffer data(dataSize);
+    
+    // Fill with pattern
+    for (size_t i = 0; i < dataSize; ++i) {
+        data[i] = static_cast<Byte>(i & 0xFF);
+    }
+    
+    HashEngine hasher(HashAlgorithm::SHA256);
+    auto result = hasher.hash(ByteSpan{data.data(), data.size()});
+    
+    ASSERT_TRUE(result.isSuccess()) << "Failed to hash 10MB of data";
+    EXPECT_EQ(result.value().size(), 32u);
+}
+
+TEST(HashEngine, MultipleReinit_Works) {
+    HashEngine hasher(HashAlgorithm::SHA256);
+    std::string data1 = "first";
+    std::string data2 = "second";
+    
+    // First hash
+    ASSERT_TRUE(hasher.init().isSuccess());
+    ASSERT_TRUE(hasher.update(ByteSpan{reinterpret_cast<const Byte*>(data1.data()), data1.size()}).isSuccess());
+    auto result1 = hasher.finalize();
+    ASSERT_TRUE(result1.isSuccess());
+    
+    // Second hash (after reinit)
+    ASSERT_TRUE(hasher.init().isSuccess());
+    ASSERT_TRUE(hasher.update(ByteSpan{reinterpret_cast<const Byte*>(data2.data()), data2.size()}).isSuccess());
+    auto result2 = hasher.finalize();
+    ASSERT_TRUE(result2.isSuccess());
+    
+    // Hashes should be different
+    EXPECT_NE(result1.value(), result2.value());
+    
+    // Third hash - same as second (verify reinit works correctly)
+    ASSERT_TRUE(hasher.init().isSuccess());
+    ASSERT_TRUE(hasher.update(ByteSpan{reinterpret_cast<const Byte*>(data2.data()), data2.size()}).isSuccess());
+    auto result3 = hasher.finalize();
+    ASSERT_TRUE(result3.isSuccess());
+    
+    EXPECT_EQ(result2.value(), result3.value());
+}
+
+TEST(HashEngine, EmptyUpdate_Works) {
+    HashEngine hasher(HashAlgorithm::SHA256);
+    
+    ASSERT_TRUE(hasher.init().isSuccess());
+    ASSERT_TRUE(hasher.update(nullptr, 0).isSuccess());
+    auto result = hasher.finalize();
+    ASSERT_TRUE(result.isSuccess());
+    
+    // Should match empty string hash
+    HashEngine hasher2(HashAlgorithm::SHA256);
+    auto result2 = hasher2.hash(ByteSpan{});
+    ASSERT_TRUE(result2.isSuccess());
+    
+    EXPECT_EQ(result.value(), result2.value());
+}
+
+TEST(HashEngine, GetHashSize_ReturnsCorrectSizes) {
+    EXPECT_EQ(HashEngine::getHashSize(HashAlgorithm::SHA256), 32u);
+    EXPECT_EQ(HashEngine::getHashSize(HashAlgorithm::SHA384), 48u);
+    EXPECT_EQ(HashEngine::getHashSize(HashAlgorithm::SHA512), 64u);
+    EXPECT_EQ(HashEngine::getHashSize(HashAlgorithm::MD5), 16u);
+}
+
+TEST(HashEngine, GetAlgorithm_ReturnsCorrectAlgorithm) {
+    HashEngine hasher1(HashAlgorithm::SHA256);
+    EXPECT_EQ(hasher1.getAlgorithm(), HashAlgorithm::SHA256);
+    
+    HashEngine hasher2(HashAlgorithm::SHA512);
+    EXPECT_EQ(hasher2.getAlgorithm(), HashAlgorithm::SHA512);
+}
+
+// ============================================================================
+// Error Handling Tests
+// ============================================================================
+
+TEST(HashEngine, DoubleFinalize_Fails) {
+    HashEngine hasher(HashAlgorithm::SHA256);
+    
+    ASSERT_TRUE(hasher.init().isSuccess());
+    auto result1 = hasher.finalize();
+    ASSERT_TRUE(result1.isSuccess());
+    
+    // Second finalize should fail
+    auto result2 = hasher.finalize();
+    EXPECT_TRUE(result2.isFailure());
+    EXPECT_EQ(result2.error(), ErrorCode::InvalidState);
+}
+
+TEST(HashEngine, UpdateAfterFinalize_Fails) {
+    HashEngine hasher(HashAlgorithm::SHA256);
+    std::string data = "test";
+    
+    ASSERT_TRUE(hasher.init().isSuccess());
+    ASSERT_TRUE(hasher.update(ByteSpan{reinterpret_cast<const Byte*>(data.data()), data.size()}).isSuccess());
+    auto result = hasher.finalize();
+    ASSERT_TRUE(result.isSuccess());
+    
+    // Update after finalize should fail
+    auto updateResult = hasher.update(ByteSpan{reinterpret_cast<const Byte*>(data.data()), data.size()});
+    EXPECT_TRUE(updateResult.isFailure());
+    EXPECT_EQ(updateResult.error(), ErrorCode::InvalidState);
+}
+
+TEST(HashEngine, UpdateWithNullPointerNonZeroSize_Fails) {
+    HashEngine hasher(HashAlgorithm::SHA256);
+    
+    ASSERT_TRUE(hasher.init().isSuccess());
+    auto result = hasher.update(nullptr, 10);
+    
+    EXPECT_TRUE(result.isFailure());
+    EXPECT_EQ(result.error(), ErrorCode::InvalidArgument);
+}
+
+// ============================================================================
+// Adversarial Tests
+// ============================================================================
+
+TEST(HashEngine, PartialUpdate_NoLeakage) {
+    // Verify that partial state is not exposed
+    HashEngine hasher(HashAlgorithm::SHA256);
+    std::string data = "sensitive data";
+    
+    ASSERT_TRUE(hasher.init().isSuccess());
+    ASSERT_TRUE(hasher.update(ByteSpan{reinterpret_cast<const Byte*>(data.data()), data.size()}).isSuccess());
+    
+    // At this point, hash is not finalized
+    // Verify that we can't get intermediate state
+    // (This is implicit - the API doesn't expose intermediate state)
+    
+    auto result = hasher.finalize();
+    ASSERT_TRUE(result.isSuccess());
+    
+    // Hash should be deterministic
+    HashEngine hasher2(HashAlgorithm::SHA256);
+    auto result2 = hasher2.hash(data);
+    ASSERT_TRUE(result2.isSuccess());
+    
+    EXPECT_EQ(result.value(), result2.value());
+}
+
+TEST(HashEngine, DifferentAlgorithms_ProduceDifferentHashes) {
+    std::string data = "test data";
+    
+    HashEngine hasher256(HashAlgorithm::SHA256);
+    auto result256 = hasher256.hash(data);
+    ASSERT_TRUE(result256.isSuccess());
+    
+    HashEngine hasher512(HashAlgorithm::SHA512);
+    auto result512 = hasher512.hash(data);
+    ASSERT_TRUE(result512.isSuccess());
+    
+    // Different algorithms should produce different hash sizes
+    EXPECT_NE(result256.value().size(), result512.value().size());
+    
+    // And different hash values (comparing first 32 bytes)
+    EXPECT_NE(std::memcmp(result256.value().data(), result512.value().data(), 32), 0);
+}
+
+TEST(HashEngine, MD5_Legacy_StillWorks) {
+    // MD5 should still work for legacy compatibility
+    // Known test vector: MD5 of "abc"
+    // Expected: 900150983cd24fb0d6963f7d28e17f72
+    const Byte expected[16] = {
+        0x90, 0x01, 0x50, 0x98, 0x3c, 0xd2, 0x4f, 0xb0,
+        0xd6, 0x96, 0x3f, 0x7d, 0x28, 0xe1, 0x7f, 0x72
+    };
+    
+    std::string data = "abc";
+    
+    HashEngine hasher(HashAlgorithm::MD5);
+    auto result = hasher.hash(data);
+    
+    ASSERT_TRUE(result.isSuccess()) << "MD5 hash computation failed";
+    ASSERT_EQ(result.value().size(), 16u) << "Wrong MD5 hash size";
+    
+    EXPECT_EQ(std::memcmp(result.value().data(), expected, 16), 0)
+        << "MD5 of 'abc' doesn't match known vector";
+}
