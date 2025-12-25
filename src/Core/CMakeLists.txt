@@ -52,6 +52,8 @@ target_link_libraries(SentinelCore
     PUBLIC
         nlohmann_json::nlohmann_json
         spdlog::spdlog
+        OpenSSL::Crypto
+        OpenSSL::SSL
 )
 
 target_compile_definitions(SentinelCore

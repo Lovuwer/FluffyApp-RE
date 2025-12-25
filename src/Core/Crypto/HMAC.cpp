@@ -1,18 +1,128 @@
 /**
- * Sentinel Core Library - Stub Implementation
+ * @file HMAC.cpp
+ * @brief HMAC (Hash-based Message Authentication Code) implementation
+ * @author Sentinel Security Team
+ * @version 1.0.0
+ * @date 2024
  * 
- * Copyright (c) 2025 Sentinel Security. All rights reserved.
+ * @copyright Copyright (c) 2024 Sentinel Security. All rights reserved.
  * 
- * This is a stub implementation created as part of Phase 1: Foundation Setup
- * TODO: Implement actual functionality according to production readiness plan
+ * Provides message authentication for network packets, integrity tokens,
+ * and API request signing with constant-time verification to prevent
+ * timing side-channel attacks.
  */
 
-namespace Sentinel {
-namespace Core {
-namespace Crypto {
+#include <Sentinel/Core/Crypto.hpp>
+#include <openssl/hmac.h>
+#include <openssl/evp.h>
 
-// Stub implementation - To be implemented
+namespace Sentinel::Crypto {
 
-} // namespace Crypto
-} // namespace Core
-} // namespace Sentinel
+// ============================================================================
+// HMAC::Impl - Implementation details
+// ============================================================================
+
+class HMAC::Impl {
+public:
+    explicit Impl(ByteSpan key, HashAlgorithm algorithm)
+        : m_key(key.begin(), key.end())
+        , m_algorithm(algorithm) {
+        
+        // Select the appropriate EVP_MD based on algorithm
+        switch (algorithm) {
+            case HashAlgorithm::SHA256:
+                m_evp_md = EVP_sha256();
+                break;
+            case HashAlgorithm::SHA384:
+                m_evp_md = EVP_sha384();
+                break;
+            case HashAlgorithm::SHA512:
+                m_evp_md = EVP_sha512();
+                break;
+            case HashAlgorithm::MD5:
+                m_evp_md = EVP_md5();
+                break;
+            default:
+                m_evp_md = EVP_sha256(); // Default to SHA256
+                break;
+        }
+    }
+    
+    Result<ByteBuffer> compute(ByteSpan data) {
+        unsigned int len = 0;
+        ByteBuffer result(EVP_MAX_MD_SIZE);
+        
+        unsigned char* hmac_result = ::HMAC(
+            m_evp_md,
+            m_key.data(),
+            static_cast<int>(m_key.size()),
+            data.data(),
+            data.size(),
+            result.data(),
+            &len
+        );
+        
+        if (hmac_result == nullptr) {
+            return ErrorCode::CryptoError;
+        }
+        
+        result.resize(len);
+        return result;
+    }
+    
+    Result<bool> verify(ByteSpan data, ByteSpan mac) {
+        auto computed = compute(data);
+        if (computed.isFailure()) {
+            return computed.error();
+        }
+        
+        return constantTimeCompare(computed.value(), mac);
+    }
+    
+private:
+    ByteBuffer m_key;
+    HashAlgorithm m_algorithm;
+    const EVP_MD* m_evp_md;
+};
+
+// ============================================================================
+// HMAC - Public API
+// ============================================================================
+
+HMAC::HMAC(ByteSpan key, HashAlgorithm algorithm)
+    : m_impl(std::make_unique<Impl>(key, algorithm)) {
+}
+
+HMAC::~HMAC() = default;
+
+Result<ByteBuffer> HMAC::compute(ByteSpan data) {
+    return m_impl->compute(data);
+}
+
+Result<bool> HMAC::verify(ByteSpan data, ByteSpan mac) {
+    return m_impl->verify(data, mac);
+}
+
+Result<ByteBuffer> HMAC::sha256(ByteSpan key, ByteSpan data) {
+    HMAC hmac(key, HashAlgorithm::SHA256);
+    return hmac.compute(data);
+}
+
+// ============================================================================
+// Constant-Time Comparison
+// ============================================================================
+
+bool constantTimeCompare(ByteSpan a, ByteSpan b) noexcept {
+    if (a.size() != b.size()) {
+        return false;
+    }
+    
+    volatile unsigned char result = 0;
+    for (size_t i = 0; i < a.size(); i++) {
+        result |= a[i] ^ b[i];
+    }
+    
+    return result == 0;
+}
+
+} // namespace Sentinel::Crypto
