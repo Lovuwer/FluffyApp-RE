@@ -57,7 +57,7 @@ target_link_libraries(SentinelCore
 # Link OpenSSL if available (required for HMAC implementation)
 if(OpenSSL_FOUND)
     target_link_libraries(SentinelCore
-        PUBLIC
+        PRIVATE
             OpenSSL::Crypto
             OpenSSL::SSL
     )

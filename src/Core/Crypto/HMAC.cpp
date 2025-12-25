@@ -50,7 +50,15 @@ public:
     }
     
     Result<ByteBuffer> compute(ByteSpan data) {
-        // Validate key size is reasonable (HMAC allows any size, but be safe)
+        // Validate key size is reasonable
+        // HMAC allows any key size, but keys larger than the hash block size
+        // are hashed anyway. Practical maximum is 2048 bytes (more than enough).
+        constexpr size_t MAX_REASONABLE_KEY_SIZE = 2048;
+        if (m_key.size() > MAX_REASONABLE_KEY_SIZE) {
+            return ErrorCode::InvalidKey;
+        }
+        
+        // Also ensure the key size fits in int for OpenSSL API
         if (m_key.size() > INT_MAX) {
             return ErrorCode::InvalidKey;
         }
