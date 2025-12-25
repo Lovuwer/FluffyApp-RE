@@ -1,18 +1,396 @@
 /**
- * Sentinel Core Library - Stub Implementation
+ * @file AESCipher.cpp
+ * @brief AES-256-GCM authenticated encryption implementation using OpenSSL EVP API
+ * @author Sentinel Security Team
+ * @version 1.0.0
+ * @date 2024
  * 
- * Copyright (c) 2025 Sentinel Security. All rights reserved.
+ * @copyright Copyright (c) 2024 Sentinel Security. All rights reserved.
  * 
- * This is a stub implementation created as part of Phase 1: Foundation Setup
- * TODO: Implement actual functionality according to production readiness plan
+ * Provides authenticated encryption with AES-256-GCM:
+ * - 256-bit key (32 bytes)
+ * - 96-bit nonce (12 bytes) - automatically generated
+ * - 128-bit authentication tag (16 bytes)
+ * - Optional Additional Authenticated Data (AAD)
+ * 
+ * Security properties:
+ * - Confidentiality: Ciphertext reveals nothing about plaintext
+ * - Authenticity: Tag verification prevents tampering
+ * - Nonce uniqueness: Always generates fresh random nonce
+ * 
+ * Key lifetime requirements:
+ * - Keys MUST be ephemeral (single session/process lifetime)
+ * - DO NOT persist keys across process restarts
+ * - DO NOT reuse keys after 2^32 encryptions (nonce exhaustion)
+ * - Random nonces are safe ONLY for ephemeral keys
+ * 
+ * Defends against:
+ * - Ciphertext tampering (GCM authentication tag)
+ * - Plaintext recovery without key
+ * - Nonce reuse (catastrophic in GCM) - prevented by design
+ * 
+ * NONCE REUSE = CATASTROPHIC FAILURE:
+ * - Reusing a nonce with the same key breaks confidentiality AND authenticity
+ * - This is why encryptWithNonce() is private and access-controlled
  */
 
-namespace Sentinel {
-namespace Core {
-namespace Crypto {
+#include <Sentinel/Core/Crypto.hpp>
+#include <openssl/evp.h>
+#include <openssl/err.h>
+#include <cstring>
+#include <algorithm>
 
-// Stub implementation - To be implemented
+namespace Sentinel::Crypto {
 
-} // namespace Crypto
-} // namespace Core
-} // namespace Sentinel
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
+/**
+ * @brief Securely zero memory to prevent sensitive data leakage
+ * 
+ * Uses compiler barriers to prevent optimization from removing the zeroing.
+ * This is critical for key material and other sensitive data.
+ */
+void secureZero(void* data, size_t size) noexcept {
+    if (data == nullptr || size == 0) {
+        return;
+    }
+    
+    // Use volatile to prevent compiler optimization
+    volatile unsigned char* p = static_cast<volatile unsigned char*>(data);
+    while (size--) {
+        *p++ = 0;
+    }
+}
+
+/**
+ * @brief Constant-time comparison to prevent timing attacks
+ * 
+ * Compares two byte arrays without early exit, preventing timing side-channels
+ * that could leak information about the data being compared.
+ * 
+ * **NOTE:** For AEAD tag verification, use the cipher's built-in verification
+ * (e.g., EVP_DecryptFinal_ex for GCM). OpenSSL already performs constant-time
+ * tag comparison internally. This function is provided for other use cases
+ * where manual constant-time comparison is needed (e.g., password hashes,
+ * HMAC values in protocols that require manual verification).
+ * 
+ * **WARNING:** DO NOT use this to manually verify AEAD tags. Always use
+ * the cipher's authentication verification API.
+ */
+bool constantTimeCompare(ByteSpan a, ByteSpan b) noexcept {
+    if (a.size() != b.size()) {
+        return false;
+    }
+    
+    // Use volatile to prevent compiler optimization
+    volatile unsigned char result = 0;
+    for (size_t i = 0; i < a.size(); ++i) {
+        result |= a[i] ^ b[i];
+    }
+    
+    return result == 0;
+}
+
+// ============================================================================
+// AESCipher::Impl - OpenSSL EVP AES-256-GCM implementation
+// ============================================================================
+
+class AESCipher::Impl {
+public:
+    explicit Impl(const AESKey& key)
+        : m_key(key)
+        , m_rng()
+    {
+    }
+    
+    ~Impl() {
+        // Securely zero the key to prevent memory leakage
+        secureZero(m_key.data(), m_key.size());
+    }
+    
+    Result<ByteBuffer> encrypt(ByteSpan plaintext, ByteSpan associatedData) {
+        // Generate random nonce (12 bytes for GCM)
+        auto nonceResult = m_rng.generateNonce();
+        if (nonceResult.isFailure()) {
+            return nonceResult.error();
+        }
+        
+        const AESNonce& nonce = nonceResult.value();
+        
+        // Perform encryption with nonce
+        auto ciphertextResult = encryptWithNonce(plaintext, nonce, associatedData);
+        if (ciphertextResult.isFailure()) {
+            return ciphertextResult.error();
+        }
+        
+        // Prepend nonce to output: nonce (12) + ciphertext + tag (16)
+        ByteBuffer output(12 + ciphertextResult.value().size());
+        std::copy(nonce.begin(), nonce.end(), output.begin());
+        std::copy(ciphertextResult.value().begin(), ciphertextResult.value().end(), 
+                  output.begin() + 12);
+        
+        return output;
+    }
+    
+    Result<ByteBuffer> decrypt(ByteSpan ciphertext, ByteSpan associatedData) {
+        // Minimum size: nonce (12) + tag (16) = 28 bytes
+        if (ciphertext.size() < 28) {
+            return ErrorCode::InvalidArgument;
+        }
+        
+        // Extract nonce (first 12 bytes)
+        AESNonce nonce;
+        std::copy(ciphertext.begin(), ciphertext.begin() + 12, nonce.begin());
+        
+        // Extract ciphertext + tag (remaining bytes)
+        ByteSpan ctWithTag{ciphertext.data() + 12, ciphertext.size() - 12};
+        
+        // Perform decryption with nonce
+        return decryptWithNonce(ctWithTag, nonce, associatedData);
+    }
+    
+    Result<ByteBuffer> encryptWithNonce(
+        ByteSpan plaintext,
+        const AESNonce& nonce,
+        ByteSpan associatedData
+    ) {
+        // Create context
+        EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+        if (ctx == nullptr) {
+            return ErrorCode::CryptoError;
+        }
+        
+        // Initialize encryption with AES-256-GCM
+        if (EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) != 1) {
+            EVP_CIPHER_CTX_free(ctx);
+            return ErrorCode::EncryptionFailed;
+        }
+        
+        // Set IV length (12 bytes for GCM)
+        if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, 12, nullptr) != 1) {
+            EVP_CIPHER_CTX_free(ctx);
+            return ErrorCode::EncryptionFailed;
+        }
+        
+        // Set key and nonce
+        if (EVP_EncryptInit_ex(ctx, nullptr, nullptr, m_key.data(), nonce.data()) != 1) {
+            EVP_CIPHER_CTX_free(ctx);
+            return ErrorCode::EncryptionFailed;
+        }
+        
+        // Set AAD if provided
+        if (!associatedData.empty()) {
+            int aad_len;
+            if (EVP_EncryptUpdate(ctx, nullptr, &aad_len, 
+                                 associatedData.data(), 
+                                 static_cast<int>(associatedData.size())) != 1) {
+                EVP_CIPHER_CTX_free(ctx);
+                return ErrorCode::EncryptionFailed;
+            }
+        }
+        
+        // Allocate output buffer: ciphertext + tag (16 bytes)
+        ByteBuffer output(plaintext.size() + 16);
+        int len = 0;
+        int ciphertext_len = 0;
+        
+        // Encrypt plaintext
+        if (plaintext.size() > 0) {
+            if (EVP_EncryptUpdate(ctx, output.data(), &len, 
+                                 plaintext.data(), 
+                                 static_cast<int>(plaintext.size())) != 1) {
+                EVP_CIPHER_CTX_free(ctx);
+                return ErrorCode::EncryptionFailed;
+            }
+            ciphertext_len = len;
+        }
+        
+        // Finalize encryption
+        if (EVP_EncryptFinal_ex(ctx, output.data() + ciphertext_len, &len) != 1) {
+            EVP_CIPHER_CTX_free(ctx);
+            return ErrorCode::EncryptionFailed;
+        }
+        ciphertext_len += len;
+        
+        // Get authentication tag (16 bytes)
+        if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, 16, 
+                                output.data() + ciphertext_len) != 1) {
+            EVP_CIPHER_CTX_free(ctx);
+            return ErrorCode::EncryptionFailed;
+        }
+        
+        EVP_CIPHER_CTX_free(ctx);
+        
+        // Resize output to actual size (ciphertext + tag)
+        output.resize(ciphertext_len + 16);
+        return output;
+    }
+    
+    Result<ByteBuffer> decryptWithNonce(
+        ByteSpan ciphertext,
+        const AESNonce& nonce,
+        ByteSpan associatedData
+    ) {
+        // Minimum size: tag (16 bytes)
+        if (ciphertext.size() < 16) {
+            return ErrorCode::InvalidArgument;
+        }
+        
+        // Extract tag (last 16 bytes)
+        size_t ctLen = ciphertext.size() - 16;
+        ByteSpan ct{ciphertext.data(), ctLen};
+        ByteSpan tag{ciphertext.data() + ctLen, 16};
+        
+        // Create context
+        EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+        if (ctx == nullptr) {
+            return ErrorCode::CryptoError;
+        }
+        
+        // Initialize decryption with AES-256-GCM
+        if (EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) != 1) {
+            EVP_CIPHER_CTX_free(ctx);
+            return ErrorCode::DecryptionFailed;
+        }
+        
+        // Set IV length (12 bytes for GCM)
+        if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, 12, nullptr) != 1) {
+            EVP_CIPHER_CTX_free(ctx);
+            return ErrorCode::DecryptionFailed;
+        }
+        
+        // Set key and nonce
+        if (EVP_DecryptInit_ex(ctx, nullptr, nullptr, m_key.data(), nonce.data()) != 1) {
+            EVP_CIPHER_CTX_free(ctx);
+            return ErrorCode::DecryptionFailed;
+        }
+        
+        // Set AAD if provided
+        if (!associatedData.empty()) {
+            int aad_len;
+            if (EVP_DecryptUpdate(ctx, nullptr, &aad_len, 
+                                 associatedData.data(), 
+                                 static_cast<int>(associatedData.size())) != 1) {
+                EVP_CIPHER_CTX_free(ctx);
+                return ErrorCode::DecryptionFailed;
+            }
+        }
+        
+        // Allocate output buffer for plaintext
+        ByteBuffer output(ctLen);
+        int len = 0;
+        int plaintext_len = 0;
+        
+        // Decrypt ciphertext
+        if (ctLen > 0) {
+            if (EVP_DecryptUpdate(ctx, output.data(), &len, 
+                                 ct.data(), 
+                                 static_cast<int>(ctLen)) != 1) {
+                EVP_CIPHER_CTX_free(ctx);
+                return ErrorCode::DecryptionFailed;
+            }
+            plaintext_len = len;
+        }
+        
+        // Set expected tag value
+        // CRITICAL: Must be done BEFORE EVP_DecryptFinal_ex
+        // Note: const_cast is required for OpenSSL API compatibility
+        // OpenSSL does not modify the tag data when setting it
+        if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16, 
+                                const_cast<Byte*>(tag.data())) != 1) {
+            EVP_CIPHER_CTX_free(ctx);
+            return ErrorCode::DecryptionFailed;
+        }
+        
+        // Finalize and verify authentication tag
+        // CRITICAL: If this returns 0, authentication FAILED - return error immediately
+        int ret = EVP_DecryptFinal_ex(ctx, output.data() + plaintext_len, &len);
+        EVP_CIPHER_CTX_free(ctx);
+        
+        if (ret != 1) {
+            // Authentication failed - return error WITHOUT any plaintext
+            secureZero(output.data(), output.size());
+            return ErrorCode::AuthenticationFailed;
+        }
+        
+        plaintext_len += len;
+        
+        // Resize output to actual plaintext size
+        output.resize(plaintext_len);
+        return output;
+    }
+    
+    void setKey(const AESKey& key) {
+        // Securely zero old key
+        secureZero(m_key.data(), m_key.size());
+        // Set new key
+        m_key = key;
+    }
+
+private:
+    AESKey m_key;
+    SecureRandom m_rng;
+};
+
+// ============================================================================
+// AESCipher - Public API
+// ============================================================================
+
+AESCipher::AESCipher(const AESKey& key)
+    : m_impl(std::make_unique<Impl>(key)) {
+}
+
+AESCipher::AESCipher(ByteSpan key)
+    : m_impl(nullptr) {
+    // Validate key size
+    if (key.size() != 32) {
+        throw std::invalid_argument("AES key must be exactly 32 bytes");
+    }
+    
+    // Copy key to AESKey
+    AESKey aesKey;
+    std::copy(key.begin(), key.end(), aesKey.begin());
+    
+    m_impl = std::make_unique<Impl>(aesKey);
+}
+
+AESCipher::~AESCipher() = default;
+
+Result<ByteBuffer> AESCipher::encrypt(ByteSpan plaintext, ByteSpan associatedData) {
+    return m_impl->encrypt(plaintext, associatedData);
+}
+
+Result<ByteBuffer> AESCipher::decrypt(ByteSpan ciphertext, ByteSpan associatedData) {
+    return m_impl->decrypt(ciphertext, associatedData);
+}
+
+Result<ByteBuffer> AESCipher::encryptWithNonce(
+    ByteSpan plaintext,
+    const AESNonce& nonce,
+    ByteSpan associatedData
+) {
+    return m_impl->encryptWithNonce(plaintext, nonce, associatedData);
+}
+
+Result<ByteBuffer> AESCipher::decryptWithNonce(
+    ByteSpan ciphertext,
+    const AESNonce& nonce,
+    ByteSpan associatedData
+) {
+    return m_impl->decryptWithNonce(ciphertext, nonce, associatedData);
+}
+
+void AESCipher::setKey(const AESKey& key) {
+    m_impl->setKey(key);
+}
+
+// ============================================================================
+// Utility Function Exports
+// ============================================================================
+
+// These are already implemented above but need to be exported
+// for other modules to use
+
+} // namespace Sentinel::Crypto

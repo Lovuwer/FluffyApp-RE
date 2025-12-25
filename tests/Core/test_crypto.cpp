@@ -20,6 +20,40 @@ using namespace Sentinel;
 using namespace Sentinel::Crypto;
 
 // ============================================================================
+// Test Helper - Friend class to access private encryptWithNonce API
+// ============================================================================
+
+/**
+ * @brief Test helper to access unsafe/private AESCipher methods
+ * 
+ * This class is a friend of AESCipher and provides controlled access
+ * to the private encryptWithNonce/decryptWithNonce methods for testing.
+ * 
+ * **WARNING:** These methods expose catastrophic nonce-reuse risk.
+ * Only use in controlled test environments with known-unique nonces.
+ */
+class AESCipherTest {
+public:
+    static Result<ByteBuffer> encryptWithNonce(
+        AESCipher& cipher,
+        ByteSpan plaintext,
+        const AESNonce& nonce,
+        ByteSpan associatedData = {}
+    ) {
+        return cipher.encryptWithNonce(plaintext, nonce, associatedData);
+    }
+    
+    static Result<ByteBuffer> decryptWithNonce(
+        AESCipher& cipher,
+        ByteSpan ciphertext,
+        const AESNonce& nonce,
+        ByteSpan associatedData = {}
+    ) {
+        return cipher.decryptWithNonce(ciphertext, nonce, associatedData);
+    }
+};
+
+// ============================================================================
 // Unit Tests
 // ============================================================================
 
@@ -648,4 +682,553 @@ TEST(HashEngine, MD5_Legacy_StillWorks) {
     
     EXPECT_EQ(std::memcmp(result.value().data(), expected, 16), 0)
         << "MD5 of 'abc' doesn't match known vector";
+}
+
+// ============================================================================
+// AESCipher Tests
+// ============================================================================
+
+// ============================================================================
+// Round-trip Tests
+// ============================================================================
+
+TEST(AESCipher, EncryptDecrypt_RoundTrip) {
+    SecureRandom rng;
+    auto keyResult = rng.generateAESKey();
+    ASSERT_TRUE(keyResult.isSuccess());
+    
+    AESCipher cipher(keyResult.value());
+    
+    std::string plaintext = "Hello, World! This is a test message.";
+    ByteSpan plaintextSpan{reinterpret_cast<const Byte*>(plaintext.data()), plaintext.size()};
+    
+    // Encrypt
+    auto encryptResult = cipher.encrypt(plaintextSpan);
+    ASSERT_TRUE(encryptResult.isSuccess()) << "Encryption failed";
+    
+    // Verify output size: nonce (12) + ciphertext (plaintext.size()) + tag (16)
+    EXPECT_EQ(encryptResult.value().size(), 12 + plaintext.size() + 16);
+    
+    // Decrypt
+    auto decryptResult = cipher.decrypt(encryptResult.value());
+    ASSERT_TRUE(decryptResult.isSuccess()) << "Decryption failed";
+    
+    // Verify round-trip
+    EXPECT_EQ(decryptResult.value().size(), plaintext.size());
+    EXPECT_EQ(std::memcmp(decryptResult.value().data(), plaintext.data(), plaintext.size()), 0)
+        << "Decrypted plaintext doesn't match original";
+}
+
+TEST(AESCipher, WithAAD_RoundTrip) {
+    SecureRandom rng;
+    auto keyResult = rng.generateAESKey();
+    ASSERT_TRUE(keyResult.isSuccess());
+    
+    AESCipher cipher(keyResult.value());
+    
+    std::string plaintext = "Secret message";
+    std::string aad = "Additional authenticated data";
+    
+    ByteSpan plaintextSpan{reinterpret_cast<const Byte*>(plaintext.data()), plaintext.size()};
+    ByteSpan aadSpan{reinterpret_cast<const Byte*>(aad.data()), aad.size()};
+    
+    // Encrypt with AAD
+    auto encryptResult = cipher.encrypt(plaintextSpan, aadSpan);
+    ASSERT_TRUE(encryptResult.isSuccess()) << "Encryption with AAD failed";
+    
+    // Decrypt with same AAD
+    auto decryptResult = cipher.decrypt(encryptResult.value(), aadSpan);
+    ASSERT_TRUE(decryptResult.isSuccess()) << "Decryption with AAD failed";
+    
+    // Verify round-trip
+    EXPECT_EQ(decryptResult.value().size(), plaintext.size());
+    EXPECT_EQ(std::memcmp(decryptResult.value().data(), plaintext.data(), plaintext.size()), 0);
+}
+
+TEST(AESCipher, EmptyPlaintext_Succeeds) {
+    SecureRandom rng;
+    auto keyResult = rng.generateAESKey();
+    ASSERT_TRUE(keyResult.isSuccess());
+    
+    AESCipher cipher(keyResult.value());
+    
+    ByteSpan emptyPlaintext{};
+    
+    // Encrypt empty plaintext
+    auto encryptResult = cipher.encrypt(emptyPlaintext);
+    ASSERT_TRUE(encryptResult.isSuccess()) << "Encryption of empty plaintext failed";
+    
+    // Output should be: nonce (12) + tag (16) = 28 bytes
+    EXPECT_EQ(encryptResult.value().size(), 28u);
+    
+    // Decrypt
+    auto decryptResult = cipher.decrypt(encryptResult.value());
+    ASSERT_TRUE(decryptResult.isSuccess()) << "Decryption of empty plaintext failed";
+    
+    EXPECT_EQ(decryptResult.value().size(), 0u);
+}
+
+TEST(AESCipher, LargePlaintext_1MB) {
+    SecureRandom rng;
+    auto keyResult = rng.generateAESKey();
+    ASSERT_TRUE(keyResult.isSuccess());
+    
+    AESCipher cipher(keyResult.value());
+    
+    // Generate 1MB of data
+    constexpr size_t dataSize = 1024 * 1024;
+    ByteBuffer plaintext(dataSize);
+    for (size_t i = 0; i < dataSize; ++i) {
+        plaintext[i] = static_cast<Byte>(i & 0xFF);
+    }
+    
+    ByteSpan plaintextSpan{plaintext.data(), plaintext.size()};
+    
+    // Encrypt
+    auto encryptResult = cipher.encrypt(plaintextSpan);
+    ASSERT_TRUE(encryptResult.isSuccess()) << "Encryption of 1MB failed";
+    
+    // Decrypt
+    auto decryptResult = cipher.decrypt(encryptResult.value());
+    ASSERT_TRUE(decryptResult.isSuccess()) << "Decryption of 1MB failed";
+    
+    // Verify
+    EXPECT_EQ(decryptResult.value().size(), dataSize);
+    EXPECT_EQ(plaintext, decryptResult.value());
+}
+
+// ============================================================================
+// Authentication Tests
+// ============================================================================
+
+TEST(AESCipher, TamperedCiphertext_Fails) {
+    SecureRandom rng;
+    auto keyResult = rng.generateAESKey();
+    ASSERT_TRUE(keyResult.isSuccess());
+    
+    AESCipher cipher(keyResult.value());
+    
+    std::string plaintext = "Important message";
+    ByteSpan plaintextSpan{reinterpret_cast<const Byte*>(plaintext.data()), plaintext.size()};
+    
+    // Encrypt
+    auto encryptResult = cipher.encrypt(plaintextSpan);
+    ASSERT_TRUE(encryptResult.isSuccess());
+    
+    // Tamper with ciphertext (modify a byte in the middle)
+    ByteBuffer tampered = encryptResult.value();
+    if (tampered.size() > 20) {
+        tampered[20] ^= 0xFF;
+    }
+    
+    // Decrypt should fail
+    auto decryptResult = cipher.decrypt(tampered);
+    EXPECT_TRUE(decryptResult.isFailure()) << "Tampered ciphertext should fail authentication";
+    EXPECT_EQ(decryptResult.error(), ErrorCode::AuthenticationFailed);
+}
+
+TEST(AESCipher, TamperedTag_Fails) {
+    SecureRandom rng;
+    auto keyResult = rng.generateAESKey();
+    ASSERT_TRUE(keyResult.isSuccess());
+    
+    AESCipher cipher(keyResult.value());
+    
+    std::string plaintext = "Important message";
+    ByteSpan plaintextSpan{reinterpret_cast<const Byte*>(plaintext.data()), plaintext.size()};
+    
+    // Encrypt
+    auto encryptResult = cipher.encrypt(plaintextSpan);
+    ASSERT_TRUE(encryptResult.isSuccess());
+    
+    // Tamper with tag (last 16 bytes)
+    ByteBuffer tampered = encryptResult.value();
+    tampered[tampered.size() - 1] ^= 0xFF;
+    
+    // Decrypt should fail
+    auto decryptResult = cipher.decrypt(tampered);
+    EXPECT_TRUE(decryptResult.isFailure()) << "Tampered tag should fail authentication";
+    EXPECT_EQ(decryptResult.error(), ErrorCode::AuthenticationFailed);
+}
+
+TEST(AESCipher, TamperedNonce_Fails) {
+    SecureRandom rng;
+    auto keyResult = rng.generateAESKey();
+    ASSERT_TRUE(keyResult.isSuccess());
+    
+    AESCipher cipher(keyResult.value());
+    
+    std::string plaintext = "Important message";
+    ByteSpan plaintextSpan{reinterpret_cast<const Byte*>(plaintext.data()), plaintext.size()};
+    
+    // Encrypt
+    auto encryptResult = cipher.encrypt(plaintextSpan);
+    ASSERT_TRUE(encryptResult.isSuccess());
+    
+    // Tamper with nonce (first 12 bytes)
+    ByteBuffer tampered = encryptResult.value();
+    tampered[5] ^= 0xFF;
+    
+    // Decrypt should fail (wrong nonce leads to authentication failure)
+    auto decryptResult = cipher.decrypt(tampered);
+    EXPECT_TRUE(decryptResult.isFailure()) << "Tampered nonce should fail authentication";
+}
+
+TEST(AESCipher, WrongKey_Fails) {
+    SecureRandom rng;
+    auto key1Result = rng.generateAESKey();
+    auto key2Result = rng.generateAESKey();
+    ASSERT_TRUE(key1Result.isSuccess());
+    ASSERT_TRUE(key2Result.isSuccess());
+    
+    AESCipher cipher1(key1Result.value());
+    AESCipher cipher2(key2Result.value());
+    
+    std::string plaintext = "Important message";
+    ByteSpan plaintextSpan{reinterpret_cast<const Byte*>(plaintext.data()), plaintext.size()};
+    
+    // Encrypt with cipher1
+    auto encryptResult = cipher1.encrypt(plaintextSpan);
+    ASSERT_TRUE(encryptResult.isSuccess());
+    
+    // Try to decrypt with cipher2 (wrong key)
+    auto decryptResult = cipher2.decrypt(encryptResult.value());
+    EXPECT_TRUE(decryptResult.isFailure()) << "Wrong key should fail authentication";
+    EXPECT_EQ(decryptResult.error(), ErrorCode::AuthenticationFailed);
+}
+
+TEST(AESCipher, WrongAAD_Fails) {
+    SecureRandom rng;
+    auto keyResult = rng.generateAESKey();
+    ASSERT_TRUE(keyResult.isSuccess());
+    
+    AESCipher cipher(keyResult.value());
+    
+    std::string plaintext = "Secret message";
+    std::string aad1 = "Correct AAD";
+    std::string aad2 = "Wrong AAD";
+    
+    ByteSpan plaintextSpan{reinterpret_cast<const Byte*>(plaintext.data()), plaintext.size()};
+    ByteSpan aad1Span{reinterpret_cast<const Byte*>(aad1.data()), aad1.size()};
+    ByteSpan aad2Span{reinterpret_cast<const Byte*>(aad2.data()), aad2.size()};
+    
+    // Encrypt with aad1
+    auto encryptResult = cipher.encrypt(plaintextSpan, aad1Span);
+    ASSERT_TRUE(encryptResult.isSuccess());
+    
+    // Try to decrypt with aad2
+    auto decryptResult = cipher.decrypt(encryptResult.value(), aad2Span);
+    EXPECT_TRUE(decryptResult.isFailure()) << "Wrong AAD should fail authentication";
+    EXPECT_EQ(decryptResult.error(), ErrorCode::AuthenticationFailed);
+}
+
+TEST(AESCipher, NoPlaintextOnAuthFailure) {
+    SecureRandom rng;
+    auto keyResult = rng.generateAESKey();
+    ASSERT_TRUE(keyResult.isSuccess());
+    
+    AESCipher cipher(keyResult.value());
+    
+    std::string plaintext = "Sensitive data that should never be exposed";
+    ByteSpan plaintextSpan{reinterpret_cast<const Byte*>(plaintext.data()), plaintext.size()};
+    
+    // Encrypt
+    auto encryptResult = cipher.encrypt(plaintextSpan);
+    ASSERT_TRUE(encryptResult.isSuccess());
+    
+    // Tamper with ciphertext
+    ByteBuffer tampered = encryptResult.value();
+    tampered[20] ^= 0xFF;
+    
+    // Decrypt should fail and return NO plaintext
+    auto decryptResult = cipher.decrypt(tampered);
+    ASSERT_TRUE(decryptResult.isFailure());
+    
+    // Verify that Result doesn't contain plaintext (should throw when accessing value)
+    EXPECT_THROW({
+        auto& value = decryptResult.value();
+        (void)value;
+    }, std::runtime_error);
+}
+
+// ============================================================================
+// Known Answer Tests (NIST CAVP Test Vectors)
+// ============================================================================
+
+TEST(AESCipher, NIST_GCM_TestVector1) {
+    // NIST CAVP GCM test vector
+    // Key: 00000000000000000000000000000000 00000000000000000000000000000000
+    // IV:  000000000000000000000000
+    // PT:  (empty)
+    // AAD: (empty)
+    // CT:  (empty)
+    // Tag: 530f8afbc74536b9a963b4f1c4cb738b
+    
+    AESKey key{};  // All zeros
+    AESNonce nonce{};  // All zeros
+    
+    AESCipher cipher(key);
+    
+    ByteSpan emptyPlaintext{};
+    
+    auto encryptResult = AESCipherTest::encryptWithNonce(cipher, emptyPlaintext, nonce);
+    ASSERT_TRUE(encryptResult.isSuccess());
+    
+    // Extract tag (last 16 bytes)
+    ASSERT_GE(encryptResult.value().size(), 16u);
+    const Byte expectedTag[16] = {
+        0x53, 0x0f, 0x8a, 0xfb, 0xc7, 0x45, 0x36, 0xb9,
+        0xa9, 0x63, 0xb4, 0xf1, 0xc4, 0xcb, 0x73, 0x8b
+    };
+    
+    ByteSpan actualTag{encryptResult.value().data() + encryptResult.value().size() - 16, 16};
+    EXPECT_EQ(std::memcmp(actualTag.data(), expectedTag, 16), 0)
+        << "NIST test vector tag doesn't match";
+}
+
+TEST(AESCipher, NIST_GCM_TestVector2) {
+    // NIST CAVP GCM test vector with plaintext
+    // Key: 00000000000000000000000000000000 00000000000000000000000000000000
+    // IV:  000000000000000000000000
+    // PT:  00000000000000000000000000000000
+    // AAD: (empty)
+    // CT:  cea7403d4d606b6e074ec5d3baf39d18
+    // Tag: d0d1c8a799996bf0265b98b5d48ab919
+    
+    AESKey key{};  // All zeros
+    AESNonce nonce{};  // All zeros
+    
+    Byte plaintext[16] = {};  // All zeros
+    
+    AESCipher cipher(key);
+    
+    ByteSpan plaintextSpan{plaintext, 16};
+    
+    auto encryptResult = AESCipherTest::encryptWithNonce(cipher, plaintextSpan, nonce);
+    ASSERT_TRUE(encryptResult.isSuccess());
+    
+    // Verify ciphertext (first 16 bytes)
+    ASSERT_GE(encryptResult.value().size(), 32u);  // 16 bytes CT + 16 bytes tag
+    
+    const Byte expectedCT[16] = {
+        0xce, 0xa7, 0x40, 0x3d, 0x4d, 0x60, 0x6b, 0x6e,
+        0x07, 0x4e, 0xc5, 0xd3, 0xba, 0xf3, 0x9d, 0x18
+    };
+    
+    ByteSpan actualCT{encryptResult.value().data(), 16};
+    EXPECT_EQ(std::memcmp(actualCT.data(), expectedCT, 16), 0)
+        << "NIST test vector ciphertext doesn't match";
+    
+    // Verify tag (last 16 bytes)
+    const Byte expectedTag[16] = {
+        0xd0, 0xd1, 0xc8, 0xa7, 0x99, 0x99, 0x6b, 0xf0,
+        0x26, 0x5b, 0x98, 0xb5, 0xd4, 0x8a, 0xb9, 0x19
+    };
+    
+    ByteSpan actualTag{encryptResult.value().data() + 16, 16};
+    EXPECT_EQ(std::memcmp(actualTag.data(), expectedTag, 16), 0)
+        << "NIST test vector tag doesn't match";
+}
+
+// ============================================================================
+// Advanced Features
+// ============================================================================
+
+TEST(AESCipher, EncryptWithNonce_CustomNonce) {
+    SecureRandom rng;
+    auto keyResult = rng.generateAESKey();
+    auto nonceResult = rng.generateNonce();
+    ASSERT_TRUE(keyResult.isSuccess());
+    ASSERT_TRUE(nonceResult.isSuccess());
+    
+    AESCipher cipher(keyResult.value());
+    
+    std::string plaintext = "Test message";
+    ByteSpan plaintextSpan{reinterpret_cast<const Byte*>(plaintext.data()), plaintext.size()};
+    
+    // Encrypt with custom nonce
+    auto encryptResult = AESCipherTest::encryptWithNonce(cipher, plaintextSpan, nonceResult.value());
+    ASSERT_TRUE(encryptResult.isSuccess());
+    
+    // Decrypt with same nonce
+    auto decryptResult = AESCipherTest::decryptWithNonce(cipher, encryptResult.value(), nonceResult.value());
+    ASSERT_TRUE(decryptResult.isSuccess());
+    
+    EXPECT_EQ(decryptResult.value().size(), plaintext.size());
+    EXPECT_EQ(std::memcmp(decryptResult.value().data(), plaintext.data(), plaintext.size()), 0);
+}
+
+TEST(AESCipher, SetKey_ChangesEncryption) {
+    SecureRandom rng;
+    auto key1Result = rng.generateAESKey();
+    auto key2Result = rng.generateAESKey();
+    ASSERT_TRUE(key1Result.isSuccess());
+    ASSERT_TRUE(key2Result.isSuccess());
+    
+    AESCipher cipher(key1Result.value());
+    
+    std::string plaintext = "Test message";
+    ByteSpan plaintextSpan{reinterpret_cast<const Byte*>(plaintext.data()), plaintext.size()};
+    
+    // Encrypt with key1
+    auto nonceResult = rng.generateNonce();
+    ASSERT_TRUE(nonceResult.isSuccess());
+    auto encryptResult1 = AESCipherTest::encryptWithNonce(cipher, plaintextSpan, nonceResult.value());
+    ASSERT_TRUE(encryptResult1.isSuccess());
+    
+    // Change key
+    cipher.setKey(key2Result.value());
+    
+    // Encrypt with key2 (same nonce for comparison)
+    auto encryptResult2 = AESCipherTest::encryptWithNonce(cipher, plaintextSpan, nonceResult.value());
+    ASSERT_TRUE(encryptResult2.isSuccess());
+    
+    // Ciphertexts should be different
+    EXPECT_NE(encryptResult1.value(), encryptResult2.value());
+}
+
+TEST(AESCipher, MultipleEncryptions_DifferentNonces) {
+    SecureRandom rng;
+    auto keyResult = rng.generateAESKey();
+    ASSERT_TRUE(keyResult.isSuccess());
+    
+    AESCipher cipher(keyResult.value());
+    
+    std::string plaintext = "Same message";
+    ByteSpan plaintextSpan{reinterpret_cast<const Byte*>(plaintext.data()), plaintext.size()};
+    
+    // Encrypt multiple times
+    auto encrypt1 = cipher.encrypt(plaintextSpan);
+    auto encrypt2 = cipher.encrypt(plaintextSpan);
+    auto encrypt3 = cipher.encrypt(plaintextSpan);
+    
+    ASSERT_TRUE(encrypt1.isSuccess());
+    ASSERT_TRUE(encrypt2.isSuccess());
+    ASSERT_TRUE(encrypt3.isSuccess());
+    
+    // All ciphertexts should be different (different nonces)
+    EXPECT_NE(encrypt1.value(), encrypt2.value());
+    EXPECT_NE(encrypt1.value(), encrypt3.value());
+    EXPECT_NE(encrypt2.value(), encrypt3.value());
+}
+
+// ============================================================================
+// Error Handling
+// ============================================================================
+
+TEST(AESCipher, InvalidKeySize_Throws) {
+    Byte shortKey[16] = {};
+    ByteSpan shortKeySpan{shortKey, 16};
+    
+    EXPECT_THROW({
+        AESCipher cipher(shortKeySpan);
+    }, std::invalid_argument);
+    
+    Byte longKey[64] = {};
+    ByteSpan longKeySpan{longKey, 64};
+    
+    EXPECT_THROW({
+        AESCipher cipher(longKeySpan);
+    }, std::invalid_argument);
+}
+
+TEST(AESCipher, TooShortCiphertext_Fails) {
+    SecureRandom rng;
+    auto keyResult = rng.generateAESKey();
+    ASSERT_TRUE(keyResult.isSuccess());
+    
+    AESCipher cipher(keyResult.value());
+    
+    // Ciphertext too short (minimum is 28 bytes: 12 nonce + 16 tag)
+    Byte shortCiphertext[20] = {};
+    ByteSpan shortSpan{shortCiphertext, 20};
+    
+    auto decryptResult = cipher.decrypt(shortSpan);
+    EXPECT_TRUE(decryptResult.isFailure());
+    EXPECT_EQ(decryptResult.error(), ErrorCode::InvalidArgument);
+}
+
+// ============================================================================
+// Utility Function Tests
+// ============================================================================
+
+TEST(CryptoUtils, ConstantTimeCompare_SameArrays) {
+    Byte arr1[16] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+    Byte arr2[16] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+    
+    EXPECT_TRUE(constantTimeCompare(ByteSpan{arr1, 16}, ByteSpan{arr2, 16}));
+}
+
+TEST(CryptoUtils, ConstantTimeCompare_DifferentArrays) {
+    Byte arr1[16] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+    Byte arr2[16] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17};
+    
+    EXPECT_FALSE(constantTimeCompare(ByteSpan{arr1, 16}, ByteSpan{arr2, 16}));
+}
+
+TEST(CryptoUtils, ConstantTimeCompare_DifferentSizes) {
+    Byte arr1[16] = {};
+    Byte arr2[8] = {};
+    
+    EXPECT_FALSE(constantTimeCompare(ByteSpan{arr1, 16}, ByteSpan{arr2, 8}));
+}
+
+TEST(CryptoUtils, SecureZero_ZerosMemory) {
+    Byte buffer[32];
+    std::fill(buffer, buffer + 32, static_cast<Byte>(0xFF));
+    
+    secureZero(buffer, 32);
+    
+    for (size_t i = 0; i < 32; ++i) {
+        EXPECT_EQ(buffer[i], 0);
+    }
+}
+
+TEST(CryptoUtils, ToHex_ConvertsCorrectly) {
+    Byte data[] = {0xDE, 0xAD, 0xBE, 0xEF};
+    ByteSpan dataSpan{data, 4};
+    
+    std::string hex = toHex(dataSpan);
+    EXPECT_EQ(hex, "deadbeef");
+}
+
+TEST(CryptoUtils, FromHex_ConvertsCorrectly) {
+    std::string hex = "deadbeef";
+    auto result = fromHex(hex);
+    
+    ASSERT_TRUE(result.isSuccess());
+    ASSERT_EQ(result.value().size(), 4u);
+    
+    EXPECT_EQ(result.value()[0], 0xDE);
+    EXPECT_EQ(result.value()[1], 0xAD);
+    EXPECT_EQ(result.value()[2], 0xBE);
+    EXPECT_EQ(result.value()[3], 0xEF);
+}
+
+TEST(CryptoUtils, HexRoundTrip) {
+    SecureRandom rng;
+    auto dataResult = rng.generate(32);
+    ASSERT_TRUE(dataResult.isSuccess());
+    
+    ByteSpan dataSpan{dataResult.value().data(), dataResult.value().size()};
+    std::string hex = toHex(dataSpan);
+    
+    auto fromHexResult = fromHex(hex);
+    ASSERT_TRUE(fromHexResult.isSuccess());
+    
+    EXPECT_EQ(dataResult.value(), fromHexResult.value());
+}
+
+TEST(CryptoUtils, Base64RoundTrip) {
+    SecureRandom rng;
+    auto dataResult = rng.generate(64);
+    ASSERT_TRUE(dataResult.isSuccess());
+    
+    ByteSpan dataSpan{dataResult.value().data(), dataResult.value().size()};
+    std::string base64 = toBase64(dataSpan);
+    
+    auto fromBase64Result = fromBase64(base64);
+    ASSERT_TRUE(fromBase64Result.isSuccess());
+    
+    EXPECT_EQ(dataResult.value(), fromBase64Result.value());
 }
