@@ -122,23 +122,4 @@ Result<ByteBuffer> HMAC::sha256(ByteSpan key, ByteSpan data) {
     return hmac.compute(data);
 }
 
-// ============================================================================
-// Constant-Time Comparison
-// ============================================================================
-
-bool constantTimeCompare(ByteSpan a, ByteSpan b) noexcept {
-    if (a.size() != b.size()) {
-        return false;
-    }
-    
-    // Use OpenSSL's CRYPTO_memcmp for constant-time comparison
-    // This is more robust than volatile and is specifically designed
-    // to resist timing attacks
-    if (a.size() == 0) {
-        return true; // Empty arrays are equal
-    }
-    
-    return CRYPTO_memcmp(a.data(), b.data(), a.size()) == 0;
-}
-
 } // namespace Sentinel::Crypto
