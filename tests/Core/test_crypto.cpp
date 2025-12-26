@@ -20,6 +20,27 @@ using namespace Sentinel;
 using namespace Sentinel::Crypto;
 
 // ============================================================================
+ copilot/fix-nonce-reuse-risk
+// Test-only accessor for private AESCipher methods
+// ============================================================================
+
+namespace Sentinel::Crypto {
+
+/**
+ * @brief Test accessor for AESCipher private methods
+ * 
+ * This class is used ONLY for testing NIST test vectors and validating
+ * the low-level encryption/decryption with known nonces.
+ * 
+ * Uses friend access to AESCipher class to access private methods that
+ * would otherwise expose catastrophic nonce reuse vulnerabilities if public.
+ * 
+ * WARNING: This accessor should NEVER be used in production code!
+ * The encryptWithNonce/decryptWithNonce methods are intentionally private
+ * to prevent catastrophic nonce reuse.
+ */
+class AESCipherTestAccessor {
+=======
 // Test Helper - Friend class to access private encryptWithNonce API
 // ============================================================================
 
@@ -33,6 +54,7 @@ using namespace Sentinel::Crypto;
  * Only use in controlled test environments with known-unique nonces.
  */
 class AESCipherTest {
+ copilot/implement-aescipher-aes-256-gcm
 public:
     static Result<ByteBuffer> encryptWithNonce(
         AESCipher& cipher,
@@ -53,6 +75,11 @@ public:
     }
 };
 
+ copilot/fix-nonce-reuse-risk
+} // namespace Sentinel::Crypto
+
+=======
+ copilot/implement-aescipher-aes-256-gcm
 // ============================================================================
 // Unit Tests
 // ============================================================================
@@ -971,7 +998,11 @@ TEST(AESCipher, NIST_GCM_TestVector1) {
     
     ByteSpan emptyPlaintext{};
     
+ copilot/fix-nonce-reuse-risk
+    auto encryptResult = AESCipherTestAccessor::encryptWithNonce(cipher, emptyPlaintext, nonce);
+=======
     auto encryptResult = AESCipherTest::encryptWithNonce(cipher, emptyPlaintext, nonce);
+ copilot/implement-aescipher-aes-256-gcm
     ASSERT_TRUE(encryptResult.isSuccess());
     
     // Extract tag (last 16 bytes)
@@ -1004,7 +1035,11 @@ TEST(AESCipher, NIST_GCM_TestVector2) {
     
     ByteSpan plaintextSpan{plaintext, 16};
     
+ copilot/fix-nonce-reuse-risk
+    auto encryptResult = AESCipherTestAccessor::encryptWithNonce(cipher, plaintextSpan, nonce);
+=======
     auto encryptResult = AESCipherTest::encryptWithNonce(cipher, plaintextSpan, nonce);
+ copilot/implement-aescipher-aes-256-gcm
     ASSERT_TRUE(encryptResult.isSuccess());
     
     // Verify ciphertext (first 16 bytes)
@@ -1046,12 +1081,21 @@ TEST(AESCipher, EncryptWithNonce_CustomNonce) {
     std::string plaintext = "Test message";
     ByteSpan plaintextSpan{reinterpret_cast<const Byte*>(plaintext.data()), plaintext.size()};
     
+ copilot/fix-nonce-reuse-risk
+    // Encrypt with custom nonce (using test accessor)
+    auto encryptResult = AESCipherTestAccessor::encryptWithNonce(cipher, plaintextSpan, nonceResult.value());
+    ASSERT_TRUE(encryptResult.isSuccess());
+    
+    // Decrypt with same nonce (using test accessor)
+    auto decryptResult = AESCipherTestAccessor::decryptWithNonce(cipher, encryptResult.value(), nonceResult.value());
+=======
     // Encrypt with custom nonce
     auto encryptResult = AESCipherTest::encryptWithNonce(cipher, plaintextSpan, nonceResult.value());
     ASSERT_TRUE(encryptResult.isSuccess());
     
     // Decrypt with same nonce
     auto decryptResult = AESCipherTest::decryptWithNonce(cipher, encryptResult.value(), nonceResult.value());
+ copilot/implement-aescipher-aes-256-gcm
     ASSERT_TRUE(decryptResult.isSuccess());
     
     EXPECT_EQ(decryptResult.value().size(), plaintext.size());
@@ -1070,17 +1114,26 @@ TEST(AESCipher, SetKey_ChangesEncryption) {
     std::string plaintext = "Test message";
     ByteSpan plaintextSpan{reinterpret_cast<const Byte*>(plaintext.data()), plaintext.size()};
     
-    // Encrypt with key1
+    // Encrypt with key1 (using test accessor)
     auto nonceResult = rng.generateNonce();
     ASSERT_TRUE(nonceResult.isSuccess());
+ copilot/fix-nonce-reuse-risk
+    auto encryptResult1 = AESCipherTestAccessor::encryptWithNonce(cipher, plaintextSpan, nonceResult.value());
+=======
     auto encryptResult1 = AESCipherTest::encryptWithNonce(cipher, plaintextSpan, nonceResult.value());
+ copilot/implement-aescipher-aes-256-gcm
     ASSERT_TRUE(encryptResult1.isSuccess());
     
     // Change key
     cipher.setKey(key2Result.value());
     
+ copilot/fix-nonce-reuse-risk
+    // Encrypt with key2 (same nonce for comparison) (using test accessor)
+    auto encryptResult2 = AESCipherTestAccessor::encryptWithNonce(cipher, plaintextSpan, nonceResult.value());
+=======
     // Encrypt with key2 (same nonce for comparison)
     auto encryptResult2 = AESCipherTest::encryptWithNonce(cipher, plaintextSpan, nonceResult.value());
+ copilot/implement-aescipher-aes-256-gcm
     ASSERT_TRUE(encryptResult2.isSuccess());
     
     // Ciphertexts should be different

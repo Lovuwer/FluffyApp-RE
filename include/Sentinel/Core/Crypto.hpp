@@ -222,6 +222,27 @@ private:
  * 
  * Provides authenticated encryption with associated data (AEAD).
  * 
+ copilot/fix-nonce-reuse-risk
+ * **Security guarantees:**
+ * - Automatic nonce generation ensures nonce uniqueness within a single process
+ * - Keys MUST be ephemeral (single process lifetime) to prevent nonce reuse
+ * - Nonce reuse with the same key is CATASTROPHIC in AES-GCM and breaks all security
+ * - NEVER reuse keys across process restarts without implementing stateful nonce management
+ * 
+ * **Key lifetime requirements:**
+ * - Keys should be generated fresh for each process or session
+ * - If persistent keys are required, implement counter-based or HKDF-derived nonces
+ * - Random nonces are only safe when keys are ephemeral
+ * 
+ * @example
+ * ```cpp
+ * // Generate ephemeral key
+ * SecureRandom rng;
+ * auto keyResult = rng.generateAESKey();
+ * AESCipher cipher(keyResult.value());
+ * 
+ * // Encrypt (nonce generated automatically)
+=======
  * **CRITICAL SECURITY INVARIANTS:**
  * 
  * 1. **Key Lifetime:** Keys MUST be treated as ephemeral session keys.
@@ -250,12 +271,18 @@ private:
  * SecureRandom rng;
  * AESCipher cipher(rng.generateAESKey().value());
  * 
+ copilot/implement-aescipher-aes-256-gcm
  * auto encrypted = cipher.encrypt(plaintext);
  * auto decrypted = cipher.decrypt(encrypted.value());
  * ```
  * 
+ copilot/fix-nonce-reuse-risk
+ * @warning Key reuse across process restarts with random nonces can lead to nonce collision!
+ * @warning Nonce reuse breaks ALL security properties of AES-GCM (confidentiality and authenticity)!
+=======
  * @warning DO NOT use encryptWithNonce() unless you have a provably unique
  *          nonce generation strategy. Prefer encrypt() which is misuse-resistant.
+ copilot/implement-aescipher-aes-256-gcm
  */
 class AESCipher {
 public:
@@ -274,14 +301,23 @@ public:
     ~AESCipher();
     
     /**
+ copilot/fix-nonce-reuse-risk
+     * @brief Encrypt data with AES-256-GCM
+     * 
+     * Automatically generates a cryptographically secure random nonce for each encryption.
+     * The nonce is prepended to the output.
+=======
      * @brief Encrypt data with AES-256-GCM (RECOMMENDED - misuse-resistant)
      * 
      * Automatically generates a cryptographically random 12-byte nonce.
      * Safe for ephemeral session keys.
+ copilot/implement-aescipher-aes-256-gcm
      * 
      * @param plaintext Data to encrypt
      * @param associatedData Additional authenticated data (optional)
      * @return Encrypted data (nonce + ciphertext + tag) or error
+     * 
+     * @note This is the ONLY safe public encryption method - it prevents nonce reuse
      */
     Result<ByteBuffer> encrypt(
         ByteSpan plaintext,
@@ -291,12 +327,18 @@ public:
     /**
      * @brief Decrypt data with AES-256-GCM
      * 
+ copilot/fix-nonce-reuse-risk
+     * Extracts the nonce from the input and verifies the authentication tag.
+=======
      * Verifies authentication tag before returning plaintext.
      * Returns error (NOT plaintext) if authentication fails.
+ copilot/implement-aescipher-aes-256-gcm
      * 
      * @param ciphertext Encrypted data (nonce + ciphertext + tag)
      * @param associatedData Additional authenticated data (optional)
      * @return Decrypted data or error
+     * 
+     * @note Returns error on authentication failure - NO plaintext is exposed
      */
     Result<ByteBuffer> decrypt(
         ByteSpan ciphertext,
@@ -305,11 +347,28 @@ public:
     
     /**
      * @brief Change the encryption key
+ copilot/fix-nonce-reuse-risk
+     * @param key New AES-256 key
+     * 
+     * @warning When changing keys, ensure the new key is also ephemeral
+=======
      * @param key New AES-256 key (32 bytes) - MUST be ephemeral session key
+ copilot/implement-aescipher-aes-256-gcm
      */
     void setKey(const AESKey& key);
 
 private:
+ copilot/fix-nonce-reuse-risk
+    /**
+     * @brief Encrypt with explicit nonce (INTERNAL USE ONLY)
+     * 
+     * @warning DANGEROUS: This method allows nonce reuse if called improperly
+     * @warning Only use for testing with NIST test vectors
+     * @warning NEVER expose this method to production code
+     * 
+     * @param plaintext Data to encrypt
+     * @param nonce 12-byte nonce (must be unique per encryption with this key)
+
     // ========================================================================
     // UNSAFE ADVANCED API - NONCE MISUSE RISK
     // ========================================================================
@@ -336,6 +395,7 @@ private:
      * 
      * @param plaintext Data to encrypt
      * @param nonce 12-byte nonce (MUST be unique per encryption with this key)
+ copilot/implement-aescipher-aes-256-gcm
      * @param associatedData Additional authenticated data (optional)
      * @return Ciphertext + tag (without nonce) or error
      */
@@ -346,9 +406,13 @@ private:
     );
     
     /**
+ copilot/fix-nonce-reuse-risk
+     * @brief Decrypt with explicit nonce (INTERNAL USE ONLY)
+=======
      * @brief [UNSAFE] Decrypt with caller-provided nonce
      * 
      * Companion to encryptWithNonce(). Same safety requirements apply.
+ copilot/implement-aescipher-aes-256-gcm
      * 
      * @param ciphertext Ciphertext + tag
      * @param nonce 12-byte nonce used for encryption
@@ -363,6 +427,10 @@ private:
 
     class Impl;
     std::unique_ptr<Impl> m_impl;
+    
+    // Test-only accessor class for validating NIST test vectors
+    // Defined in tests/Core/test_crypto.cpp to access private methods via friend mechanism
+    friend class AESCipherTestAccessor;
 };
 
 // ============================================================================
@@ -548,9 +616,19 @@ Result<ByteBuffer> fromBase64(const std::string& base64);
 
 /**
  * @brief Constant-time comparison of byte arrays
+ * 
+ * This function is provided for comparing non-AEAD authentication values
+ * (e.g., HMAC tags, password hashes) in constant time to prevent timing attacks.
+ * 
  * @param a First array
  * @param b Second array
  * @return true if equal
+ * 
+ * @warning DO NOT use this for AEAD (AES-GCM) tag comparison!
+ * @warning OpenSSL's EVP_DecryptFinal_ex already performs constant-time tag verification.
+ * @warning Manual AEAD tag comparison bypasses cryptographic library guarantees and is unsafe.
+ * 
+ * @note For AEAD operations, always use the decrypt() method which handles tag verification internally.
  */
 bool constantTimeCompare(ByteSpan a, ByteSpan b) noexcept;
 
