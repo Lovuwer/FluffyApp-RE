@@ -41,11 +41,25 @@
  *    - Always generate fresh keys on process startup
  *    - For persistent encryption, use key derivation per session
  * 
+ * Key lifetime requirements:
+ * - Keys MUST be ephemeral (single session/process lifetime)
+ * - DO NOT persist keys across process restarts
+ * - DO NOT reuse keys after 2^32 encryptions (nonce exhaustion)
+ * - Random nonces are safe ONLY for ephemeral keys
+ * 
  * Defends against:
  * - Ciphertext tampering (GCM authentication tag verified by OpenSSL)
  * - Plaintext recovery without key
+ copilot/fix-nonce-reuse-risk
  * - Timing attacks (OpenSSL performs constant-time tag verification)
  * - Nonce reuse (prevented by API design - encryptWithNonce is private)
+=======
+ * - Nonce reuse (catastrophic in GCM) - prevented by design
+ * 
+ * NONCE REUSE = CATASTROPHIC FAILURE:
+ * - Reusing a nonce with the same key breaks confidentiality AND authenticity
+ * - This is why encryptWithNonce() is private and access-controlled
+ copilot/implement-aescipher-aes-256-gcm
  */
 
 #include <Sentinel/Core/Crypto.hpp>
@@ -84,6 +98,7 @@ void secureZero(void* data, size_t size) noexcept {
  * Compares two byte arrays without early exit, preventing timing side-channels
  * that could leak information about the data being compared.
  * 
+ copilot/fix-nonce-reuse-risk
  * **Important usage notes:**
  * - Use for comparing HMAC tags, password hashes, or other non-AEAD MACs
  * - DO NOT use for AES-GCM authentication tags (OpenSSL handles this internally)
@@ -92,6 +107,16 @@ void secureZero(void* data, size_t size) noexcept {
  * 
  * For AES-GCM decryption, always use the decrypt() method which internally
  * calls EVP_DecryptFinal_ex for secure tag verification.
+=======
+ * **NOTE:** For AEAD tag verification, use the cipher's built-in verification
+ * (e.g., EVP_DecryptFinal_ex for GCM). OpenSSL already performs constant-time
+ * tag comparison internally. This function is provided for other use cases
+ * where manual constant-time comparison is needed (e.g., password hashes,
+ * HMAC values in protocols that require manual verification).
+ * 
+ * **WARNING:** DO NOT use this to manually verify AEAD tags. Always use
+ * the cipher's authentication verification API.
+ copilot/implement-aescipher-aes-256-gcm
  */
 bool constantTimeCompare(ByteSpan a, ByteSpan b) noexcept {
     if (a.size() != b.size()) {
