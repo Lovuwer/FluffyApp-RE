@@ -107,9 +107,11 @@ TEST(SecureZero, LargeBuffer_1MB) {
 // Helper function that allocates local array, fills it, zeros it, and returns
 // This function is designed to test whether the compiler optimizes away the
 // secureZero call when the buffer is not read afterward.
-__attribute__((noinline))  // GCC/Clang: prevent inlining
 #ifdef _MSC_VER
 __declspec(noinline)       // MSVC: prevent inlining
+#endif
+#ifdef __GNUC__
+__attribute__((noinline))  // GCC/Clang: prevent inlining
 #endif
 void fillAndZeroLocalBuffer() {
     // Local stack buffer with sensitive data

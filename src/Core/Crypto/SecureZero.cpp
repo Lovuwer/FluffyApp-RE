@@ -22,6 +22,7 @@
 #include <Sentinel/Core/Crypto.hpp>
 #include <cstdint>
 #include <cstddef>
+#include <atomic>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -71,7 +72,15 @@ void secureZero(void* data, size_t size) noexcept {
     // Memory barrier to prevent speculative execution from reordering
     // operations. This ensures that the zeroing completes before any
     // subsequent operations that might depend on it.
-    __asm__ __volatile__("" ::: "memory");
+    #if defined(__GNUC__) || defined(__clang__)
+        __asm__ __volatile__("" ::: "memory");
+    #elif defined(_MSC_VER)
+        _ReadWriteBarrier();
+    #else
+        // For other compilers, volatile should be sufficient
+        // but we add an atomic fence for extra safety
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+    #endif
 #endif
 }
 
