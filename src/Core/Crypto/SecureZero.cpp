@@ -78,8 +78,9 @@ void secureZero(void* data, size_t size) noexcept {
         _ReadWriteBarrier();
     #else
         // For other compilers, volatile should be sufficient
-        // but we add an atomic fence for extra safety
-        std::atomic_thread_fence(std::memory_order_seq_cst);
+        // but we add an atomic fence for extra safety.
+        // acquire-release ordering is sufficient to prevent reordering.
+        std::atomic_thread_fence(std::memory_order_acq_rel);
     #endif
 #endif
 }

@@ -104,15 +104,19 @@ TEST(SecureZero, LargeBuffer_1MB) {
 // Unit Test 4: Adversarial - Optimizer Resistance
 // ============================================================================
 
+// Compiler-specific noinline directive
+#if defined(_MSC_VER)
+    #define NOINLINE __declspec(noinline)
+#elif defined(__GNUC__) || defined(__clang__)
+    #define NOINLINE __attribute__((noinline))
+#else
+    #define NOINLINE
+#endif
+
 // Helper function that allocates local array, fills it, zeros it, and returns
 // This function is designed to test whether the compiler optimizes away the
 // secureZero call when the buffer is not read afterward.
-#ifdef _MSC_VER
-__declspec(noinline)       // MSVC: prevent inlining
-#endif
-#ifdef __GNUC__
-__attribute__((noinline))  // GCC/Clang: prevent inlining
-#endif
+NOINLINE
 void fillAndZeroLocalBuffer() {
     // Local stack buffer with sensitive data
     constexpr size_t bufferSize = 128;
