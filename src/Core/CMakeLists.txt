@@ -54,6 +54,14 @@ target_link_libraries(SentinelCore
         spdlog::spdlog
 )
 
+ copilot/implement-hmac-constant-time-verification
+# Link OpenSSL if available (required for HMAC implementation)
+if(OpenSSL_FOUND)
+    target_link_libraries(SentinelCore
+        PRIVATE
+            OpenSSL::Crypto
+            OpenSSL::SSL
+=======
 # Link OpenSSL if available
 if(OpenSSL_FOUND)
     target_link_libraries(SentinelCore
@@ -64,6 +72,7 @@ if(OpenSSL_FOUND)
     target_compile_definitions(SentinelCore
         PRIVATE
             SENTINEL_USE_OPENSSL
+ main
     )
 endif()
 
