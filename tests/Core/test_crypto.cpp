@@ -266,7 +266,6 @@ TEST(SecureRandom, SequentialGenerations_AreDifferent) {
 }
 
 // ============================================================================
- copilot/implement-hmac-constant-time-verification
 // HMAC Tests - RFC 4231 Test Vectors
 // ============================================================================
 
@@ -703,7 +702,9 @@ TEST(ConstantTimeCompare, EmptyArrays_ReturnsTrue) {
     ByteBuffer b;
     
     EXPECT_TRUE(constantTimeCompare(a, b)) << "Empty arrays should return true";
-=======
+}
+
+// ============================================================================
 // HashEngine Tests
 // ============================================================================
 
@@ -1086,5 +1087,4 @@ TEST(HashEngine, MD5_Legacy_StillWorks) {
     
     EXPECT_EQ(std::memcmp(result.value().data(), expected, 16), 0)
         << "MD5 of 'abc' doesn't match known vector";
- main
 }
