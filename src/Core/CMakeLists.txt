@@ -17,7 +17,6 @@ target_sources(SentinelCore
         Crypto/HashEngine.cpp
         Crypto/SecureRandom.cpp
         Crypto/HMAC.cpp
-        Crypto/CryptoUtils.cpp
         
         # Memory manipulation
         Memory/MemoryScanner.cpp

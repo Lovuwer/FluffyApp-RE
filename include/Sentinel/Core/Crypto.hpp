@@ -25,9 +25,6 @@
 #include <memory>
 #include <string>
 
-// Forward declaration for test friend class (in global namespace)
-class AESCipherTest;
-
 namespace Sentinel::Crypto {
 
 // ============================================================================
@@ -222,63 +219,35 @@ private:
  * 
  * Provides authenticated encryption with associated data (AEAD).
  * 
- * **CRITICAL SECURITY INVARIANTS:**
- * 
- * 1. **Key Lifetime:** Keys MUST be treated as ephemeral session keys.
- *    - Generate a fresh key for each session/connection
- *    - DO NOT persist keys across process restarts
- *    - DO NOT reuse keys after 2^32 encryptions (nonce exhaustion)
- * 
- * 2. **Nonce Strategy:** This implementation uses random nonces.
- *    - Safe for ephemeral keys (single session/process lifetime)
- *    - NOT safe for long-lived keys across process restarts
- *    - Nonce collision probability: ~2^-64 after 2^32 messages
- * 
- * 3. **Nonce Reuse = CATASTROPHIC FAILURE:**
- *    - Reusing a nonce with the same key breaks confidentiality AND authenticity
- *    - Attacker can recover plaintext and forge messages
- *    - This is why encryptWithNonce() is marked unsafe
- * 
- * **RECOMMENDED USAGE:**
- * - Use encrypt() which auto-generates random nonces (safe)
- * - Generate fresh keys per session/connection
- * - Rotate keys before 2^32 encryptions
- * 
  * @example
  * ```cpp
- * // SAFE: Fresh key per session, auto-generated nonces
- * SecureRandom rng;
- * AESCipher cipher(rng.generateAESKey().value());
+ * AESCipher cipher(key);
  * 
+ * // Encrypt
  * auto encrypted = cipher.encrypt(plaintext);
+ * 
+ * // Decrypt
  * auto decrypted = cipher.decrypt(encrypted.value());
  * ```
- * 
- * @warning DO NOT use encryptWithNonce() unless you have a provably unique
- *          nonce generation strategy. Prefer encrypt() which is misuse-resistant.
  */
 class AESCipher {
 public:
     /**
      * @brief Construct cipher with key
-     * @param key AES-256 key (32 bytes) - MUST be ephemeral session key
+     * @param key AES-256 key (32 bytes)
      */
     explicit AESCipher(const AESKey& key);
     
     /**
      * @brief Construct cipher with key from buffer
-     * @param key Key bytes (must be 32 bytes) - MUST be ephemeral session key
+     * @param key Key bytes (must be 32 bytes)
      */
     explicit AESCipher(ByteSpan key);
     
     ~AESCipher();
     
     /**
-     * @brief Encrypt data with AES-256-GCM (RECOMMENDED - misuse-resistant)
-     * 
-     * Automatically generates a cryptographically random 12-byte nonce.
-     * Safe for ephemeral session keys.
-     * 
+     * @brief Encrypt data with AES-256-GCM
      * @param plaintext Data to encrypt
      * @param associatedData Additional authenticated data (optional)
      * @return Encrypted data (nonce + ciphertext + tag) or error
@@ -290,10 +259,6 @@ public:
     
     /**
      * @brief Decrypt data with AES-256-GCM
-     * 
-     * Verifies authentication tag before returning plaintext.
-     * Returns error (NOT plaintext) if authentication fails.
-     * 
      * @param ciphertext Encrypted data (nonce + ciphertext + tag)
      * @param associatedData Additional authenticated data (optional)
      * @return Decrypted data or error
@@ -304,38 +269,9 @@ public:
     );
     
     /**
-     * @brief Change the encryption key
-     * @param key New AES-256 key (32 bytes) - MUST be ephemeral session key
-     */
-    void setKey(const AESKey& key);
-
-private:
-    // ========================================================================
-    // UNSAFE ADVANCED API - NONCE MISUSE RISK
-    // ========================================================================
-    // These methods are private to prevent accidental misuse.
-    // They expose the caller to catastrophic nonce-reuse vulnerabilities.
-    // Only use via friend classes with proven nonce-uniqueness guarantees.
-    // ========================================================================
-    
-    friend class ::AESCipherTest; // For testing only
-    
-    /**
-     * @brief [UNSAFE] Encrypt with caller-provided nonce
-     * 
-     * **DANGER:** Nonce reuse with the same key is CATASTROPHIC.
-     * - Breaks confidentiality (attacker recovers plaintext)
-     * - Breaks authenticity (attacker forges messages)
-     * 
-     * **Requirements for safe use:**
-     * - Nonce MUST be unique for every encryption with this key
-     * - Caller MUST have a provably unique nonce generation strategy
-     * - Examples: Hardware counter, HKDF-derived with unique context
-     * 
-     * **DO NOT use random nonces with long-lived keys** - collision risk
-     * 
+     * @brief Encrypt with explicit nonce
      * @param plaintext Data to encrypt
-     * @param nonce 12-byte nonce (MUST be unique per encryption with this key)
+     * @param nonce 12-byte nonce (must be unique per encryption)
      * @param associatedData Additional authenticated data (optional)
      * @return Ciphertext + tag (without nonce) or error
      */
@@ -346,10 +282,7 @@ private:
     );
     
     /**
-     * @brief [UNSAFE] Decrypt with caller-provided nonce
-     * 
-     * Companion to encryptWithNonce(). Same safety requirements apply.
-     * 
+     * @brief Decrypt with explicit nonce
      * @param ciphertext Ciphertext + tag
      * @param nonce 12-byte nonce used for encryption
      * @param associatedData Additional authenticated data (optional)
@@ -360,7 +293,14 @@ private:
         const AESNonce& nonce,
         ByteSpan associatedData = {}
     );
+    
+    /**
+     * @brief Change the encryption key
+     * @param key New AES-256 key
+     */
+    void setKey(const AESKey& key);
 
+private:
     class Impl;
     std::unique_ptr<Impl> m_impl;
 };
