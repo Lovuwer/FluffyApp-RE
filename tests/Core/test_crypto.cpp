@@ -171,33 +171,24 @@ TEST(SecureRandom, SizeBoundary_ULONG_MAX) {
     EXPECT_EQ(result.value().size(), testSize);
 }
 
-#ifdef _WIN32
-// Windows-specific test for ULONG_MAX boundary
+#if defined(_WIN32) && defined(_WIN64)
+// Windows 64-bit specific test for ULONG_MAX boundary
 TEST(SecureRandom, SizeBoundary_ULONG_MAX_Plus_One) {
     SecureRandom rng;
     
     // On 64-bit Windows, size_t is 64-bit but ULONG is 32-bit
     // Test that we can handle sizes > ULONG_MAX (4GB)
-    // Note: This test is skipped in CI due to memory constraints
-    // We test the logic by verifying the implementation can handle chunking
+    // Note: We test with a practical size to verify chunking logic works
+    // The actual ULONG_MAX + 1 allocation would need 4GB+ memory
     
-    if constexpr (sizeof(size_t) > sizeof(ULONG)) {
-        // Test a size slightly larger than ULONG_MAX
-        // For practical testing, we use a smaller size to verify chunking logic
-        constexpr size_t chunkTestSize = static_cast<size_t>(ULONG_MAX) + 1024;
-        
-        // Skip if we can't allocate this much memory (likely in CI)
-        // The chunking logic is exercised by the testSize calculation
-        std::cout << "ULONG_MAX boundary test: would need " 
-                  << (chunkTestSize / (1024.0 * 1024.0 * 1024.0)) 
-                  << " GB, skipping actual allocation" << std::endl;
-        
-        // Instead, verify the logic works with a more reasonable size
-        constexpr size_t practicalSize = 1024 * 1024 * 100; // 100MB
-        auto result = rng.generate(practicalSize);
-        ASSERT_TRUE(result.isSuccess()) << "Failed to generate chunked data";
-        EXPECT_EQ(result.value().size(), practicalSize);
-    }
+    // Verify the logic works with a 100MB size that exercises chunking
+    constexpr size_t practicalSize = 1024 * 1024 * 100; // 100MB
+    auto result = rng.generate(practicalSize);
+    ASSERT_TRUE(result.isSuccess()) << "Failed to generate chunked data";
+    EXPECT_EQ(result.value().size(), practicalSize);
+    
+    // Document that full ULONG_MAX + 1 test would require 4GB+ memory
+    RecordProperty("note", "Full ULONG_MAX+1 test (4GB+) skipped due to memory constraints");
 }
 #endif
 
@@ -236,8 +227,8 @@ TEST(SecureRandom, NIST_MonobitFrequencyTest) {
     EXPECT_LT(oneBitRatio, 0.51) << "Monobit test failed: too many 1-bits (" 
                                   << (oneBitRatio * 100) << "%)";
     
-    std::cout << "Monobit test passed: " << (oneBitRatio * 100) 
-              << "% 1-bits (expected 49-51%)" << std::endl;
+    // Record the actual ratio for analysis
+    RecordProperty("one_bit_percentage", oneBitRatio * 100);
 }
 
 TEST(SecureRandom, NIST_RunsTest_Basic) {
@@ -284,8 +275,9 @@ TEST(SecureRandom, NIST_RunsTest_Basic) {
     EXPECT_LT(static_cast<double>(runCount), upperBound) 
         << "Runs test failed: too many runs detected";
     
-    std::cout << "Runs test passed: " << runCount << " runs detected "
-              << "(expected ~" << expectedRuns << ")" << std::endl;
+    // Record the actual run count for analysis
+    RecordProperty("run_count", static_cast<int>(runCount));
+    RecordProperty("expected_runs", static_cast<int>(expectedRuns));
 }
 
 // ============================================================================
