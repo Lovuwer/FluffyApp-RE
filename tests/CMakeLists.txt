@@ -6,6 +6,7 @@
 add_executable(CoreTests
     Core/test_main.cpp
     Core/test_crypto.cpp
+    Core/test_constant_time.cpp
 )
 
 target_link_libraries(CoreTests
