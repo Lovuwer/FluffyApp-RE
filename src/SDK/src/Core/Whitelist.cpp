@@ -236,17 +236,20 @@ bool WhitelistManager::IsModuleWhitelisted(const std::string& moduleHash) const 
 bool WhitelistManager::IsRegionWhitelisted(uintptr_t address, size_t size) const {
     std::lock_guard<std::mutex> lock(mutex_);
     
-    // For now, memory regions are not implemented in builtin whitelist
-    // This would be used for custom whitelisted memory regions
+    // TODO: Implement memory region whitelisting
+    // This is a placeholder for future implementation
+    // Memory regions would need to be stored with base address and size
+    // and checked for overlap with the queried region
     for (const auto& entry : entries_) {
         if (entry.type == WhitelistType::MemoryRegion) {
             // Parse identifier as "address-size" format
-            // This is a placeholder for future implementation
+            // Example: "0x140000000-0x1000" for a 4KB region at 0x140000000
             (void)address;
             (void)size;
         }
     }
     
+    // Currently always returns false - not implemented
     return false;
 }
 
@@ -321,7 +324,7 @@ bool WhitelistManager::IsVirtualizedEnvironment() const {
     memcpy(vendor + 4, &cpuInfo[2], 4);
     memcpy(vendor + 8, &cpuInfo[3], 4);
     
-    // Check against known virtualization platforms
+    // Check against known virtualization platforms in whitelist
     std::lock_guard<std::mutex> lock(mutex_);
     for (const auto& entry : entries_) {
         if (entry.type == WhitelistType::TimingException) {
@@ -331,7 +334,8 @@ bool WhitelistManager::IsVirtualizedEnvironment() const {
         }
     }
     
-    // Known vendor strings
+    // Also check for common VM vendor strings not in whitelist
+    // This provides fallback detection for VMs even if whitelist is not initialized
     if (strstr(vendor, "VMwareVMware") != nullptr) return true;
     if (strstr(vendor, "VBoxVBoxVBox") != nullptr) return true;
     if (strstr(vendor, "Microsoft Hv") != nullptr) return true;
@@ -384,10 +388,12 @@ bool WhitelistManager::VerifyModuleSignature(
         CRYPT_PROVIDER_SGNR* signer = WTHelperGetProvSignerFromChain(
             provData, 0, FALSE, 0);
         if (signer && signer->pChainContext) {
-            // Extract and compare signer name
-            // For now, we assume signature is valid if we got here
-            // Full implementation would extract and compare the actual signer name
-            (void)expectedSigner; // Unused for now
+            // TODO: Extract and compare the actual signer name against expectedSigner
+            // This requires additional WinTrust API calls to extract certificate subject
+            // For now, we only verify that a valid signature exists
+            // SECURITY NOTE: This is a placeholder implementation and should be completed
+            // before using signature verification for security-critical decisions
+            (void)expectedSigner; // Unused in placeholder implementation
         }
     }
     
@@ -395,7 +401,9 @@ bool WhitelistManager::VerifyModuleSignature(
     trustData.dwStateAction = WTD_STATEACTION_CLOSE;
     WinVerifyTrust(NULL, &policyGUID, &trustData);
     
-    return true;  // Simplified - full implementation would compare signer
+    // SECURITY NOTE: Currently returns true if signature is valid, regardless of signer
+    // Full implementation should compare actual signer against expectedSigner
+    return true;  // Placeholder - signature exists and is valid
 #else
     (void)modulePath;
     (void)expectedSigner;
