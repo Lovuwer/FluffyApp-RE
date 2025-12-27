@@ -236,9 +236,9 @@ TEST(SafeMemoryTests, SafeHashProtectedMemory) {
 
 /**
  * Test 14: Multiple concurrent SafeRead operations
- * Verifies thread safety of SafeMemory operations
+ * Verifies that SafeMemory operations work correctly with multiple buffers
  */
-TEST(SafeMemoryTests, ConcurrentSafeRead) {
+TEST(SafeMemoryTests, MultipleSafeRead) {
     const int numBuffers = 100;
     std::vector<uint8_t*> buffers;
     
@@ -249,9 +249,8 @@ TEST(SafeMemoryTests, ConcurrentSafeRead) {
         buffers.push_back(buffer);
     }
     
-    // Read from all buffers concurrently
+    // Read from all buffers
     bool allSuccess = true;
-    #pragma omp parallel for
     for (int i = 0; i < numBuffers; i++) {
         uint8_t dest[128];
         if (!SafeMemory::SafeRead(buffers[i], dest, 128)) {

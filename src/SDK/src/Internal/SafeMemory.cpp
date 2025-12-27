@@ -130,11 +130,16 @@ bool SafeMemory::SafeHash(const void* address, size_t size, uint64_t* out_hash) 
     // Use structured exception handling to catch access violations
     __try {
         const uint8_t* bytes = static_cast<const uint8_t*>(address);
-        uint64_t hash = 0xcbf29ce484222325ULL;  // FNV-1a offset basis
+        
+        // FNV-1a hash algorithm constants
+        static constexpr uint64_t FNV_OFFSET_BASIS = 0xcbf29ce484222325ULL;
+        static constexpr uint64_t FNV_PRIME = 0x100000001b3ULL;
+        
+        uint64_t hash = FNV_OFFSET_BASIS;
         
         for (size_t i = 0; i < size; i++) {
             hash ^= bytes[i];
-            hash *= 0x100000001b3ULL;  // FNV-1a prime
+            hash *= FNV_PRIME;
         }
         
         *out_hash = hash;
@@ -148,11 +153,16 @@ bool SafeMemory::SafeHash(const void* address, size_t size, uint64_t* out_hash) 
 #else
     // Non-Windows: attempt hash computation without SEH
     const uint8_t* bytes = static_cast<const uint8_t*>(address);
-    uint64_t hash = 0xcbf29ce484222325ULL;
+    
+    // FNV-1a hash algorithm constants
+    static constexpr uint64_t FNV_OFFSET_BASIS = 0xcbf29ce484222325ULL;
+    static constexpr uint64_t FNV_PRIME = 0x100000001b3ULL;
+    
+    uint64_t hash = FNV_OFFSET_BASIS;
     
     for (size_t i = 0; i < size; i++) {
         hash ^= bytes[i];
-        hash *= 0x100000001b3ULL;
+        hash *= FNV_PRIME;
     }
     
     *out_hash = hash;

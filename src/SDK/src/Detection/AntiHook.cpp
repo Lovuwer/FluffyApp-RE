@@ -131,6 +131,9 @@ bool AntiHookDetector::IsIATHooked(const char* module_name, const char* function
     HMODULE hModule = GetModuleHandle(nullptr);
     if (!hModule) return false;
     
+    // Maximum reasonable PE header offset (64KB)
+    static constexpr LONG MAX_PE_HEADER_OFFSET = 0x10000;
+    
     // Wrap PE parsing in SEH to catch malformed headers
     __try {
         // Parse PE headers with defensive checks
@@ -144,7 +147,7 @@ bool AntiHookDetector::IsIATHooked(const char* module_name, const char* function
         if (dosHeader->e_magic != IMAGE_DOS_SIGNATURE) return false;
         
         // Verify NT headers location is within bounds and readable
-        if (dosHeader->e_lfanew < 0 || dosHeader->e_lfanew > 0x10000) {
+        if (dosHeader->e_lfanew < 0 || dosHeader->e_lfanew > MAX_PE_HEADER_OFFSET) {
             return false;  // Unreasonable offset
         }
         
