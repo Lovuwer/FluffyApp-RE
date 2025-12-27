@@ -648,3 +648,280 @@ TEST(AntiHookTests, KnownForwardAllowlist) {
     detector.Shutdown();
 }
 #endif
+
+/**
+ * Test 20: Double-Check Pattern Detection
+ * Verifies that the double-check pattern can detect dynamic hooks
+ */
+TEST(AntiHookTests, DoubleCheckPattern) {
+    AntiHookDetector detector;
+    detector.Initialize();
+    
+    // Create a function buffer
+    uint8_t buffer[32];
+    memset(buffer, 0x90, 32);  // Fill with NOPs
+    
+    FunctionProtection func;
+    func.address = reinterpret_cast<uintptr_t>(buffer);
+    func.name = "DoubleCheckTest";
+    func.prologue_size = 16;
+    memcpy(func.original_prologue.data(), buffer, 16);
+    
+    detector.RegisterFunction(func);
+    
+    // Verify it's clean initially
+    EXPECT_FALSE(detector.CheckFunction(func.address))
+        << "Function should be clean initially";
+    
+    // Modify the buffer to simulate a hook
+    buffer[0] = 0xE9;  // JMP
+    
+    // The double-check pattern should detect this
+    EXPECT_TRUE(detector.CheckFunction(func.address))
+        << "Modified function should be detected";
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test 21: Extended Suspicious Jump Detection (16 bytes)
+ * Verifies that hooks at offsets 0-5 are detected
+ */
+TEST(AntiHookTests, ExtendedSuspiciousJumpDetection) {
+    AntiHookDetector detector;
+    detector.Initialize();
+    
+    // Test hooks at different offsets (0-5)
+    for (size_t offset = 0; offset <= 5; offset++) {
+        uint8_t buffer[32];
+        memset(buffer, 0x90, 32);  // Fill with NOPs
+        
+        // Place a JMP at the offset
+        buffer[offset] = 0xE9;  // JMP rel32
+        
+        uintptr_t addr = reinterpret_cast<uintptr_t>(buffer);
+        bool isHooked = detector.CheckFunction(addr);
+        
+        EXPECT_TRUE(isHooked)
+            << "JMP at offset " << offset << " should be detected";
+    }
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test 22: INT 3 Detection in First 16 Bytes
+ * Verifies that INT 3 anywhere in the first 16 bytes is detected
+ */
+TEST(AntiHookTests, Int3DetectionInFirst16Bytes) {
+    AntiHookDetector detector;
+    detector.Initialize();
+    
+    // Test INT 3 at various positions
+    for (size_t pos = 0; pos < 16; pos++) {
+        uint8_t buffer[32];
+        memset(buffer, 0x90, 32);  // Fill with NOPs
+        
+        // Place an INT 3 at the position
+        buffer[pos] = 0xCC;
+        
+        uintptr_t addr = reinterpret_cast<uintptr_t>(buffer);
+        bool isHooked = detector.CheckFunction(addr);
+        
+        EXPECT_TRUE(isHooked)
+            << "INT 3 at position " << pos << " should be detected";
+    }
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test 23: Honeypot Function Registration
+ * Verifies that honeypot functions can be registered and checked
+ */
+TEST(AntiHookTests, HoneypotRegistration) {
+    AntiHookDetector detector;
+    detector.Initialize();
+    
+    // Create a honeypot function
+    uint8_t honeypotBuffer[32];
+    memset(honeypotBuffer, 0x90, 32);
+    
+    FunctionProtection honeypot;
+    honeypot.address = reinterpret_cast<uintptr_t>(honeypotBuffer);
+    honeypot.name = "HoneypotFunction";
+    honeypot.prologue_size = 16;
+    memcpy(honeypot.original_prologue.data(), honeypotBuffer, 16);
+    
+    detector.RegisterHoneypot(honeypot);
+    
+    // Honeypot should be clean initially
+    std::vector<ViolationEvent> violations = detector.FullScan();
+    EXPECT_TRUE(violations.empty())
+        << "Clean honeypot should not trigger violations";
+    
+    // Modify the honeypot
+    honeypotBuffer[0] = 0xE9;  // JMP
+    
+    // Now it should be detected
+    violations = detector.FullScan();
+    
+    bool honeypotViolationFound = false;
+    for (const auto& v : violations) {
+        if (v.address == honeypot.address) {
+            honeypotViolationFound = true;
+            EXPECT_EQ(v.severity, Severity::Critical)
+                << "Honeypot violation should be Critical";
+        }
+    }
+    
+    EXPECT_TRUE(honeypotViolationFound)
+        << "Modified honeypot should be detected";
+    
+    detector.UnregisterHoneypot(honeypot.address);
+    detector.Shutdown();
+}
+
+/**
+ * Test 24: Honeypot Unregistration
+ * Verifies that honeypots can be unregistered
+ */
+TEST(AntiHookTests, HoneypotUnregistration) {
+    AntiHookDetector detector;
+    detector.Initialize();
+    
+    std::vector<uint8_t*> buffers;
+    
+    // Register multiple honeypots
+    for (int i = 0; i < 5; i++) {
+        uint8_t* buffer = new uint8_t[32];
+        memset(buffer, 0x90, 32);
+        buffers.push_back(buffer);
+        
+        FunctionProtection honeypot;
+        honeypot.address = reinterpret_cast<uintptr_t>(buffer);
+        honeypot.name = "Honeypot_" + std::to_string(i);
+        honeypot.prologue_size = 16;
+        memcpy(honeypot.original_prologue.data(), buffer, 16);
+        
+        detector.RegisterHoneypot(honeypot);
+    }
+    
+    // Unregister the middle one
+    detector.UnregisterHoneypot(reinterpret_cast<uintptr_t>(buffers[2]));
+    
+    // Modify the unregistered honeypot
+    buffers[2][0] = 0xE9;
+    
+    // It should NOT be detected after unregistration
+    std::vector<ViolationEvent> violations = detector.FullScan();
+    
+    for (const auto& v : violations) {
+        EXPECT_NE(v.address, reinterpret_cast<uintptr_t>(buffers[2]))
+            << "Unregistered honeypot should not trigger violations";
+    }
+    
+    // Cleanup
+    for (auto* buffer : buffers) {
+        delete[] buffer;
+    }
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test 25: Trampoline Hook Detection (Hook at Offset 5)
+ * Verifies that trampoline hooks installed at offset +5 are detected
+ */
+TEST(AntiHookTests, TrampolineHookDetection) {
+    AntiHookDetector detector;
+    detector.Initialize();
+    
+    // Create a buffer with a normal 5-byte prologue, then a hook at offset 5
+    uint8_t buffer[32];
+    memset(buffer, 0x90, 32);
+    
+    // Normal prologue at offset 0
+    buffer[0] = 0x55;  // PUSH RBP
+    buffer[1] = 0x48;  // REX.W
+    buffer[2] = 0x89;  // MOV
+    buffer[3] = 0xE5;  // RBP, RSP
+    buffer[4] = 0x53;  // PUSH RBX
+    
+    // Trampoline hook at offset 5
+    buffer[5] = 0xE9;  // JMP rel32
+    
+    uintptr_t addr = reinterpret_cast<uintptr_t>(buffer);
+    bool isHooked = detector.CheckFunction(addr);
+    
+    EXPECT_TRUE(isHooked)
+        << "Trampoline hook at offset 5 should be detected";
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test 26: PUSH/RET Pattern Detection
+ * Verifies that PUSH imm32; RET patterns are detected
+ */
+TEST(AntiHookTests, PushRetPatternDetection) {
+    AntiHookDetector detector;
+    detector.Initialize();
+    
+    // Test at different offsets
+    for (size_t offset = 0; offset <= 5; offset++) {
+        uint8_t buffer[32];
+        memset(buffer, 0x90, 32);
+        
+        // Place PUSH imm32; RET at the offset
+        if (offset + 5 < 32) {
+            buffer[offset] = 0x68;      // PUSH imm32
+            buffer[offset + 1] = 0xAA;
+            buffer[offset + 2] = 0xBB;
+            buffer[offset + 3] = 0xCC;
+            buffer[offset + 4] = 0xDD;
+            buffer[offset + 5] = 0xC3;  // RET
+            
+            uintptr_t addr = reinterpret_cast<uintptr_t>(buffer);
+            bool isHooked = detector.CheckFunction(addr);
+            
+            EXPECT_TRUE(isHooked)
+                << "PUSH/RET pattern at offset " << offset << " should be detected";
+        }
+    }
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test 27: JMP [rip+0] Pattern Detection
+ * Verifies that JMP [rip+displacement] patterns are detected
+ */
+TEST(AntiHookTests, JmpRipPatternDetection) {
+    AntiHookDetector detector;
+    detector.Initialize();
+    
+    // Test at different offsets
+    for (size_t offset = 0; offset <= 5; offset++) {
+        uint8_t buffer[32];
+        memset(buffer, 0x90, 32);
+        
+        // Place JMP [rip+0] at the offset
+        if (offset + 5 < 32) {
+            buffer[offset] = 0xFF;      // JMP
+            buffer[offset + 1] = 0x25;  // [rip+displacement]
+            buffer[offset + 2] = 0x00;
+            buffer[offset + 3] = 0x00;
+            buffer[offset + 4] = 0x00;
+            buffer[offset + 5] = 0x00;
+            
+            uintptr_t addr = reinterpret_cast<uintptr_t>(buffer);
+            bool isHooked = detector.CheckFunction(addr);
+            
+            EXPECT_TRUE(isHooked)
+                << "JMP [rip+0] pattern at offset " << offset << " should be detected";
+        }
+    }
+    
+    detector.Shutdown();
+}

@@ -12,16 +12,47 @@
 #include <algorithm>
 #include <cstring>
 #include <chrono>
+#include <random>
+#include <atomic>
 
 #ifdef _WIN32
 #include <windows.h>
 #include <psapi.h>
+#include <intrin.h>
+#endif
+
+#ifdef __linux__
+#include <emmintrin.h>
 #endif
 
 namespace Sentinel {
 namespace SDK {
 
 namespace {
+    // Random number generator for timing jitter
+    std::random_device rd;
+    std::mt19937 rng(rd());
+    std::uniform_int_distribution<int> jitter_dist(0, 10);  // 0-10ms
+    
+    // Add random jitter to prevent timing prediction
+    void AddRandomJitter() {
+        int jitter_ms = jitter_dist(rng);
+        if (jitter_ms > 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(jitter_ms));
+        }
+    }
+    
+    // Memory barrier for double-check pattern
+    inline void MemoryBarrier() {
+#ifdef _WIN32
+        _mm_mfence();
+#elif defined(__linux__)
+        __sync_synchronize();
+#else
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+#endif
+    }
+    
     // Common hook patterns (x86/x64)
     struct HookPattern {
         std::vector<uint8_t> bytes;
@@ -299,19 +330,42 @@ void AntiHookDetector::Shutdown() {
 }
 
 bool AntiHookDetector::IsInlineHooked(const FunctionProtection& func) {
+    // Add random jitter to prevent timing prediction attacks
+    AddRandomJitter();
+    
     // Verify memory is readable before accessing
     if (!SafeMemory::IsReadable(reinterpret_cast<const void*>(func.address), func.prologue_size)) {
         // Memory is not readable (possibly freed/unmapped)
         return false;  // Can't verify, assume not hooked to avoid false positives
     }
     
-    // Read current bytes at function address using safe access
-    uint8_t currentBytes[32];  // Max prologue size from Context.hpp
+    // DOUBLE-CHECK PATTERN: First read
+    uint8_t firstRead[32];  // Max prologue size from Context.hpp
     if (!SafeMemory::SafeRead(reinterpret_cast<const void*>(func.address), 
-                               currentBytes, func.prologue_size)) {
+                               firstRead, func.prologue_size)) {
         // Failed to read (access violation despite IsReadable check)
         return false;
     }
+    
+    // Memory barrier to ensure first read completes before second read
+    MemoryBarrier();
+    
+    // DOUBLE-CHECK PATTERN: Second read
+    uint8_t secondRead[32];
+    if (!SafeMemory::SafeRead(reinterpret_cast<const void*>(func.address), 
+                               secondRead, func.prologue_size)) {
+        // Failed to read
+        return false;
+    }
+    
+    // Compare the two reads - if different, hook is being installed/removed dynamically
+    if (std::memcmp(firstRead, secondRead, func.prologue_size) != 0) {
+        // Dynamic hook detected - bytes changed between reads
+        return true;
+    }
+    
+    // Use the second read for comparison (most recent)
+    uint8_t* currentBytes = secondRead;
     
     // Compare with original prologue using safe comparison
     if (!SafeMemory::SafeCompare(reinterpret_cast<const void*>(func.address),
@@ -698,30 +752,63 @@ bool AntiHookDetector::IsDelayLoadIATHooked(const char* module_name, const char*
 }
 
 bool AntiHookDetector::HasSuspiciousJump(const void* address) {
+    // Extended check: scan first 16 bytes instead of just 2
+    constexpr size_t SCAN_SIZE = 16;
+    
     // Verify memory is readable
-    if (!SafeMemory::IsReadable(address, 2)) {
+    if (!SafeMemory::IsReadable(address, SCAN_SIZE)) {
         return false;  // Can't read, assume not suspicious
     }
     
-    uint8_t bytes[2];
-    if (!SafeMemory::SafeRead(address, bytes, 2)) {
+    uint8_t bytes[SCAN_SIZE];
+    if (!SafeMemory::SafeRead(address, bytes, SCAN_SIZE)) {
         return false;  // Failed to read
     }
     
-    // Check first byte for immediate jump/call indicators
-    switch (bytes[0]) {
-        case 0xE9:  // JMP rel32
-        case 0xE8:  // CALL rel32 (unusual at function start)
-        case 0xEB:  // JMP rel8
-        case 0xFF:  // JMP/CALL indirect
-        case 0xCC:  // INT 3
-            return true;
+    // Check for hooks at offsets 0-5 (catches trampoline hooks)
+    for (size_t offset = 0; offset <= 5 && offset < SCAN_SIZE; offset++) {
+        // Check for JMP instructions at various offsets
+        if (offset + 1 <= SCAN_SIZE) {
+            switch (bytes[offset]) {
+                case 0xE9:  // JMP rel32 (5 bytes)
+                    return true;
+                case 0xEB:  // JMP rel8 (2 bytes)
+                    return true;
+                case 0xE8:  // CALL rel32 (unusual at function start)
+                    return true;
+                case 0xFF:  // JMP/CALL indirect
+                    return true;
+            }
+        }
     }
     
-    // Check for 2-byte prefixes (x64)
+    // Check for INT 3 (0xCC) anywhere in the first 16 bytes
+    for (size_t i = 0; i < SCAN_SIZE; i++) {
+        if (bytes[i] == 0xCC) {
+            return true;
+        }
+    }
+    
+    // Check for MOV RAX, imm64; JMP RAX pattern at offset 0
     if (bytes[0] == 0x48 && bytes[1] == 0xB8) {
         // MOV RAX, imm64 (likely trampoline setup)
         return true;
+    }
+    
+    // Check for PUSH imm32; RET pattern
+    for (size_t offset = 0; offset <= 5 && offset + 5 < SCAN_SIZE; offset++) {
+        if (bytes[offset] == 0x68 && bytes[offset + 5] == 0xC3) {
+            // PUSH imm32; RET
+            return true;
+        }
+    }
+    
+    // Check for JMP [rip+0] pattern (FF 25 00 00 00 00)
+    for (size_t offset = 0; offset <= 5 && offset + 5 < SCAN_SIZE; offset++) {
+        if (bytes[offset] == 0xFF && bytes[offset + 1] == 0x25) {
+            // JMP [rip+displacement]
+            return true;
+        }
     }
     
     return false;
@@ -738,6 +825,20 @@ void AntiHookDetector::UnregisterFunction(uintptr_t address) {
         std::remove_if(registered_functions_.begin(), registered_functions_.end(),
             [address](const FunctionProtection& f) { return f.address == address; }),
         registered_functions_.end()
+    );
+}
+
+void AntiHookDetector::RegisterHoneypot(const FunctionProtection& func) {
+    std::lock_guard<std::mutex> lock(functions_mutex_);
+    honeypot_functions_.push_back(func);
+}
+
+void AntiHookDetector::UnregisterHoneypot(uintptr_t address) {
+    std::lock_guard<std::mutex> lock(functions_mutex_);
+    honeypot_functions_.erase(
+        std::remove_if(honeypot_functions_.begin(), honeypot_functions_.end(),
+            [address](const FunctionProtection& f) { return f.address == address; }),
+        honeypot_functions_.end()
     );
 }
 
@@ -830,6 +931,30 @@ std::vector<ViolationEvent> AntiHookDetector::ScanCriticalAPIs() {
     return violations;
 }
 
+std::vector<ViolationEvent> AntiHookDetector::CheckHoneypots() {
+    std::vector<ViolationEvent> violations;
+    std::lock_guard<std::mutex> lock(functions_mutex_);
+    
+    // Check honeypot functions - ANY modification is guaranteed cheat detection
+    for (const auto& honeypot : honeypot_functions_) {
+        if (IsInlineHooked(honeypot)) {
+            ViolationEvent ev;
+            ev.type = ViolationType::InlineHook;
+            ev.severity = Severity::Critical;  // Honeypot modification = guaranteed cheat
+            ev.address = honeypot.address;
+            static const char* detail_msg = "Honeypot function modified - cheat detected";
+            ev.details = detail_msg;
+            ev.module_name = nullptr;
+            ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp ^ 0xDEADBEEF);
+            violations.push_back(ev);
+        }
+    }
+    
+    return violations;
+}
+
 std::vector<ViolationEvent> AntiHookDetector::FullScan() {
     std::vector<ViolationEvent> violations;
     std::lock_guard<std::mutex> lock(functions_mutex_);
@@ -850,6 +975,14 @@ std::vector<ViolationEvent> AntiHookDetector::FullScan() {
             violations.push_back(ev);
         }
     }
+    
+    // Release lock before calling other methods
+    functions_mutex_.unlock();
+    
+    // Honeypot checks (has its own lock)
+    auto honeypotViolations = CheckHoneypots();
+    violations.insert(violations.end(), 
+                     honeypotViolations.begin(), honeypotViolations.end());
     
     // IAT hook checks
     auto iatViolations = ScanCriticalAPIs();

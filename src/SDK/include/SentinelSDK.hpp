@@ -50,6 +50,39 @@
     #define SENTINEL_CALL
 #endif
 
+// ==================== Anti-Hook Protection Macros ====================
+
+/**
+ * SENTINEL_PROTECTED_CALL - Inline hook verification macro
+ * 
+ * Verifies function prologue immediately before calling the function.
+ * This is the only guaranteed-safe method to prevent TOCTOU attacks.
+ * 
+ * Usage:
+ *   // Register function first
+ *   FunctionProtection func;
+ *   func.address = reinterpret_cast<uintptr_t>(&MyFunction);
+ *   func.name = "MyFunction";
+ *   func.prologue_size = 16;
+ *   memcpy(func.original_prologue.data(), &MyFunction, 16);
+ *   detector.RegisterFunction(func);
+ *   
+ *   // Then call with protection
+ *   SENTINEL_PROTECTED_CALL(detector, &MyFunction, result = MyFunction(arg1, arg2));
+ * 
+ * @param detector The AntiHookDetector instance
+ * @param func_ptr Pointer to the function to verify
+ * @param call_expr The actual function call expression
+ */
+#define SENTINEL_PROTECTED_CALL(detector, func_ptr, call_expr) \
+    do { \
+        if ((detector).CheckFunction(reinterpret_cast<uintptr_t>(func_ptr))) { \
+            /* Hook detected - handle error */ \
+            throw std::runtime_error("Hook detected in protected function call"); \
+        } \
+        call_expr; \
+    } while(0)
+
 #include <cstdint>
 #include <cstddef>
 
