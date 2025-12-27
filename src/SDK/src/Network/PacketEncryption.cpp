@@ -10,6 +10,7 @@
 #include <Sentinel/Core/Crypto.hpp>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
+#include <openssl/kdf.h>
 #include <cstring>
 #include <mutex>
 
@@ -52,11 +53,33 @@ public:
             return;
         }
         
-        EVP_PKEY_CTX_set_hkdf_md(ctx, EVP_sha256());
-        EVP_PKEY_CTX_set1_hkdf_key(ctx, master_key, master_key_len);
-        EVP_PKEY_CTX_set1_hkdf_salt(ctx, salt, salt_len);
-        EVP_PKEY_CTX_add1_hkdf_info(ctx, 
-            (const unsigned char*)"Sentinel Packet Key", 19);
+        if (EVP_PKEY_CTX_ctrl(ctx, -1, EVP_PKEY_OP_DERIVE,
+                               EVP_PKEY_CTRL_HKDF_MD, 0, (void*)EVP_sha256()) <= 0) {
+            EVP_PKEY_CTX_free(ctx);
+            return;
+        }
+        
+        if (EVP_PKEY_CTX_ctrl(ctx, -1, EVP_PKEY_OP_DERIVE,
+                               EVP_PKEY_CTRL_HKDF_KEY, master_key_len,
+                               (void*)master_key) <= 0) {
+            EVP_PKEY_CTX_free(ctx);
+            return;
+        }
+        
+        if (EVP_PKEY_CTX_ctrl(ctx, -1, EVP_PKEY_OP_DERIVE,
+                               EVP_PKEY_CTRL_HKDF_SALT, salt_len,
+                               (void*)salt) <= 0) {
+            EVP_PKEY_CTX_free(ctx);
+            return;
+        }
+        
+        const unsigned char* info = (const unsigned char*)"Sentinel Packet Key";
+        if (EVP_PKEY_CTX_ctrl(ctx, -1, EVP_PKEY_OP_DERIVE,
+                               EVP_PKEY_CTRL_HKDF_INFO, 19,
+                               (void*)info) <= 0) {
+            EVP_PKEY_CTX_free(ctx);
+            return;
+        }
         
         size_t keylen = KEY_SIZE;
         EVP_PKEY_derive(ctx, session_key_, &keylen);
@@ -199,6 +222,14 @@ ErrorCode PacketEncryption::Decrypt(
     memcpy(iv, input, IV_SIZE);
     input += IV_SIZE;
     
+    // Verify sequence embedded in IV matches header sequence (integrity check)
+    uint32_t iv_seq;
+    memcpy(&iv_seq, iv + 8, sizeof(iv_seq));
+    if (iv_seq != seq) {
+        // Sequence tampering detected
+        return ErrorCode::AuthenticationFailed;
+    }
+    
     // Calculate ciphertext size
     size_t ciphertext_size = size - sizeof(uint32_t) - IV_SIZE - TAG_SIZE;
     size_t plaintext_size = ciphertext_size;
@@ -264,8 +295,9 @@ uint32_t PacketEncryption::GetNextSequence() {
 }
 
 bool PacketEncryption::ValidateSequence(uint32_t sequence) {
-    // Sliding window anti-replay
-    // Accept if sequence > expected, or within window of expected
+    // Strict anti-replay: only accept sequences > expected
+    // This prevents replay attacks but doesn't handle out-of-order delivery
+    // For production use with UDP, implement a proper sliding window with a bitmap
     
     if (sequence > g_impl.expected_sequence_) {
         // New sequence - update expected
@@ -273,12 +305,7 @@ bool PacketEncryption::ValidateSequence(uint32_t sequence) {
         return true;
     }
     
-    if (g_impl.expected_sequence_ - sequence < SEQUENCE_WINDOW) {
-        // Within acceptable window (handles out-of-order delivery)
-        return true;
-    }
-    
-    // Too old - replay attack or severe packet loss
+    // Reject: either equal (replay) or less than expected (old packet)
     return false;
 }
 
