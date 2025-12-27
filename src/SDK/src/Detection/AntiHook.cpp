@@ -110,10 +110,13 @@ bool AntiHookDetector::IsIATHooked(const char* module_name, const char* function
     HMODULE hModule = GetModuleHandle(nullptr);
     if (!hModule) return false;
     
-    // Parse PE headers
+    // Parse PE headers with defensive checks
     PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)hModule;
+    if (dosHeader->e_magic != IMAGE_DOS_SIGNATURE) return false;
+    
     PIMAGE_NT_HEADERS ntHeaders = (PIMAGE_NT_HEADERS)
         ((BYTE*)hModule + dosHeader->e_lfanew);
+    if (ntHeaders->Signature != IMAGE_NT_SIGNATURE) return false;
     
     // Get import directory
     DWORD importDirRVA = ntHeaders->OptionalHeader
