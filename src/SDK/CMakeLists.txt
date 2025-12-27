@@ -28,6 +28,7 @@ set(SDK_SOURCES
     src/SentinelSDK.cpp
     src/Internal/InternalUtils.cpp
     src/Internal/CorrelationEngine.cpp
+    src/Internal/SafeMemory.cpp
     src/Core/Heartbeat.cpp
     src/Core/MemoryProtection.cpp
     src/Core/FunctionProtection.cpp
@@ -52,6 +53,7 @@ set(SDK_HEADERS
     src/Internal/Protection.hpp
     src/Internal/Whitelist.hpp
     src/Internal/CorrelationEngine.hpp
+    src/Internal/SafeMemory.hpp
 )
 
 # Header files for IDE organization only (not compiled)
