@@ -188,6 +188,9 @@ enum class ErrorCode : uint16_t {
     /// Key not loaded (operation requires key to be loaded first)
     KeyNotLoaded = 0x030B,
     
+    /// Signature file not found
+    SignatureNotFound = 0x030C,
+    
     // ========================================================================
     // Network Errors (0x0400-0x04FF)
     // ========================================================================
@@ -385,6 +388,12 @@ enum class ErrorCode : uint16_t {
     
     /// File too large
     FileTooLarge = 0x0909,
+    
+    /// Invalid file path
+    InvalidPath = 0x090A,
+    
+    /// Access denied
+    AccessDenied = 0x090B,
     
     // ========================================================================
     // Parse Errors (0x0A00-0x0AFF)
