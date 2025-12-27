@@ -33,6 +33,13 @@ using namespace Sentinel::Testing;
 namespace fs = std::filesystem;
 
 // ============================================================================
+// Constants
+// ============================================================================
+
+/// RSA public exponent (F4 = 2^16 + 1)
+constexpr unsigned long RSA_PUBLIC_EXPONENT = 65537;
+
+// ============================================================================
 // Helper Functions - Key Generation for Tests
 // ============================================================================
 
@@ -57,7 +64,7 @@ static EVP_PKEY* generateTestKey(int bits = 2048) {
     
     // Set public exponent
     BIGNUM* bn_e = BN_new();
-    if (!bn_e || !BN_set_word(bn_e, 65537)) {
+    if (!bn_e || !BN_set_word(bn_e, RSA_PUBLIC_EXPONENT)) {
         BN_free(bn_e);
         EVP_PKEY_CTX_free(ctx);
         return nullptr;

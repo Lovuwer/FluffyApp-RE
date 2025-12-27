@@ -26,6 +26,8 @@
 #include <fstream>
 #include <filesystem>
 #include <sstream>
+#include <algorithm>
+#include <cctype>
 
 namespace Sentinel::Config {
 
@@ -80,9 +82,14 @@ public:
         }
         
         #ifdef _WIN32
-        // Case-insensitive on Windows
-        if (_strnicmp(canonicalPath.c_str(), allowed.c_str(), 
-                     allowed.length()) != 0) {
+        // Case-insensitive on Windows using standard library
+        // Convert to lowercase for comparison
+        std::string canonLower = canonicalPath.substr(0, allowed.length());
+        std::string allowedLower = allowed;
+        std::transform(canonLower.begin(), canonLower.end(), canonLower.begin(), ::tolower);
+        std::transform(allowedLower.begin(), allowedLower.end(), allowedLower.begin(), ::tolower);
+        
+        if (canonLower != allowedLower) {
             return false;
         }
         #else
@@ -230,11 +237,33 @@ public:
             std::string key = line.substr(0, pos);
             std::string value = line.substr(pos + 1);
             
-            // Trim whitespace
-            key.erase(0, key.find_first_not_of(" \t"));
-            key.erase(key.find_last_not_of(" \t") + 1);
-            value.erase(0, value.find_first_not_of(" \t"));
-            value.erase(value.find_last_not_of(" \t\r\n") + 1);
+            // Trim whitespace - handle edge cases where string is all whitespace
+            auto keyStart = key.find_first_not_of(" \t");
+            if (keyStart != std::string::npos) {
+                key.erase(0, keyStart);
+                auto keyEnd = key.find_last_not_of(" \t");
+                if (keyEnd != std::string::npos) {
+                    key.erase(keyEnd + 1);
+                }
+            } else {
+                key.clear();
+            }
+            
+            auto valueStart = value.find_first_not_of(" \t");
+            if (valueStart != std::string::npos) {
+                value.erase(0, valueStart);
+                auto valueEnd = value.find_last_not_of(" \t\r\n");
+                if (valueEnd != std::string::npos) {
+                    value.erase(valueEnd + 1);
+                }
+            } else {
+                value.clear();
+            }
+            
+            // Skip lines with empty keys
+            if (key.empty()) {
+                continue;
+            }
             
             // Store as string (type inference could be added)
             config[key] = value;
