@@ -43,8 +43,32 @@ private:
     bool CheckNtGlobalFlag();
     bool CheckHeapFlags();
     
+    // Helper methods
+    void CalibrateTimingBaseline();
+    bool DetectHypervisor();
+    bool CheckTimingStatistical();
+    
+    // Rate limiting
     uint64_t last_check_time_ = 0;
     int check_count_ = 0;
+    
+    // Calibration data
+    double baseline_mean_ = 0.0;
+    double baseline_stddev_ = 0.0;
+    double threshold_us_ = 500.0;          // Default threshold in microseconds
+    uint64_t threshold_cycles_ = 10000;     // Default threshold in CPU cycles
+    
+    // Environment detection
+    bool hypervisor_detected_ = false;
+    
+    // Timing anomaly tracking
+    int consecutive_anomaly_count_ = 0;
+    uint64_t last_successful_check_time_ = 0;
+    uint64_t last_anomaly_detection_time_ = 0;
+    
+    // Telemetry
+    uint64_t timing_check_count_ = 0;
+    uint64_t timing_anomaly_count_ = 0;
 };
 
 /**
