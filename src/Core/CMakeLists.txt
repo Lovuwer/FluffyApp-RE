@@ -35,6 +35,9 @@ target_sources(SentinelCore
         Network/RequestSigner.cpp
         Network/CertificatePinning.cpp
         
+        # Configuration
+        Config/SecureConfigLoader.cpp
+        
         # Utilities
         Utils/Logger.cpp
         Utils/ThreadPool.cpp
