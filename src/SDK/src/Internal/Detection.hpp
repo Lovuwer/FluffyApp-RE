@@ -8,12 +8,16 @@
 
 #include "SentinelSDK.hpp"
 #include "Context.hpp"
+#include "Whitelist.hpp"
 
 #include <vector>
 #include <cstdint>
 
 namespace Sentinel {
 namespace SDK {
+
+// Forward declaration of global whitelist manager
+extern WhitelistManager* g_whitelist;
 
 /**
  * Anti-debugging detection module

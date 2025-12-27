@@ -5,6 +5,7 @@
  */
 
 #include "Internal/Context.hpp"
+#include "Internal/Whitelist.hpp"
 #include <sstream>
 #include <iomanip>
 #include <random>
@@ -23,6 +24,10 @@
 
 namespace Sentinel {
 namespace SDK {
+
+// Global whitelist manager instance (initialized by SDK)
+WhitelistManager* g_whitelist = nullptr;
+
 namespace Internal {
 
 /**
