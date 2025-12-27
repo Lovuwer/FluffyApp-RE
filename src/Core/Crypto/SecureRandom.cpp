@@ -64,15 +64,25 @@ public:
         
 #ifdef _WIN32
         // Windows: Use BCryptGenRandom
-        NTSTATUS status = BCryptGenRandom(
-            nullptr,
-            buffer,
-            static_cast<ULONG>(size),
-            BCRYPT_USE_SYSTEM_PREFERRED_RNG
-        );
+        // Handle size overflow by splitting into multiple calls if needed
+        constexpr size_t maxChunkSize = static_cast<size_t>(ULONG_MAX);
+        size_t offset = 0;
         
-        if (!BCRYPT_SUCCESS(status)) {
-            return ErrorCode::CryptoError;
+        while (offset < size) {
+            size_t chunkSize = (size - offset > maxChunkSize) ? maxChunkSize : (size - offset);
+            
+            NTSTATUS status = BCryptGenRandom(
+                nullptr,
+                buffer + offset,
+                static_cast<ULONG>(chunkSize),
+                BCRYPT_USE_SYSTEM_PREFERRED_RNG
+            );
+            
+            if (!BCRYPT_SUCCESS(status)) {
+                return ErrorCode::CryptoError;
+            }
+            
+            offset += chunkSize;
         }
         
         return Result<void>::Success();
