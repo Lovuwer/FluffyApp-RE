@@ -790,25 +790,27 @@ TEST(AntiHookTests, HoneypotUnregistration) {
     AntiHookDetector detector;
     detector.Initialize();
     
-    std::vector<uint8_t*> buffers;
+    std::vector<std::unique_ptr<uint8_t[]>> buffers;
+    std::vector<uintptr_t> addresses;
     
     // Register multiple honeypots
     for (int i = 0; i < 5; i++) {
-        uint8_t* buffer = new uint8_t[32];
-        memset(buffer, 0x90, 32);
-        buffers.push_back(buffer);
+        auto buffer = std::make_unique<uint8_t[]>(32);
+        memset(buffer.get(), 0x90, 32);
         
         FunctionProtection honeypot;
-        honeypot.address = reinterpret_cast<uintptr_t>(buffer);
+        honeypot.address = reinterpret_cast<uintptr_t>(buffer.get());
         honeypot.name = "Honeypot_" + std::to_string(i);
         honeypot.prologue_size = 16;
-        memcpy(honeypot.original_prologue.data(), buffer, 16);
+        memcpy(honeypot.original_prologue.data(), buffer.get(), 16);
         
+        addresses.push_back(honeypot.address);
         detector.RegisterHoneypot(honeypot);
+        buffers.push_back(std::move(buffer));
     }
     
     // Unregister the middle one
-    detector.UnregisterHoneypot(reinterpret_cast<uintptr_t>(buffers[2]));
+    detector.UnregisterHoneypot(addresses[2]);
     
     // Modify the unregistered honeypot
     buffers[2][0] = 0xE9;
@@ -817,13 +819,8 @@ TEST(AntiHookTests, HoneypotUnregistration) {
     std::vector<ViolationEvent> violations = detector.FullScan();
     
     for (const auto& v : violations) {
-        EXPECT_NE(v.address, reinterpret_cast<uintptr_t>(buffers[2]))
+        EXPECT_NE(v.address, addresses[2])
             << "Unregistered honeypot should not trigger violations";
-    }
-    
-    // Cleanup
-    for (auto* buffer : buffers) {
-        delete[] buffer;
     }
     
     detector.Shutdown();

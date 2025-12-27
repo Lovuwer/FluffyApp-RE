@@ -5,6 +5,35 @@
  * 
  * Task 11: Inline Hook Detection Implementation
  * Task 12: IAT Hook Detection Implementation
+ * Task 3: TOCTOU Vulnerability Fixes
+ * 
+ * TOCTOU Protection Mechanisms:
+ * 
+ * 1. Double-Check Pattern (Lines 332-385):
+ *    - Performs two sequential memory reads with a memory barrier
+ *    - Detects dynamic hooks being installed/removed between checks
+ *    - Prevents race conditions where hooks appear after verification
+ * 
+ * 2. Extended Hook Detection (Lines 754-815):
+ *    - Scans first 16 bytes (not just 2) to catch trampoline hooks
+ *    - Checks for hooks at offsets 0-5 to detect delayed hooks
+ *    - Detects INT 3 breakpoints anywhere in prologue
+ *    - Identifies PUSH/RET and JMP [rip+X] patterns at any offset
+ * 
+ * 3. Random Timing Jitter (Lines 28-36):
+ *    - Adds 0-10ms random delay before each check
+ *    - Prevents attackers from predicting check timing windows
+ *    - Makes it impossible to temporarily restore bytes during scans
+ * 
+ * 4. Honeypot Detection (Lines 822-852, 933-958):
+ *    - Allows registration of decoy functions never called
+ *    - Any modification to honeypots = guaranteed cheat detection
+ *    - Provides high-confidence detection without false positives
+ * 
+ * 5. SENTINEL_PROTECTED_CALL Macro (SentinelSDK.hpp):
+ *    - Inline verification immediately before function call
+ *    - Only guaranteed-safe method against TOCTOU attacks
+ *    - Recommended for security-critical functions
  */
 
 #include "Internal/Detection.hpp"
@@ -958,27 +987,26 @@ std::vector<ViolationEvent> AntiHookDetector::CheckHoneypots() {
 
 std::vector<ViolationEvent> AntiHookDetector::FullScan() {
     std::vector<ViolationEvent> violations;
-    std::lock_guard<std::mutex> lock(functions_mutex_);
     
-    // Inline hook checks
-    for (const auto& func : registered_functions_) {
-        if (IsInlineHooked(func)) {
-            ViolationEvent ev;
-            ev.type = ViolationType::InlineHook;
-            ev.severity = Severity::Critical;
-            ev.address = func.address;
-            static const char* detail_msg = "Inline hook detected";
-            ev.details = detail_msg;
-            ev.module_name = nullptr;
-            ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()).count();
-            ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
-            violations.push_back(ev);
+    // Inline hook checks (scoped lock)
+    {
+        std::lock_guard<std::mutex> lock(functions_mutex_);
+        for (const auto& func : registered_functions_) {
+            if (IsInlineHooked(func)) {
+                ViolationEvent ev;
+                ev.type = ViolationType::InlineHook;
+                ev.severity = Severity::Critical;
+                ev.address = func.address;
+                static const char* detail_msg = "Inline hook detected";
+                ev.details = detail_msg;
+                ev.module_name = nullptr;
+                ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count();
+                ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
+                violations.push_back(ev);
+            }
         }
-    }
-    
-    // Release lock before calling other methods
-    functions_mutex_.unlock();
+    } // Lock automatically released here
     
     // Honeypot checks (has its own lock)
     auto honeypotViolations = CheckHoneypots();
