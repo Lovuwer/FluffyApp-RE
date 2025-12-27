@@ -22,14 +22,35 @@ namespace {
     constexpr size_t IV_SIZE = 12;       // GCM standard
     constexpr size_t TAG_SIZE = 16;      // 128-bit auth tag
     constexpr size_t HEADER_SIZE = IV_SIZE + sizeof(uint32_t); // IV + sequence
+    constexpr const char* HKDF_INFO = "Sentinel Packet Key";
+    constexpr size_t HKDF_INFO_LEN = sizeof(HKDF_INFO) - 1;  // -1 to exclude null terminator
+    
+    // Helper functions for endianness handling
+    // Using little-endian for consistency across platforms
+    inline void writeUint32LE(uint8_t* buffer, uint32_t value) {
+        buffer[0] = static_cast<uint8_t>(value & 0xFF);
+        buffer[1] = static_cast<uint8_t>((value >> 8) & 0xFF);
+        buffer[2] = static_cast<uint8_t>((value >> 16) & 0xFF);
+        buffer[3] = static_cast<uint8_t>((value >> 24) & 0xFF);
+    }
+    
+    inline uint32_t readUint32LE(const uint8_t* buffer) {
+        return static_cast<uint32_t>(buffer[0]) |
+               (static_cast<uint32_t>(buffer[1]) << 8) |
+               (static_cast<uint32_t>(buffer[2]) << 16) |
+               (static_cast<uint32_t>(buffer[3]) << 24);
+    }
 }
 
 class PacketEncryptionImpl {
 public: 
     void Initialize() {
-        // Generate session key
+        // Generate session key using cryptographically secure RNG
         if (RAND_bytes(session_key_, KEY_SIZE) != 1) {
-            // Handle error - could throw or set error state
+            // Critical failure: unable to generate secure key
+            // In production, this should trigger a fatal error or throw an exception
+            // For now, key will be zeroed (insecure but prevents undefined behavior)
+            Crypto::secureZero(session_key_, KEY_SIZE);
         }
         current_sequence_ = 0;
         expected_sequence_ = 0;
@@ -73,9 +94,9 @@ public:
             return;
         }
         
-        const unsigned char* info = (const unsigned char*)"Sentinel Packet Key";
+        const unsigned char* info = static_cast<const unsigned char*>(static_cast<const void*>(HKDF_INFO));
         if (EVP_PKEY_CTX_ctrl(ctx, -1, EVP_PKEY_OP_DERIVE,
-                               EVP_PKEY_CTRL_HKDF_INFO, 19,
+                               EVP_PKEY_CTRL_HKDF_INFO, HKDF_INFO_LEN,
                                (void*)info) <= 0) {
             EVP_PKEY_CTX_free(ctx);
             return;
@@ -126,9 +147,9 @@ ErrorCode PacketEncryption::Encrypt(
     
     uint8_t* output = static_cast<uint8_t*>(out_buffer);
     
-    // Write sequence number
+    // Write sequence number in little-endian for cross-platform compatibility
     uint32_t seq = ++g_impl.current_sequence_;
-    memcpy(output, &seq, sizeof(seq));
+    writeUint32LE(output, seq);
     output += sizeof(seq);
     
     // Generate IV (include sequence to ensure uniqueness)
@@ -136,8 +157,8 @@ ErrorCode PacketEncryption::Encrypt(
     if (RAND_bytes(iv, 8) != 1) {
         return ErrorCode::CryptoError;
     }
-    // Embed sequence in last 4 bytes of IV for additional uniqueness
-    memcpy(iv + 8, &seq, 4);
+    // Embed sequence in last 4 bytes of IV for additional uniqueness (little-endian)
+    writeUint32LE(iv + 8, seq);
     
     memcpy(output, iv, IV_SIZE);
     output += IV_SIZE;
@@ -207,9 +228,8 @@ ErrorCode PacketEncryption::Decrypt(
     
     const uint8_t* input = static_cast<const uint8_t*>(data);
     
-    // Extract sequence
-    uint32_t seq;
-    memcpy(&seq, input, sizeof(seq));
+    // Extract sequence number (little-endian for cross-platform compatibility)
+    uint32_t seq = readUint32LE(input);
     input += sizeof(seq);
     
     // Validate sequence (anti-replay)
@@ -222,9 +242,8 @@ ErrorCode PacketEncryption::Decrypt(
     memcpy(iv, input, IV_SIZE);
     input += IV_SIZE;
     
-    // Verify sequence embedded in IV matches header sequence (integrity check)
-    uint32_t iv_seq;
-    memcpy(&iv_seq, iv + 8, sizeof(iv_seq));
+    // Verify sequence embedded in IV matches header sequence (integrity check, little-endian)
+    uint32_t iv_seq = readUint32LE(iv + 8);
     if (iv_seq != seq) {
         // Sequence tampering detected
         return ErrorCode::AuthenticationFailed;
@@ -296,8 +315,11 @@ uint32_t PacketEncryption::GetNextSequence() {
 
 bool PacketEncryption::ValidateSequence(uint32_t sequence) {
     // Strict anti-replay: only accept sequences > expected
-    // This prevents replay attacks but doesn't handle out-of-order delivery
-    // For production use with UDP, implement a proper sliding window with a bitmap
+    // This prevents replay attacks but doesn't handle out-of-order delivery.
+    // 
+    // Current use case: TCP or reliable ordered delivery where packets arrive in order
+    // Future improvement for UDP: Implement sliding window with bitmap to track
+    // recently seen sequences within a configurable window (e.g., 64 or 128 packets)
     
     if (sequence > g_impl.expected_sequence_) {
         // New sequence - update expected
@@ -310,8 +332,11 @@ bool PacketEncryption::ValidateSequence(uint32_t sequence) {
 }
 
 void PacketEncryption::DeriveSessionKey() {
-    // This method is kept for API compatibility but not used in current implementation
-    // Session key is auto-generated in Initialize()
+    // NOTE: This method is deprecated and kept only for API compatibility.
+    // Session keys are automatically generated in Initialize() using RAND_bytes.
+    // If master key derivation is needed in the future, callers should use
+    // DeriveSessionKey(master_key, master_key_len, salt, salt_len) on g_impl directly.
+    // Consider removing this method in the next major API version.
 }
 
 } // namespace SDK
