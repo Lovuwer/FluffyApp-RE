@@ -146,8 +146,11 @@ else()
     add_compile_options(-fstack-protector-strong)
     
     # Position Independent Executable (for ASLR)
-    # Note: -fPIC is already set globally. PIE provides additional ASLR for executables
-    # but may conflict with shared libraries. CMake handles this appropriately.
+    # Note: -fPIC is already set globally and works for both libraries and executables.
+    # -fPIE is more restrictive and provides better ASLR for executables.
+    # CMake automatically handles the distinction between shared libraries (which use -fPIC)
+    # and executables (which can use -fPIE). Modern CMake will override -fPIE with -fPIC
+    # for shared library targets as needed.
     add_compile_options(-fPIE)
     add_link_options(-pie)
     
@@ -170,9 +173,13 @@ else()
     endif()
     
     # Control flow integrity (Clang)
+    # CFI requires LTO to work properly
     if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-        add_compile_options(-fsanitize=cfi)
-        add_link_options(-fsanitize=cfi)
+        # Only enable CFI if not using other sanitizers (they conflict)
+        if(NOT SENTINEL_ENABLE_ASAN AND NOT SENTINEL_ENABLE_TSAN AND NOT SENTINEL_ENABLE_UBSAN)
+            add_compile_options(-fsanitize=cfi -flto -fvisibility=hidden)
+            add_link_options(-fsanitize=cfi -flto)
+        endif()
     endif()
 endif()
 
@@ -190,6 +197,7 @@ if(SENTINEL_ENABLE_ASAN)
 endif()
 
 if(SENTINEL_ENABLE_UBSAN)
+    # MSVC does not support UBSan. Use /analyze for similar static analysis.
     if(NOT MSVC)
         add_compile_options(-fsanitize=undefined)
         add_link_options(-fsanitize=undefined)

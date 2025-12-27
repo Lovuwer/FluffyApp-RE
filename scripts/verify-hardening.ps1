@@ -29,8 +29,10 @@ if ($dumpbin -match "High Entropy Virtual Addresses") {
     Write-Host "[WARN] High-entropy ASLR not enabled" -ForegroundColor Yellow
 }
 
-# Check for GUARD_CF
-if ($dumpbin -match "Guard") {
+# Check for GUARD_CF (Control Flow Guard)
+if ($dumpbin -match "Guard CF instrumented") {
+    Write-Host "[PASS] Control Flow Guard enabled" -ForegroundColor Green
+} elseif ($dumpbin -match "CF Instrumented") {
     Write-Host "[PASS] Control Flow Guard enabled" -ForegroundColor Green
 } else {
     Write-Host "[WARN] Control Flow Guard not detected" -ForegroundColor Yellow
