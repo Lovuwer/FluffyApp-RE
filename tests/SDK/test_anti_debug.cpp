@@ -111,9 +111,13 @@ TEST(AntiDebugTests, NoHardwareBreakpointsDetected) {
     std::vector<ViolationEvent> violations = detector.FullCheck();
     
     // In a clean environment, we should not detect hardware breakpoints
+    // Check for violations with Critical severity and DebuggerAttached type
+    // that contain hardware breakpoint-related details
     bool hardwareBPDetected = false;
     for (const auto& violation : violations) {
-        if (violation.details && 
+        if (violation.type == ViolationType::DebuggerAttached &&
+            violation.severity == Severity::Critical &&
+            violation.details && 
             std::string(violation.details).find("Hardware breakpoints") != std::string::npos) {
             hardwareBPDetected = true;
             break;

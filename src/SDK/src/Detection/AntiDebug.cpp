@@ -19,6 +19,25 @@
 namespace Sentinel {
 namespace SDK {
 
+#ifdef _WIN32
+// Helper function: Check if CONTEXT contains hardware breakpoints
+static inline bool IsHardwareBreakpointSet(const CONTEXT& ctx) {
+    // Check DR0-DR3 for breakpoint addresses
+    if (ctx.Dr0 != 0 || ctx.Dr1 != 0 || ctx.Dr2 != 0 || ctx.Dr3 != 0) {
+        return true;
+    }
+    
+    // Check DR7 for enabled breakpoints
+    // Bits 0,2,4,6 = local enable for DR0-3
+    // Bits 1,3,5,7 = global enable for DR0-3
+    if ((ctx.Dr7 & 0xFF) != 0) {
+        return true;
+    }
+    
+    return false;
+}
+#endif
+
 // AntiDebugDetector stub implementation
 void AntiDebugDetector::Initialize() {}
 void AntiDebugDetector::Shutdown() {}
@@ -137,22 +156,11 @@ bool AntiDebugDetector::CheckHardwareBreakpoints() {
     
     if (!GetThreadContext(thread, &ctx)) {
         // Cannot get context, inconclusive
+        // Note: This could indicate debugger evasion but spec requires false return
         return false;
     }
     
-    // Check DR0-DR3 for breakpoint addresses
-    if (ctx.Dr0 != 0 || ctx.Dr1 != 0 || ctx.Dr2 != 0 || ctx.Dr3 != 0) {
-        return true;
-    }
-    
-    // Check DR7 for enabled breakpoints
-    // Bits 0,2,4,6 = local enable for DR0-3
-    // Bits 1,3,5,7 = global enable for DR0-3
-    if ((ctx.Dr7 & 0xFF) != 0) {
-        return true;
-    }
-    
-    return false;
+    return IsHardwareBreakpointSet(ctx);
 #else
     return false;
 #endif
@@ -233,7 +241,7 @@ bool AntiDebugDetector::CheckHeapFlags() {
                     CONTEXT ctx;
                     ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
                     if (GetThreadContext(thread, &ctx)) {
-                        if (ctx.Dr0 || ctx.Dr1 || ctx.Dr2 || ctx.Dr3 || (ctx.Dr7 & 0xFF)) {
+                        if (IsHardwareBreakpointSet(ctx)) {
                             detected = true;
                         }
                     }
