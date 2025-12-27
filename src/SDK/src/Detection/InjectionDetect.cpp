@@ -28,6 +28,9 @@ namespace SDK {
 
 #ifdef _WIN32
 
+// Constants
+static constexpr size_t PAGE_SIZE = 0x1000;  // 4KB page size
+
 // Helper function to convert address to hex string
 static std::string ToHex(uintptr_t value) {
     std::ostringstream oss;
@@ -75,7 +78,7 @@ std::vector<ViolationEvent> InjectionDetector::ScanLoadedModules() {
     while (address < maxAddress) {
         MEMORY_BASIC_INFORMATION mbi;
         if (VirtualQuery((LPCVOID)address, &mbi, sizeof(mbi)) == 0) {
-            address += 0x1000;  // Skip to next page
+            address += PAGE_SIZE;  // Skip to next page
             continue;
         }
         
@@ -152,6 +155,9 @@ bool InjectionDetector::IsKnownJITRegion(uintptr_t address) {
     return false;
 }
 
+// Helper function to format memory region information for debugging/logging
+// Note: Currently unused in violation events due to memory safety concerns,
+// but kept for future use in logging or debugging scenarios.
 std::string InjectionDetector::DescribeRegion(const MEMORY_BASIC_INFORMATION& mbi) {
     std::string desc;
     
