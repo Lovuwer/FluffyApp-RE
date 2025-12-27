@@ -45,6 +45,7 @@ add_executable(SDKTests
     SDK/test_anti_debug.cpp
     SDK/test_integrity.cpp
     SDK/test_anti_hook.cpp
+    SDK/test_injection_detect.cpp
 )
 
 target_include_directories(SDKTests

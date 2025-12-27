@@ -108,12 +108,14 @@ enum class ViolationType : uint32_t {
     MemoryWrite = 0x0002,
     MemoryExecute = 0x0004,
     CodeInjection = 0x0008,
+    InjectedCode = 0x0009,          ///< Manually mapped or injected code detected
     
     // Process violations
     DebuggerAttached = 0x0010,
     RemoteThread = 0x0020,
     ProcessHollow = 0x0040,
     HandleManipulation = 0x0080,
+    SuspiciousThread = 0x0081,      ///< Thread with suspicious start address
     
     // Hook violations
     InlineHook = 0x0100,
