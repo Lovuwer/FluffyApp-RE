@@ -181,6 +181,53 @@ void WhitelistManager::LoadBuiltinWhitelist() {
         std::nullopt
     });
     
+    // Windows system DLLs (thread pool and common threading infrastructure)
+    entries_.push_back({
+        WhitelistType::ThreadOrigin,
+        "ntdll.dll",
+        "Windows NT kernel layer - thread pool workers",
+        true,
+        std::nullopt,
+        std::nullopt
+    });
+    
+    entries_.push_back({
+        WhitelistType::ThreadOrigin,
+        "kernel32.dll",
+        "Windows kernel - base thread initialization",
+        true,
+        std::nullopt,
+        std::nullopt
+    });
+    
+    entries_.push_back({
+        WhitelistType::ThreadOrigin,
+        "kernelbase.dll",
+        "Windows kernel base - thread infrastructure",
+        true,
+        std::nullopt,
+        std::nullopt
+    });
+    
+    // Additional .NET runtime variants
+    entries_.push_back({
+        WhitelistType::ThreadOrigin,
+        "mscorwks.dll",
+        ".NET Framework CLR workstation",
+        true,
+        std::nullopt,
+        std::nullopt
+    });
+    
+    entries_.push_back({
+        WhitelistType::ThreadOrigin,
+        "mscorsvr.dll",
+        ".NET Framework CLR server",
+        true,
+        std::nullopt,
+        std::nullopt
+    });
+    
     // Virtual machine timing tolerance
     entries_.push_back({
         WhitelistType::TimingException,

@@ -283,6 +283,138 @@ std::vector<ViolationEvent> InjectionDetector::ScanThreads() {
     return violations;
 }
 
+// Helper function to check if a thread starts in Windows thread pool
+bool InjectionDetector::IsWindowsThreadPoolThread(uintptr_t startAddress) {
+    // Get module info for the start address
+    MEMORY_BASIC_INFORMATION mbi;
+    if (VirtualQuery((LPCVOID)startAddress, &mbi, sizeof(mbi)) == 0) {
+        return false;
+    }
+    
+    // Get module name if this is in a module
+    wchar_t modulePath[MAX_PATH];
+    if (mbi.AllocationBase && 
+        GetModuleFileNameW((HMODULE)mbi.AllocationBase, modulePath, MAX_PATH) > 0) {
+        
+        // Extract module name from path
+        const wchar_t* moduleName = wcsrchr(modulePath, L'\\');
+        if (moduleName) {
+            moduleName++; // Skip the backslash
+        } else {
+            moduleName = modulePath;
+        }
+        
+        // Check for ntdll.dll or kernel32.dll (thread pool infrastructure)
+        if (_wcsicmp(moduleName, L"ntdll.dll") == 0 ||
+            _wcsicmp(moduleName, L"kernel32.dll") == 0 ||
+            _wcsicmp(moduleName, L"kernelbase.dll") == 0) {
+            
+            // Check proximity to thread pool functions in ntdll
+            // We use TpReleaseWork as a reference point for thread pool APIs
+            HMODULE hNtdll = GetModuleHandleW(L"ntdll.dll");
+            if (hNtdll) {
+                FARPROC pTpFunc = GetProcAddress(hNtdll, "TpReleaseWork");
+                // If we're within ~64KB of thread pool functions, likely a worker thread
+                if (pTpFunc) {
+                    uintptr_t tpFunc = (uintptr_t)pTpFunc;
+                    uintptr_t distance = (startAddress > tpFunc) ? 
+                        (startAddress - tpFunc) : (tpFunc - startAddress);
+                    if (distance < 65536) {  // Within 64KB
+                        return true;
+                    }
+                }
+            }
+            
+            // Check for BaseThreadInitThunk (common trampoline)
+            HMODULE hKernel32 = GetModuleHandleW(L"kernel32.dll");
+            if (hKernel32) {
+                FARPROC pBaseThreadInitThunk = GetProcAddress(hKernel32, "BaseThreadInitThunk");
+                if (pBaseThreadInitThunk && (uintptr_t)pBaseThreadInitThunk == startAddress) {
+                    return true;
+                }
+            }
+        }
+    }
+    
+    return false;
+}
+
+// Helper function to check if a thread belongs to CLR (.NET)
+bool InjectionDetector::IsCLRThread(uintptr_t startAddress) {
+    MEMORY_BASIC_INFORMATION mbi;
+    if (VirtualQuery((LPCVOID)startAddress, &mbi, sizeof(mbi)) == 0) {
+        return false;
+    }
+    
+    // Get module name
+    wchar_t modulePath[MAX_PATH];
+    if (mbi.AllocationBase && 
+        GetModuleFileNameW((HMODULE)mbi.AllocationBase, modulePath, MAX_PATH) > 0) {
+        
+        const wchar_t* moduleName = wcsrchr(modulePath, L'\\');
+        if (moduleName) {
+            moduleName++;
+        } else {
+            moduleName = modulePath;
+        }
+        
+        // Check for .NET CLR modules
+        if (_wcsicmp(moduleName, L"clr.dll") == 0 ||
+            _wcsicmp(moduleName, L"coreclr.dll") == 0 ||
+            _wcsicmp(moduleName, L"clrjit.dll") == 0 ||
+            _wcsicmp(moduleName, L"mscorwks.dll") == 0 ||
+            _wcsicmp(moduleName, L"mscorsvr.dll") == 0) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+// Helper function to check if memory region is a legitimate trampoline
+bool InjectionDetector::IsLegitimateTrampoline(uintptr_t address, 
+                                                const MEMORY_BASIC_INFORMATION& mbi) {
+    // If it's not private memory, not a trampoline case we care about
+    if (mbi.Type != MEM_PRIVATE) {
+        return false;
+    }
+    
+    // Check if this private memory is adjacent to a known module
+    // Trampolines are often allocated close to the module they serve
+    HMODULE hMods[1024];
+    DWORD cbNeeded;
+    
+    if (EnumProcessModules(GetCurrentProcess(), hMods, sizeof(hMods), &cbNeeded)) {
+        DWORD count = cbNeeded / sizeof(HMODULE);
+        for (DWORD i = 0; i < count; i++) {
+            MODULEINFO modInfo;
+            if (GetModuleInformation(GetCurrentProcess(), hMods[i], 
+                                    &modInfo, sizeof(modInfo))) {
+                uintptr_t modBase = (uintptr_t)modInfo.lpBaseOfDll;
+                uintptr_t modEnd = modBase + modInfo.SizeOfImage;
+                
+                // Check if the address is within 64KB before or after the module
+                // This is a common pattern for trampolines and delay-loaded code
+                const uintptr_t trampoline_threshold = 64 * 1024;
+                
+                if (address >= modEnd && (address - modEnd) < trampoline_threshold) {
+                    // Verify the memory region is small (trampolines are typically small)
+                    if (mbi.RegionSize <= 16 * 1024) {  // 16KB max for trampoline
+                        return true;
+                    }
+                }
+                if (address < modBase && (modBase - address) < trampoline_threshold) {
+                    if (mbi.RegionSize <= 16 * 1024) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    
+    return false;
+}
+
 bool InjectionDetector::IsThreadSuspicious(uint32_t threadId) {
     HANDLE hThread = OpenThread(THREAD_QUERY_INFORMATION, FALSE, threadId);
     if (!hThread) return false;
@@ -315,6 +447,8 @@ bool InjectionDetector::IsThreadSuspicious(uint32_t threadId) {
         return false;
     }
     
+    uintptr_t startAddr = (uintptr_t)startAddress;
+    
     // Safely query memory information about thread start address
     MEMORY_BASIC_INFORMATION mbi;
     size_t queryResult = 0;
@@ -330,8 +464,33 @@ bool InjectionDetector::IsThreadSuspicious(uint32_t threadId) {
         return true;  // Can't query = suspicious
     }
     
-    // Thread starting in MEM_PRIVATE is suspicious
-    return mbi.Type == MEM_PRIVATE;
+    // If thread starts in MEM_IMAGE or MEM_MAPPED, it's likely legitimate
+    if (mbi.Type != MEM_PRIVATE) {
+        return false;
+    }
+    
+    // Check whitelist for thread origins (covers JIT compilers, game engines, etc.)
+    if (g_whitelist && g_whitelist->IsThreadOriginWhitelisted(startAddr)) {
+        return false;
+    }
+    
+    // Check for Windows thread pool threads
+    if (IsWindowsThreadPoolThread(startAddr)) {
+        return false;
+    }
+    
+    // Check for CLR managed threads
+    if (IsCLRThread(startAddr)) {
+        return false;
+    }
+    
+    // Check if this is a legitimate trampoline near a known module
+    if (IsLegitimateTrampoline(startAddr, mbi)) {
+        return false;
+    }
+    
+    // Thread starting in MEM_PRIVATE without whitelist match is suspicious
+    return true;
 }
 
 void InjectionDetector::CaptureBaseline() {

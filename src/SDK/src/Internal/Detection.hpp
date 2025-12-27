@@ -208,6 +208,11 @@ private:
     bool HasPEHeader(uintptr_t address) const;
     bool IsNearKnownModule(uintptr_t address) const;
     Severity GetSeverityFromScore(float score) const;
+    
+    // Thread validation helpers
+    bool IsWindowsThreadPoolThread(uintptr_t startAddress);
+    bool IsCLRThread(uintptr_t startAddress);
+    bool IsLegitimateTrampoline(uintptr_t address, const MEMORY_BASIC_INFORMATION& mbi);
 #endif
     
     std::vector<std::wstring> known_modules_;

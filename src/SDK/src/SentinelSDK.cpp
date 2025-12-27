@@ -9,6 +9,7 @@
 #include "Internal/Detection.hpp"
 #include "Internal/Protection.hpp"
 #include "Internal/CorrelationEngine.hpp"
+#include "Internal/Whitelist.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -713,6 +714,45 @@ SENTINEL_API void SENTINEL_CALL ResetStatistics() {
     if (!g_context) return;
     
     g_context->stats = Statistics{};
+}
+
+// ==================== Whitelist Configuration ====================
+
+SENTINEL_API ErrorCode SENTINEL_CALL WhitelistThreadOrigin(
+    const char* module_name,
+    const char* reason) {
+    
+    if (!g_context) {
+        return ErrorCode::NotInitialized;
+    }
+    
+    if (!module_name || !reason) {
+        SetLastError("Invalid parameters for WhitelistThreadOrigin");
+        return ErrorCode::InvalidParameter;
+    }
+    
+    if (!g_whitelist) {
+        SetLastError("Whitelist manager not initialized");
+        return ErrorCode::InternalError;
+    }
+    
+    WhitelistEntry entry;
+    entry.type = WhitelistType::ThreadOrigin;
+    entry.identifier = module_name;
+    entry.reason = reason;
+    entry.builtin = false;
+    
+    g_whitelist->Add(entry);
+    
+    return ErrorCode::Success;
+}
+
+SENTINEL_API void SENTINEL_CALL RemoveThreadOriginWhitelist(const char* module_name) {
+    if (!g_context || !g_whitelist || !module_name) {
+        return;
+    }
+    
+    g_whitelist->Remove(module_name);
 }
 
 } // namespace SDK
