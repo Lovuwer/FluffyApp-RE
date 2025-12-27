@@ -46,6 +46,7 @@ option(SENTINEL_BUILD_DOCS "Build documentation" ON)
 option(SENTINEL_ENABLE_VM_DEOBFUSCATOR "Enable VM Deobfuscation Engine" ON)
 option(SENTINEL_ENABLE_ASAN "Enable Address Sanitizer" OFF)
 option(SENTINEL_ENABLE_UBSAN "Enable Undefined Behavior Sanitizer" OFF)
+option(SENTINEL_ENABLE_TSAN "Enable Thread Sanitizer" OFF)
 
 # ============================================================================
 # Compiler Configuration
@@ -61,8 +62,6 @@ if(MSVC)
         /Zc:__cplusplus         # Correct __cplusplus macro
         /Zc:preprocessor        # Conforming preprocessor
         /utf-8                  # UTF-8 source and execution charset
-        /guard:cf               # Control Flow Guard
-        /Qspectre               # Spectre mitigations
     )
     
     # Release optimizations
@@ -81,13 +80,49 @@ if(MSVC)
         )
     endif()
     
-    # Security flags
-    add_link_options(
-        /DYNAMICBASE            # ASLR
-        /NXCOMPAT               # DEP
-        /HIGHENTROPYVA          # High entropy ASLR
-        /CETCOMPAT              # CET Shadow Stack compatible
-    )
+    # ========================================================================
+    # Security Hardening Flags (MSVC)
+    # ========================================================================
+    
+    # Stack buffer overflow detection
+    add_compile_options(/GS)           # Buffer security check (stack canary)
+    
+    # Control Flow Guard
+    add_compile_options(/guard:cf)     # Control flow guard
+    add_link_options(/guard:cf)        # CFG in linker
+    
+    # Safe exception handlers (x86 only)
+    if(CMAKE_SIZEOF_VOID_P EQUAL 4)
+        add_link_options(/SAFESEH)
+    endif()
+    
+    # ASLR support
+    add_link_options(/DYNAMICBASE)     # Enable ASLR
+    add_link_options(/HIGHENTROPYVA)   # High-entropy 64-bit ASLR
+    
+    # DEP (Data Execution Prevention)
+    add_link_options(/NXCOMPAT)        # Enable DEP
+    
+    # Disable incremental linking for security
+    add_link_options(/INCREMENTAL:NO)
+    
+    # Generate full debug info for crash analysis
+    add_compile_options(/Zi)
+    add_link_options(/DEBUG:FULL)
+    
+    # Treat warnings as errors in Release
+    if(CMAKE_BUILD_TYPE STREQUAL "Release")
+        add_compile_options(/WX)
+    endif()
+    
+    # SDL checks (additional security checks)
+    add_compile_options(/sdl)
+    
+    # Spectre mitigation
+    add_compile_options(/Qspectre)
+    
+    # CET Shadow Stack compatible
+    add_link_options(/CETCOMPAT)
 else()
     # GCC/Clang flags
     add_compile_options(
@@ -96,24 +131,84 @@ else()
         -Wpedantic
         # -Werror  # Disabled for initial build
         -fPIC
-        -fstack-protector-strong
     )
     
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
         add_compile_options(-O3 -flto)
         add_link_options(-flto)
     endif()
+    
+    # ========================================================================
+    # Security Hardening Flags (GCC/Clang)
+    # ========================================================================
+    
+    # Stack protection
+    add_compile_options(-fstack-protector-strong)
+    
+    # Position Independent Executable (for ASLR)
+    # Note: -fPIC is already set globally and works for both libraries and executables.
+    # -fPIE is more restrictive and provides better ASLR for executables.
+    # CMake automatically handles the distinction between shared libraries (which use -fPIC)
+    # and executables (which can use -fPIE). Modern CMake will override -fPIE with -fPIC
+    # for shared library targets as needed.
+    add_compile_options(-fPIE)
+    add_link_options(-pie)
+    
+    # Fortify source (buffer overflow detection)
+    add_compile_options(-D_FORTIFY_SOURCE=2)
+    
+    # Format string protection
+    add_compile_options(-Wformat -Wformat-security)
+    
+    # Relocation read-only (RELRO)
+    add_link_options(-Wl,-z,relro,-z,now)
+    
+    # No executable stack
+    add_link_options(-Wl,-z,noexecstack)
+    
+    # Stack clash protection (GCC 8+)
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND 
+       CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 8)
+        add_compile_options(-fstack-clash-protection)
+    endif()
+    
+    # Control flow integrity (Clang)
+    # CFI requires LTO to work properly
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        # Only enable CFI if not using other sanitizers (they conflict)
+        if(NOT SENTINEL_ENABLE_ASAN AND NOT SENTINEL_ENABLE_TSAN AND NOT SENTINEL_ENABLE_UBSAN)
+            add_compile_options(-fsanitize=cfi -flto -fvisibility=hidden)
+            add_link_options(-fsanitize=cfi -flto)
+        endif()
+    endif()
 endif()
 
-# Sanitizers
+# ============================================================================
+# Sanitizers (Debug/Development builds)
+# ============================================================================
+
 if(SENTINEL_ENABLE_ASAN)
-    add_compile_options(-fsanitize=address)
-    add_link_options(-fsanitize=address)
+    if(MSVC)
+        add_compile_options(/fsanitize=address)
+    else()
+        add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
+        add_link_options(-fsanitize=address)
+    endif()
 endif()
 
 if(SENTINEL_ENABLE_UBSAN)
-    add_compile_options(-fsanitize=undefined)
-    add_link_options(-fsanitize=undefined)
+    # MSVC does not support UBSan. Use /analyze for similar static analysis.
+    if(NOT MSVC)
+        add_compile_options(-fsanitize=undefined)
+        add_link_options(-fsanitize=undefined)
+    endif()
+endif()
+
+if(SENTINEL_ENABLE_TSAN)
+    if(NOT MSVC)
+        add_compile_options(-fsanitize=thread)
+        add_link_options(-fsanitize=thread)
+    endif()
 endif()
 
 # ============================================================================
@@ -293,6 +388,21 @@ install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/SentinelConfigVersion.cmake"
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Sentinel
 )
+
+# ============================================================================
+# Binary Hardening Verification
+# ============================================================================
+
+# Verification target to check binary hardening
+if(WIN32)
+    add_custom_target(verify-hardening
+        COMMAND powershell -ExecutionPolicy Bypass -File 
+                ${CMAKE_SOURCE_DIR}/scripts/verify-hardening.ps1
+                $<TARGET_FILE:SentinelCore>
+        DEPENDS SentinelCore
+        COMMENT "Verifying binary security hardening"
+    )
+endif()
 
 # ============================================================================
 # Summary
