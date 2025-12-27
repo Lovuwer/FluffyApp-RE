@@ -32,6 +32,7 @@ target_sources(SentinelCore
         Network/TlsContext.cpp
         Network/CertPinner.cpp
         Network/RequestSigner.cpp
+        Network/CertificatePinning.cpp
         
         # Utilities
         Utils/Logger.cpp
