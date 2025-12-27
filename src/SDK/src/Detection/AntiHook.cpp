@@ -9,6 +9,7 @@
 #include "Internal/Detection.hpp"
 #include <algorithm>
 #include <cstring>
+#include <chrono>
 
 namespace Sentinel {
 namespace SDK {
@@ -146,8 +147,9 @@ std::vector<ViolationEvent> AntiHookDetector::QuickCheck() {
             static const char* detail_msg = "Inline hook detected";
             ev.details = detail_msg;
             ev.module_name = nullptr;
-            ev.timestamp = 0;
-            ev.detection_id = 0;
+            ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
             violations.push_back(ev);
         }
     }
@@ -169,8 +171,9 @@ std::vector<ViolationEvent> AntiHookDetector::FullScan() {
             static const char* detail_msg = "Inline hook detected";
             ev.details = detail_msg;
             ev.module_name = nullptr;
-            ev.timestamp = 0;
-            ev.detection_id = 0;
+            ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
             violations.push_back(ev);
         }
     }

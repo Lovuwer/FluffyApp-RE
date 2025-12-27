@@ -19,6 +19,9 @@
 
 using namespace Sentinel::SDK;
 
+// Test constants
+constexpr size_t TEST_PROLOGUE_SIZE = 16;
+
 /**
  * Dummy function for testing
  */
@@ -43,7 +46,7 @@ TEST(AntiHookTests, CleanFunction) {
     FunctionProtection func;
     func.address = funcAddr;
     func.name = "DummyFunction1";
-    func.prologue_size = 16;
+    func.prologue_size = TEST_PROLOGUE_SIZE;
     memcpy(func.original_prologue.data(), 
            reinterpret_cast<const void*>(funcAddr), 
            func.prologue_size);
@@ -76,8 +79,8 @@ TEST(AntiHookTests, PatternMatching) {
         FunctionProtection func;
         func.address = reinterpret_cast<uintptr_t>(jmpPattern);
         func.name = "JmpPattern";
-        func.prologue_size = 16;
-        memset(func.original_prologue.data(), 0x90, 16); // Original was NOPs
+        func.prologue_size = TEST_PROLOGUE_SIZE;
+        memset(func.original_prologue.data(), 0x90, TEST_PROLOGUE_SIZE); // Original was NOPs
         
         detector.RegisterFunction(func);
         
@@ -96,8 +99,8 @@ TEST(AntiHookTests, PatternMatching) {
         FunctionProtection func;
         func.address = reinterpret_cast<uintptr_t>(int3Pattern);
         func.name = "Int3Pattern";
-        func.prologue_size = 16;
-        memset(func.original_prologue.data(), 0x90, 16); // Original was NOPs
+        func.prologue_size = TEST_PROLOGUE_SIZE;
+        memset(func.original_prologue.data(), 0x90, TEST_PROLOGUE_SIZE); // Original was NOPs
         
         detector.RegisterFunction(func);
         
@@ -116,8 +119,8 @@ TEST(AntiHookTests, PatternMatching) {
         FunctionProtection func;
         func.address = reinterpret_cast<uintptr_t>(movJmpPattern);
         func.name = "MovJmpPattern";
-        func.prologue_size = 16;
-        memset(func.original_prologue.data(), 0x90, 16); // Original was NOPs
+        func.prologue_size = TEST_PROLOGUE_SIZE;
+        memset(func.original_prologue.data(), 0x90, TEST_PROLOGUE_SIZE); // Original was NOPs
         
         detector.RegisterFunction(func);
         
@@ -144,15 +147,15 @@ TEST(AntiHookTests, RegistrationUnregistration) {
     
     // Register 100 functions
     for (int i = 0; i < 100; i++) {
-        uint8_t* buffer = new uint8_t[16];
-        memset(buffer, 0x90, 16);
+        uint8_t* buffer = new uint8_t[TEST_PROLOGUE_SIZE];
+        memset(buffer, 0x90, TEST_PROLOGUE_SIZE);
         buffers.push_back(buffer);
         
         FunctionProtection func;
         func.address = reinterpret_cast<uintptr_t>(buffer);
         func.name = "Function_" + std::to_string(i);
-        func.prologue_size = 16;
-        memset(func.original_prologue.data(), 0x90, 16);
+        func.prologue_size = TEST_PROLOGUE_SIZE;
+        memset(func.original_prologue.data(), 0x90, TEST_PROLOGUE_SIZE);
         
         functions.push_back(func);
         detector.RegisterFunction(func);
@@ -198,14 +201,14 @@ TEST(AntiHookTests, ThreadSafety) {
         threads.emplace_back([&detector, t, operationsPerThread]() {
             for (int i = 0; i < operationsPerThread; i++) {
                 // Allocate real memory for each function
-                uint8_t* buffer = new uint8_t[16];
-                memset(buffer, 0x55, 16);
+                uint8_t* buffer = new uint8_t[TEST_PROLOGUE_SIZE];
+                memset(buffer, 0x55, TEST_PROLOGUE_SIZE);
                 
                 FunctionProtection func;
                 func.address = reinterpret_cast<uintptr_t>(buffer);
                 func.name = "ThreadFunc_" + std::to_string(t) + "_" + std::to_string(i);
-                func.prologue_size = 16;
-                memset(func.original_prologue.data(), 0x55, 16);
+                func.prologue_size = TEST_PROLOGUE_SIZE;
+                memset(func.original_prologue.data(), 0x55, TEST_PROLOGUE_SIZE);
                 
                 detector.RegisterFunction(func);
                 
@@ -244,15 +247,15 @@ TEST(AntiHookTests, QuickCheckVsFullScan) {
     
     // Register 20 functions (more than QuickCheck sample size of 10)
     for (int i = 0; i < 20; i++) {
-        uint8_t* buffer = new uint8_t[16];
-        memset(buffer, 0x90, 16);
+        uint8_t* buffer = new uint8_t[TEST_PROLOGUE_SIZE];
+        memset(buffer, 0x90, TEST_PROLOGUE_SIZE);
         buffers.push_back(buffer);
         
         FunctionProtection func;
         func.address = reinterpret_cast<uintptr_t>(buffer);
         func.name = "ScanFunc_" + std::to_string(i);
-        func.prologue_size = 16;
-        memset(func.original_prologue.data(), 0x90, 16);
+        func.prologue_size = TEST_PROLOGUE_SIZE;
+        memset(func.original_prologue.data(), 0x90, TEST_PROLOGUE_SIZE);
         
         detector.RegisterFunction(func);
     }
@@ -337,7 +340,7 @@ TEST(AntiHookTests, ModifiedBytesDetection) {
     FunctionProtection func;
     func.address = reinterpret_cast<uintptr_t>(buffer);
     func.name = "ModifiedFunction";
-    func.prologue_size = 16;
+    func.prologue_size = TEST_PROLOGUE_SIZE;
     memcpy(func.original_prologue.data(), buffer, 16);
     
     detector.RegisterFunction(func);
@@ -387,8 +390,8 @@ TEST(AntiHookTests, MultiplePatterns) {
         FunctionProtection func;
         func.address = reinterpret_cast<uintptr_t>(buffer);
         func.name = std::string("Pattern_") + pattern.name;
-        func.prologue_size = 16;
-        memset(func.original_prologue.data(), 0x90, 16);  // Original was all NOPs
+        func.prologue_size = TEST_PROLOGUE_SIZE;
+        memset(func.original_prologue.data(), 0x90, TEST_PROLOGUE_SIZE);  // Original was all NOPs
         
         detector.RegisterFunction(func);
         
@@ -411,8 +414,8 @@ TEST(AntiHookTests, UnregisteredFunctionCheck) {
     detector.Initialize();
     
     // Create a suspicious pattern
-    uint8_t suspiciousBuffer[16];
-    memset(suspiciousBuffer, 0x90, 16);
+    uint8_t suspiciousBuffer[TEST_PROLOGUE_SIZE];
+    memset(suspiciousBuffer, 0x90, TEST_PROLOGUE_SIZE);
     suspiciousBuffer[0] = 0xE9;  // JMP
     
     uintptr_t suspiciousAddr = reinterpret_cast<uintptr_t>(suspiciousBuffer);
@@ -424,7 +427,7 @@ TEST(AntiHookTests, UnregisteredFunctionCheck) {
         << "Unregistered function with suspicious pattern should be detected";
     
     // Create a normal pattern
-    uint8_t normalBuffer[16];
+    uint8_t normalBuffer[TEST_PROLOGUE_SIZE];
     normalBuffer[0] = 0x55;  // PUSH RBP
     normalBuffer[1] = 0x48;  // REX.W
     memset(normalBuffer + 2, 0x90, 14);
