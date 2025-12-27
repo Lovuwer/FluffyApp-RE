@@ -13,9 +13,8 @@
  */
 
 #include <Sentinel/Core/Crypto.hpp>
-#include <openssl/hmac.h>
 #include <openssl/evp.h>
-#include <openssl/crypto.h>
+#include <openssl/core_names.h>
 
 namespace Sentinel::Crypto {
 
@@ -26,77 +25,107 @@ namespace Sentinel::Crypto {
 class HMAC::Impl {
 public:
     explicit Impl(ByteSpan key, HashAlgorithm algorithm)
-        : m_key(key.begin(), key.end())
-        , m_algorithm(algorithm) {
-        
-        // Select the appropriate EVP_MD based on algorithm
-        switch (algorithm) {
-            case HashAlgorithm::SHA256:
-                m_evp_md = EVP_sha256();
-                break;
-            case HashAlgorithm::SHA384:
-                m_evp_md = EVP_sha384();
-                break;
-            case HashAlgorithm::SHA512:
-                m_evp_md = EVP_sha512();
-                break;
-            case HashAlgorithm::MD5:
-                m_evp_md = EVP_md5();
-                break;
-            default:
-                m_evp_md = EVP_sha256(); // Default to SHA256
-                break;
-        }
+        : m_algorithm(algorithm) {
+        // Store key securely
+        m_key.assign(key.begin(), key.end());
+    }
+    
+    ~Impl() {
+        // Secure erase key
+        secureZero(m_key.data(), m_key.size());
     }
     
     Result<ByteBuffer> compute(ByteSpan data) {
-        // Validate key size is reasonable
-        // HMAC allows any key size, but keys larger than the hash block size
-        // are hashed anyway. Practical maximum is 2048 bytes (more than enough).
-        constexpr size_t MAX_REASONABLE_KEY_SIZE = 2048;
-        if (m_key.size() > MAX_REASONABLE_KEY_SIZE) {
-            return ErrorCode::InvalidKey;
-        }
-        
-        // Also ensure the key size fits in int for OpenSSL API
-        if (m_key.size() > INT_MAX) {
-            return ErrorCode::InvalidKey;
-        }
-        
-        unsigned int len = 0;
-        ByteBuffer result(EVP_MAX_MD_SIZE);
-        
-        unsigned char* hmac_result = ::HMAC(
-            m_evp_md,
-            m_key.data(),
-            static_cast<int>(m_key.size()),
-            data.data(),
-            data.size(),
-            result.data(),
-            &len
-        );
-        
-        if (hmac_result == nullptr) {
+        EVP_MAC* mac = EVP_MAC_fetch(NULL, "HMAC", NULL);
+        if (!mac) {
             return ErrorCode::CryptoError;
         }
         
-        result.resize(len);
+        EVP_MAC_CTX* ctx = EVP_MAC_CTX_new(mac);
+        if (!ctx) {
+            EVP_MAC_free(mac);
+            return ErrorCode::CryptoError;
+        }
+        
+        // Set parameters
+        const char* digest_name = getDigestName(m_algorithm);
+        OSSL_PARAM params[] = {
+            OSSL_PARAM_construct_utf8_string(
+                OSSL_MAC_PARAM_DIGEST, 
+                const_cast<char*>(digest_name), 
+                0
+            ),
+            OSSL_PARAM_construct_end()
+        };
+        
+        // Handle empty key - we need a valid pointer even if size is 0
+        // Use a dummy byte when key is empty
+        unsigned char dummy_key = 0;
+        const unsigned char* key_ptr = m_key.empty() ? &dummy_key : m_key.data();
+        
+        if (!EVP_MAC_init(ctx, key_ptr, m_key.size(), params)) {
+            cleanup(ctx, mac);
+            return ErrorCode::CryptoError;
+        }
+        
+        if (!EVP_MAC_update(ctx, data.data(), data.size())) {
+            cleanup(ctx, mac);
+            return ErrorCode::CryptoError;
+        }
+        
+        size_t mac_size = 0;
+        if (!EVP_MAC_final(ctx, NULL, &mac_size, 0)) {
+            cleanup(ctx, mac);
+            return ErrorCode::CryptoError;
+        }
+        
+        ByteBuffer result(mac_size);
+        if (!EVP_MAC_final(ctx, result.data(), &mac_size, result.size())) {
+            cleanup(ctx, mac);
+            return ErrorCode::CryptoError;
+        }
+        
+        cleanup(ctx, mac);
         return result;
     }
     
-    Result<bool> verify(ByteSpan data, ByteSpan mac) {
-        auto computed = compute(data);
-        if (computed.isFailure()) {
-            return computed.error();
+    Result<bool> verify(ByteSpan data, ByteSpan expectedMac) {
+        auto computedResult = compute(data);
+        if (computedResult.isFailure()) {
+            return computedResult.error();
         }
         
-        return constantTimeCompare(computed.value(), mac);
+        ByteBuffer& computed = computedResult.value();
+        
+        // CRITICAL: Use constant-time comparison
+        bool valid = constantTimeCompare(
+            ByteSpan(computed.data(), computed.size()),
+            expectedMac
+        );
+        
+        // Secure erase computed MAC (defense in depth)
+        secureZero(computed.data(), computed.size());
+        
+        return valid;
     }
     
-private:
+private: 
     ByteBuffer m_key;
     HashAlgorithm m_algorithm;
-    const EVP_MD* m_evp_md;
+    
+    void cleanup(EVP_MAC_CTX* ctx, EVP_MAC* mac) {
+        EVP_MAC_CTX_free(ctx);
+        EVP_MAC_free(mac);
+    }
+    
+    const char* getDigestName(HashAlgorithm alg) {
+        switch (alg) {
+            case HashAlgorithm::SHA256: return "SHA256";
+            case HashAlgorithm::SHA384: return "SHA384";
+            case HashAlgorithm::SHA512: return "SHA512";
+            default:  return "SHA256";
+        }
+    }
 };
 
 // ============================================================================
