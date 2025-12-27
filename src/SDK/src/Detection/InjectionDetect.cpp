@@ -42,10 +42,17 @@ static std::string ToHex(uintptr_t value) {
 void InjectionDetector::Initialize() {
     // Snapshot current modules as baseline
     EnumerateKnownModules();
+    // Capture baseline memory regions (RWX regions at startup)
+#ifdef _WIN32
+    CaptureBaseline();
+#endif
 }
 
 void InjectionDetector::Shutdown() {
     known_modules_.clear();
+#ifdef _WIN32
+    baseline_regions_.clear();
+#endif
 }
 
 void InjectionDetector::EnumerateKnownModules() {
@@ -95,20 +102,26 @@ std::vector<ViolationEvent> InjectionDetector::ScanLoadedModules() {
             continue;
         }
         
-        // Check for suspicious regions
+        // Check for suspicious regions using heuristic scoring
         if (IsSuspiciousRegion(mbi)) {
-            ViolationEvent ev;
-            ev.type = ViolationType::InjectedCode;
-            ev.severity = Severity::Critical;
-            ev.address = (uintptr_t)mbi.BaseAddress;
-            // Use a static string literal to avoid use-after-free
-            static const char* detail_msg = "Executable private memory detected";
-            ev.details = detail_msg;
-            ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()).count();
-            ev.module_name = nullptr;
-            ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
-            violations.push_back(ev);
+            // Calculate suspicion score
+            float score = CalculateSuspicionScore(mbi);
+            
+            // Only report if score exceeds threshold
+            if (score > 0.5f) {
+                ViolationEvent ev;
+                ev.type = ViolationType::InjectedCode;
+                ev.severity = GetSeverityFromScore(score);
+                ev.address = (uintptr_t)mbi.BaseAddress;
+                // Use a static string literal to avoid use-after-free
+                static const char* detail_msg = "Executable private memory detected";
+                ev.details = detail_msg;
+                ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count();
+                ev.module_name = nullptr;
+                ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
+                violations.push_back(ev);
+            }
         }
         
         address = (uintptr_t)mbi.BaseAddress + mbi.RegionSize;
@@ -152,19 +165,59 @@ bool InjectionDetector::IsSuspiciousRegion(const MEMORY_BASIC_INFORMATION& mbi) 
 }
 
 bool InjectionDetector::IsKnownJITRegion(uintptr_t address) {
-    // TODO: Implement JIT region whitelist detection
-    // This function is intentionally a placeholder to prevent false positives
-    // on legitimate JIT-compiled code (e.g., .NET CLR heap, V8 isolate, LuaJIT).
-    // 
-    // Future implementation should check if the address falls within:
-    // - .NET CLR JIT heap regions
-    // - V8 JavaScript engine isolate
-    // - LuaJIT compiler regions
-    // - Other legitimate JIT compiler memory
-    //
-    // For now, return false (conservative approach - may cause false positives
-    // on applications using JIT compilation, but ensures detection of injected code).
-    (void)address;  // Suppress unused parameter warning
+    // Check if address is in a JIT compiler memory region
+    // Query the memory information for this address
+    MEMORY_BASIC_INFORMATION mbi;
+    if (VirtualQuery((LPCVOID)address, &mbi, sizeof(mbi)) == 0) {
+        return false;
+    }
+    
+    // Get module at this allocation base (if any)
+    wchar_t modulePath[MAX_PATH] = {0};
+    if (mbi.AllocationBase && 
+        GetModuleFileNameW((HMODULE)mbi.AllocationBase, modulePath, MAX_PATH) > 0) {
+        
+        // Extract module name from path
+        const wchar_t* moduleName = wcsrchr(modulePath, L'\\');
+        if (moduleName) {
+            moduleName++; // Skip the backslash
+        } else {
+            moduleName = modulePath;
+        }
+        
+        // Use case-insensitive comparison for known JIT modules
+        // Check for .NET CLR JIT
+        if (_wcsicmp(moduleName, L"clrjit.dll") == 0 ||
+            _wcsicmp(moduleName, L"clr.dll") == 0 ||
+            _wcsicmp(moduleName, L"coreclr.dll") == 0) {
+            return true;
+        }
+        
+        // Check for V8 JavaScript engine
+        if (_wcsicmp(moduleName, L"v8.dll") == 0 ||
+            _wcsicmp(moduleName, L"libv8.dll") == 0) {
+            return true;
+        }
+        
+        // Check for Unity IL2CPP
+        if (_wcsicmp(moduleName, L"gameassembly.dll") == 0) {
+            return true;
+        }
+        
+        // Check for LuaJIT
+        if (_wcsicmp(moduleName, L"luajit.dll") == 0 ||
+            _wcsicmp(moduleName, L"lua51.dll") == 0 ||
+            _wcsicmp(moduleName, L"lua52.dll") == 0 ||
+            _wcsicmp(moduleName, L"lua53.dll") == 0) {
+            return true;
+        }
+    }
+    
+    // Check against whitelist for thread origins (also covers JIT regions)
+    if (g_whitelist && g_whitelist->IsThreadOriginWhitelisted(address)) {
+        return true;
+    }
+    
     return false;
 }
 
@@ -279,6 +332,211 @@ bool InjectionDetector::IsThreadSuspicious(uint32_t threadId) {
     
     // Thread starting in MEM_PRIVATE is suspicious
     return mbi.Type == MEM_PRIVATE;
+}
+
+void InjectionDetector::CaptureBaseline() {
+    baseline_regions_.clear();
+    
+    SYSTEM_INFO sysInfo;
+    GetSystemInfo(&sysInfo);
+    
+    uintptr_t address = (uintptr_t)sysInfo.lpMinimumApplicationAddress;
+    uintptr_t maxAddress = (uintptr_t)sysInfo.lpMaximumApplicationAddress;
+    
+    while (address < maxAddress) {
+        MEMORY_BASIC_INFORMATION mbi;
+        
+        size_t queryResult = 0;
+        __try {
+            queryResult = VirtualQuery((LPCVOID)address, &mbi, sizeof(mbi));
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {
+            address += PAGE_SIZE;
+            continue;
+        }
+        
+        if (queryResult == 0) {
+            address += PAGE_SIZE;
+            continue;
+        }
+        
+        // Record all executable private memory in baseline
+        if (mbi.State == MEM_COMMIT && mbi.Type == MEM_PRIVATE) {
+            bool isExecutable = 
+                (mbi.Protect & PAGE_EXECUTE) ||
+                (mbi.Protect & PAGE_EXECUTE_READ) ||
+                (mbi.Protect & PAGE_EXECUTE_READWRITE) ||
+                (mbi.Protect & PAGE_EXECUTE_WRITECOPY);
+            
+            if (isExecutable) {
+                MemoryBaseline baseline;
+                baseline.base_address = (uintptr_t)mbi.BaseAddress;
+                baseline.region_size = mbi.RegionSize;
+                baseline_regions_.push_back(baseline);
+            }
+        }
+        
+        address = (uintptr_t)mbi.BaseAddress + mbi.RegionSize;
+    }
+}
+
+bool InjectionDetector::IsInBaseline(uintptr_t address, size_t size) const {
+    // Check if this region was in the baseline snapshot
+    for (const auto& baseline : baseline_regions_) {
+        // Check for overlap with baseline region
+        uintptr_t baseline_end = baseline.base_address + baseline.region_size;
+        uintptr_t region_end = address + size;
+        
+        if (address >= baseline.base_address && address < baseline_end) {
+            return true;
+        }
+        if (region_end > baseline.base_address && region_end <= baseline_end) {
+            return true;
+        }
+        if (address <= baseline.base_address && region_end >= baseline_end) {
+            return true;
+        }
+    }
+    return false;
+}
+
+float InjectionDetector::CalculateSuspicionScore(const MEMORY_BASIC_INFORMATION& mbi) const {
+    float score = 0.0f;
+    
+    uintptr_t address = (uintptr_t)mbi.BaseAddress;
+    size_t size = mbi.RegionSize;
+    
+    // MEM_PRIVATE + RWX = 0.3 score
+    if (mbi.Type == MEM_PRIVATE && mbi.Protect == PAGE_EXECUTE_READWRITE) {
+        score += 0.3f;
+    }
+    // MEM_PRIVATE + RX (no W) = 0.2 score
+    else if (mbi.Type == MEM_PRIVATE && mbi.Protect == PAGE_EXECUTE_READ) {
+        score += 0.2f;
+    }
+    // MEM_PRIVATE + X only = 0.2 score
+    else if (mbi.Type == MEM_PRIVATE && mbi.Protect == PAGE_EXECUTE) {
+        score += 0.2f;
+    }
+    
+    // Size < 4KB = +0.1 (shellcode-sized)
+    if (size < 4096) {
+        score += 0.1f;
+    }
+    // Size > 1MB = -0.1 (likely legitimate allocator)
+    else if (size > 1024 * 1024) {
+        score -= 0.1f;
+    }
+    
+    // Contains PE header signature = +0.3
+    if (HasPEHeader(address)) {
+        score += 0.3f;
+    }
+    
+    // Near known module = -0.2
+    if (IsNearKnownModule(address)) {
+        score -= 0.2f;
+    }
+    
+    // In baseline = -0.5 (significantly reduce score for baseline regions)
+    if (IsInBaseline(address, size)) {
+        score -= 0.5f;
+    }
+    
+    // Known JIT region = -0.5
+    if (IsKnownJITRegion(address)) {
+        score -= 0.5f;
+    }
+    
+    return score;
+}
+
+bool InjectionDetector::HasPEHeader(uintptr_t address) const {
+    // Check for PE header signature (MZ followed by PE)
+    __try {
+        const uint8_t* ptr = (const uint8_t*)address;
+        
+        // Check for MZ signature
+        if (ptr[0] != 'M' || ptr[1] != 'Z') {
+            return false;
+        }
+        
+        // Get PE header offset (at 0x3C)
+        uint32_t peOffset = *(uint32_t*)(ptr + 0x3C);
+        
+        // Verify PE offset is reasonable and within bounds
+        // Leave room for PE signature (4 bytes)
+        if (peOffset > 0x1000 - 4) {
+            return false;
+        }
+        
+        // Check for PE signature
+        const uint8_t* pePtr = ptr + peOffset;
+        if (pePtr[0] == 'P' && pePtr[1] == 'E' && 
+            pePtr[2] == 0 && pePtr[3] == 0) {
+            return true;
+        }
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        // Access violation - not a valid PE
+        return false;
+    }
+    
+    return false;
+}
+
+bool InjectionDetector::IsNearKnownModule(uintptr_t address) const {
+    // Check if address is within 64KB of a known module
+    const uintptr_t proximity_threshold = 64 * 1024;
+    
+    HMODULE hMods[1024];
+    DWORD cbNeeded;
+    
+    if (EnumProcessModules(GetCurrentProcess(), hMods, sizeof(hMods), &cbNeeded)) {
+        DWORD count = cbNeeded / sizeof(HMODULE);
+        for (DWORD i = 0; i < count; i++) {
+            MODULEINFO modInfo;
+            if (GetModuleInformation(GetCurrentProcess(), hMods[i], 
+                                    &modInfo, sizeof(modInfo))) {
+                uintptr_t modBase = (uintptr_t)modInfo.lpBaseOfDll;
+                uintptr_t modEnd = modBase + modInfo.SizeOfImage;
+                
+                // Check if address is within the module or within proximity_threshold
+                // Address is "near" if it's within module or within threshold of module boundaries
+                if (address >= modBase && address < modEnd) {
+                    return true;  // Inside module
+                }
+                // Before module start
+                if (address < modBase && (modBase - address) <= proximity_threshold) {
+                    return true;
+                }
+                // After module end
+                if (address >= modEnd && (address - modEnd) < proximity_threshold) {
+                    return true;
+                }
+            }
+        }
+    }
+    
+    return false;
+}
+
+Severity InjectionDetector::GetSeverityFromScore(float score) const {
+    // 0.5-0.7 = Warning
+    if (score >= 0.5f && score < 0.7f) {
+        return Severity::Warning;
+    }
+    // 0.7-0.9 = High
+    else if (score >= 0.7f && score < 0.9f) {
+        return Severity::High;
+    }
+    // 0.9+ = Critical
+    else if (score >= 0.9f) {
+        return Severity::Critical;
+    }
+    
+    // Below 0.5 should not be reported (filtered in ScanLoadedModules)
+    return Severity::Info;
 }
 
 bool InjectionDetector::IsModuleSuspicious(const wchar_t* module_path) {

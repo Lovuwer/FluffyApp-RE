@@ -189,13 +189,29 @@ private:
     bool IsModuleSuspicious(const wchar_t* module_path);
     bool IsThreadSuspicious(uint32_t thread_id);
     
+    // Baseline tracking
+    struct MemoryBaseline {
+        uintptr_t base_address;
+        size_t region_size;
+    };
+    
 #ifdef _WIN32
     bool IsSuspiciousRegion(const MEMORY_BASIC_INFORMATION& mbi);
     bool IsKnownJITRegion(uintptr_t address);
     std::string DescribeRegion(const MEMORY_BASIC_INFORMATION& mbi);
+    
+    void CaptureBaseline();
+    bool IsInBaseline(uintptr_t address, size_t size) const;
+    
+    // Heuristic scoring
+    float CalculateSuspicionScore(const MEMORY_BASIC_INFORMATION& mbi) const;
+    bool HasPEHeader(uintptr_t address) const;
+    bool IsNearKnownModule(uintptr_t address) const;
+    Severity GetSeverityFromScore(float score) const;
 #endif
     
     std::vector<std::wstring> known_modules_;
+    std::vector<MemoryBaseline> baseline_regions_;
 };
 
 /**

@@ -97,6 +97,90 @@ void WhitelistManager::LoadBuiltinWhitelist() {
         std::nullopt
     });
     
+    entries_.push_back({
+        WhitelistType::ThreadOrigin,
+        "clr.dll",
+        ".NET CLR runtime",
+        true,
+        std::nullopt,
+        std::nullopt
+    });
+    
+    entries_.push_back({
+        WhitelistType::ThreadOrigin,
+        "coreclr.dll",
+        ".NET Core CLR runtime",
+        true,
+        std::nullopt,
+        std::nullopt
+    });
+    
+    // V8 JavaScript engine (Electron apps, Chrome, etc.)
+    entries_.push_back({
+        WhitelistType::ThreadOrigin,
+        "v8.dll",
+        "V8 JavaScript engine",
+        true,
+        std::nullopt,
+        std::nullopt
+    });
+    
+    entries_.push_back({
+        WhitelistType::ThreadOrigin,
+        "libv8.dll",
+        "V8 JavaScript engine (lib variant)",
+        true,
+        std::nullopt,
+        std::nullopt
+    });
+    
+    // Unity IL2CPP
+    entries_.push_back({
+        WhitelistType::ThreadOrigin,
+        "gameassembly.dll",
+        "Unity IL2CPP runtime",
+        true,
+        std::nullopt,
+        std::nullopt
+    });
+    
+    // LuaJIT
+    entries_.push_back({
+        WhitelistType::ThreadOrigin,
+        "luajit.dll",
+        "LuaJIT compiler",
+        true,
+        std::nullopt,
+        std::nullopt
+    });
+    
+    entries_.push_back({
+        WhitelistType::ThreadOrigin,
+        "lua51.dll",
+        "Lua 5.1 (may include JIT)",
+        true,
+        std::nullopt,
+        std::nullopt
+    });
+    
+    entries_.push_back({
+        WhitelistType::ThreadOrigin,
+        "lua52.dll",
+        "Lua 5.2 (may include JIT)",
+        true,
+        std::nullopt,
+        std::nullopt
+    });
+    
+    entries_.push_back({
+        WhitelistType::ThreadOrigin,
+        "lua53.dll",
+        "Lua 5.3 (may include JIT)",
+        true,
+        std::nullopt,
+        std::nullopt
+    });
+    
     // Virtual machine timing tolerance
     entries_.push_back({
         WhitelistType::TimingException,
