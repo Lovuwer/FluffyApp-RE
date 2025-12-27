@@ -58,8 +58,9 @@ public:
             OSSL_PARAM_construct_end()
         };
         
-        // Handle empty key - we need a valid pointer even if size is 0
-        // Use a dummy byte when key is empty
+        // Handle empty key - OpenSSL's EVP_MAC_init requires a non-NULL pointer
+        // even when key size is 0. We provide a valid pointer to a dummy byte,
+        // but the actual key size (0) is what's used in the computation.
         unsigned char dummy_key = 0;
         const unsigned char* key_ptr = m_key.empty() ? &dummy_key : m_key.data();
         
