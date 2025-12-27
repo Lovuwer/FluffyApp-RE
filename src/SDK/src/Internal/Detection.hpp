@@ -115,6 +115,8 @@ private:
     uint64_t GetSystemTime();
     uint64_t GetPerformanceCounter();
     uint64_t GetRDTSC();
+    bool ValidateSourceRatios();
+    bool ValidateAgainstWallClock();
     
     // Multiple time sources for cross-validation
     uint64_t baseline_system_time_ = 0;
