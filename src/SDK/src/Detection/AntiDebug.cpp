@@ -16,6 +16,8 @@
 #include <tlhelp32.h>
 #endif
 
+#include <vector>
+
 namespace Sentinel {
 namespace SDK {
 
@@ -117,6 +119,19 @@ std::vector<ViolationEvent> AntiDebugDetector::FullCheck() {
         ev.detection_id = 0;
         violations.push_back(ev);
     }
+    
+    // Check for timing anomalies (single-stepping, breakpoints)
+    if (CheckTimingAnomaly()) {
+        ViolationEvent ev;
+        ev.type = ViolationType::DebuggerAttached;
+        ev.severity = Severity::High;
+        ev.details = "Timing anomaly detected - possible single-stepping or breakpoint";
+        ev.timestamp = 0;
+        ev.address = 0;
+        ev.module_name = nullptr;
+        ev.detection_id = 0;
+        violations.push_back(ev);
+    }
 #endif
     
     return violations;
@@ -165,7 +180,104 @@ bool AntiDebugDetector::CheckHardwareBreakpoints() {
     return false;
 #endif
 }
-bool AntiDebugDetector::CheckTimingAnomaly() { return false; }
+
+// Helper function: Statistical timing check for more robust detection
+[[maybe_unused]] static bool CheckTimingStatistical() {
+#ifdef _WIN32
+    std::vector<uint64_t> samples;
+    samples.reserve(10);
+    
+    for (int s = 0; s < 10; s++) {
+        uint64_t start = __rdtsc();
+        volatile int x = 0;
+        for (int i = 0; i < 100; i++) x++;
+        uint64_t end = __rdtsc();
+        samples.push_back(end - start);
+    }
+    
+    // Calculate variance
+    uint64_t sum = 0;
+    for (auto& s : samples) sum += s;
+    uint64_t mean = sum / samples.size();
+    
+    uint64_t variance = 0;
+    for (auto& s : samples) {
+        int64_t diff = static_cast<int64_t>(s) - static_cast<int64_t>(mean);
+        variance += diff * diff;
+    }
+    variance /= samples.size();
+    
+    // High variance indicates debugger interference
+    // (breakpoints hit some iterations but not others)
+    constexpr uint64_t VARIANCE_THRESHOLD = 1000000;
+    
+    return variance > VARIANCE_THRESHOLD || mean > 10000;
+#else
+    return false;
+#endif
+}
+
+bool AntiDebugDetector::CheckTimingAnomaly() {
+#ifdef _WIN32
+    // Rate limiting: Don't check more than once per second
+    // Store last_check_time_ and check_count_ as member variables
+    if (GetTickCount64() - last_check_time_ < 1000) {
+        return false; // Skip if called too frequently
+    }
+    last_check_time_ = GetTickCount64();
+    
+    // Measure time for a trivial operation
+    // Single-stepping or breakpoints dramatically increase time
+    
+    volatile uint64_t counter = 0;
+    
+    // Use QPC for high resolution
+    LARGE_INTEGER freq, start, end;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&start);
+    
+    // Trivial loop - should complete in microseconds
+    for (int i = 0; i < 1000; i++) {
+        counter++;
+    }
+    
+    QueryPerformanceCounter(&end);
+    
+    // Calculate elapsed time in microseconds
+    double elapsed_us = static_cast<double>(end.QuadPart - start.QuadPart) 
+                       * 1000000.0 / static_cast<double>(freq.QuadPart);
+    
+    // Threshold: Normal < 100us, Debugged with stepping > 1000us
+    // Use conservative threshold to avoid false positives
+    constexpr double THRESHOLD_US = 500.0;
+    
+    if (elapsed_us > THRESHOLD_US) {
+        return true;
+    }
+    
+    // Alternative: Use RDTSC for cycle-accurate measurement
+    uint64_t tsc_start = __rdtsc();
+    
+    for (int i = 0; i < 100; i++) {
+        counter++;
+    }
+    
+    uint64_t tsc_end = __rdtsc();
+    uint64_t cycles = tsc_end - tsc_start;
+    
+    // Normal:  < 1000 cycles, Single-stepped: millions
+    constexpr uint64_t CYCLE_THRESHOLD = 10000;
+    
+    if (cycles > CYCLE_THRESHOLD) {
+        return true;
+    }
+    
+    // Statistical variant for more robust detection
+    return CheckTimingStatistical();
+#else
+    return false;
+#endif
+}
 bool AntiDebugDetector::CheckSEHIntegrity() { return false; }
 bool AntiDebugDetector::CheckPEB() { return CheckIsDebuggerPresent(); }
 
