@@ -309,14 +309,14 @@ bool InjectionDetector::IsWindowsThreadPoolThread(uintptr_t startAddress) {
             _wcsicmp(moduleName, L"kernel32.dll") == 0 ||
             _wcsicmp(moduleName, L"kernelbase.dll") == 0) {
             
-            // Check if the function is a known thread pool worker function
-            // TppWorkerThread is the main thread pool worker entry point
+            // Check proximity to thread pool functions in ntdll
+            // We use TpReleaseWork as a reference point for thread pool APIs
             HMODULE hNtdll = GetModuleHandleW(L"ntdll.dll");
             if (hNtdll) {
-                FARPROC pTppWorkerThread = GetProcAddress(hNtdll, "TpReleaseWork");
+                FARPROC pTpFunc = GetProcAddress(hNtdll, "TpReleaseWork");
                 // If we're within ~64KB of thread pool functions, likely a worker thread
-                if (pTppWorkerThread) {
-                    uintptr_t tpFunc = (uintptr_t)pTppWorkerThread;
+                if (pTpFunc) {
+                    uintptr_t tpFunc = (uintptr_t)pTpFunc;
                     uintptr_t distance = (startAddress > tpFunc) ? 
                         (startAddress - tpFunc) : (tpFunc - startAddress);
                     if (distance < 65536) {  // Within 64KB
