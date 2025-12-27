@@ -539,4 +539,112 @@ TEST(AntiHookTests, IATModuleNotImported) {
     
     detector.Shutdown();
 }
+
+/**
+ * Test 15: IAT Forward Detection
+ * Verifies that forwarded exports don't trigger false positives
+ * HeapAlloc in kernel32.dll forwards to ntdll.RtlAllocateHeap
+ */
+TEST(AntiHookTests, IATForwardDetection) {
+    AntiHookDetector detector;
+    detector.Initialize();
+    
+    // HeapAlloc is commonly forwarded from kernel32.dll to ntdll.dll
+    // This should NOT be detected as hooked
+    bool isHooked = detector.IsIATHooked("kernel32.dll", "HeapAlloc");
+    
+    EXPECT_FALSE(isHooked)
+        << "HeapAlloc forward from kernel32 to ntdll should not be detected as hooked";
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test 16: IAT API Set Resolution
+ * Verifies that API set DLLs are correctly resolved
+ */
+TEST(AntiHookTests, IATApiSetResolution) {
+    AntiHookDetector detector;
+    detector.Initialize();
+    
+    // Note: This test might not run if the executable doesn't import from API sets
+    // API sets like api-ms-win-core-*.dll should resolve to their host DLLs
+    // and not trigger false positives
+    
+    // Just verify the detector can handle API set names without crashing
+    bool isHooked = detector.IsIATHooked("api-ms-win-core-processthreads-l1-1-0.dll", "CreateThread");
+    
+    // Should return false (either not imported or correctly resolved)
+    EXPECT_FALSE(isHooked)
+        << "API set DLL should not cause false positive";
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test 17: Delay-Load IAT Check
+ * Verifies that delay-loaded imports can be checked
+ */
+TEST(AntiHookTests, DelayLoadIATCheck) {
+    AntiHookDetector detector;
+    detector.Initialize();
+    
+    // Check a function that might be delay-loaded
+    // If not delay-loaded, should return false without error
+    bool isHooked = detector.IsDelayLoadIATHooked("user32.dll", "MessageBoxA");
+    
+    EXPECT_FALSE(isHooked)
+        << "Delay-load IAT check should not crash or give false positives";
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test 18: IAT Severity Check
+ * Verifies that IAT hooks are reported with High severity (not Critical)
+ */
+TEST(AntiHookTests, IATSeverityCheck) {
+    AntiHookDetector detector;
+    detector.Initialize();
+    
+    // Run ScanCriticalAPIs and check if any IAT violations have correct severity
+    std::vector<ViolationEvent> violations = detector.ScanCriticalAPIs();
+    
+    // Filter to only IAT hook violations
+    for (const auto& v : violations) {
+        if (v.type == ViolationType::IATHook) {
+            // All IAT hooks should be High severity, not Critical
+            EXPECT_EQ(v.severity, Severity::High)
+                << "IAT hooks should have High severity, not Critical";
+        }
+    }
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test 19: Known Forward Allowlist
+ * Verifies that known system forwards are not flagged as hooks
+ */
+TEST(AntiHookTests, KnownForwardAllowlist) {
+    AntiHookDetector detector;
+    detector.Initialize();
+    
+    // Test various functions that are commonly forwarded
+    // These should NOT be detected as hooked
+    const char* forwardedFuncs[] = {
+        "HeapAlloc",
+        "HeapFree",
+        "HeapReAlloc",
+        "GetProcessHeap",
+    };
+    
+    for (const char* func : forwardedFuncs) {
+        bool isHooked = detector.IsIATHooked("kernel32.dll", func);
+        EXPECT_FALSE(isHooked)
+            << "Known forwarded function " << func << " should not be detected as hooked";
+    }
+    
+    detector.Shutdown();
+}
 #endif
