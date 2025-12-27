@@ -9,6 +9,7 @@
 
 #include "Internal/Detection.hpp"
 #include "Internal/Context.hpp"
+#include "Internal/SafeMemory.hpp"
 #include <mutex>
 #include <algorithm>
 
@@ -27,21 +28,49 @@ void IntegrityChecker::Initialize() {
     
     // Parse PE header
     PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)hModule;
+    
+    // Verify DOS header is readable
+    if (!SafeMemory::IsReadable(dosHeader, sizeof(IMAGE_DOS_HEADER))) {
+        return;
+    }
+    
     PIMAGE_NT_HEADERS ntHeaders = (PIMAGE_NT_HEADERS)
         ((BYTE*)hModule + dosHeader->e_lfanew);
+    
+    // Verify NT headers are readable
+    if (!SafeMemory::IsReadable(ntHeaders, sizeof(IMAGE_NT_HEADERS))) {
+        return;
+    }
     
     // Find .text section
     PIMAGE_SECTION_HEADER section = IMAGE_FIRST_SECTION(ntHeaders);
     for (WORD i = 0; i < ntHeaders->FileHeader.NumberOfSections; i++) {
+        // Verify section header is readable
+        if (!SafeMemory::IsReadable(section, sizeof(IMAGE_SECTION_HEADER))) {
+            section++;
+            continue;
+        }
+        
         if (memcmp(section->Name, ".text", 5) == 0) {
             code_section_base_ = (uintptr_t)hModule + section->VirtualAddress;
             code_section_size_ = section->Misc.VirtualSize;
             
-            // Compute initial hash using the hash from Context.hpp
-            code_section_hash_ = Internal::ComputeHash(
-                (void*)code_section_base_, 
-                code_section_size_
-            );
+            // Verify code section is readable before hashing
+            if (!SafeMemory::IsReadable((void*)code_section_base_, code_section_size_)) {
+                code_section_base_ = 0;
+                code_section_size_ = 0;
+                return;
+            }
+            
+            // Compute initial hash using safe hash function
+            if (!SafeMemory::SafeHash((void*)code_section_base_, 
+                                       code_section_size_, 
+                                       &code_section_hash_)) {
+                // Failed to hash, reset
+                code_section_base_ = 0;
+                code_section_size_ = 0;
+                code_section_hash_ = 0;
+            }
             break;
         }
         section++;
@@ -66,6 +95,36 @@ void IntegrityChecker::UnregisterRegion(uintptr_t address) {
             [address](const MemoryRegion& r) { return r.address == address; }),
         registered_regions_.end()
     );
+}
+
+void IntegrityChecker::UnregisterRegionsInModule(uintptr_t module_base) {
+#ifdef _WIN32
+    if (module_base == 0) return;
+    
+    // Get module information to determine its address range
+    MODULEINFO modInfo;
+    if (!GetModuleInformation(GetCurrentProcess(), 
+                              reinterpret_cast<HMODULE>(module_base),
+                              &modInfo, sizeof(modInfo))) {
+        return;
+    }
+    
+    uintptr_t moduleStart = reinterpret_cast<uintptr_t>(modInfo.lpBaseOfDll);
+    uintptr_t moduleEnd = moduleStart + modInfo.SizeOfImage;
+    
+    std::lock_guard<std::mutex> lock(regions_mutex_);
+    
+    // Remove all regions in this module's address range
+    registered_regions_.erase(
+        std::remove_if(registered_regions_.begin(), registered_regions_.end(),
+            [moduleStart, moduleEnd](const MemoryRegion& r) {
+                return r.address >= moduleStart && r.address < moduleEnd;
+            }),
+        registered_regions_.end()
+    );
+#else
+    (void)module_base;
+#endif
 }
 
 std::vector<ViolationEvent> IntegrityChecker::QuickCheck() {
@@ -146,10 +205,16 @@ std::vector<ViolationEvent> IntegrityChecker::FullScan() {
 }
 
 bool IntegrityChecker::VerifyRegion(const MemoryRegion& region) {
-    uint64_t currentHash = Internal::ComputeHash(
-        (void*)region.address,
-        region.size
-    );
+    // Verify memory is readable before hashing
+    if (!SafeMemory::IsReadable((void*)region.address, region.size)) {
+        return false;  // Memory not accessible
+    }
+    
+    uint64_t currentHash;
+    if (!SafeMemory::SafeHash((void*)region.address, region.size, &currentHash)) {
+        return false;  // Failed to compute hash
+    }
+    
     return currentHash == region.original_hash;
 }
 
@@ -158,10 +223,17 @@ bool IntegrityChecker::VerifyCodeSection() {
         return true; // Not initialized, assume OK
     }
     
-    uint64_t currentHash = Internal::ComputeHash(
-        (void*)code_section_base_,
-        code_section_size_
-    );
+    // Verify memory is readable before hashing
+    if (!SafeMemory::IsReadable((void*)code_section_base_, code_section_size_)) {
+        return false;  // Code section no longer accessible
+    }
+    
+    uint64_t currentHash;
+    if (!SafeMemory::SafeHash((void*)code_section_base_, 
+                               code_section_size_, 
+                               &currentHash)) {
+        return false;  // Failed to compute hash
+    }
     
     return currentHash == code_section_hash_;
 }

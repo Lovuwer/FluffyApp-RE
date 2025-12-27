@@ -9,6 +9,7 @@
  */
 
 #include "Internal/Detection.hpp"
+#include "Internal/SafeMemory.hpp"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -77,7 +78,19 @@ std::vector<ViolationEvent> InjectionDetector::ScanLoadedModules() {
     
     while (address < maxAddress) {
         MEMORY_BASIC_INFORMATION mbi;
-        if (VirtualQuery((LPCVOID)address, &mbi, sizeof(mbi)) == 0) {
+        
+        // Safely query memory - check if address is accessible first
+        size_t queryResult = 0;
+        __try {
+            queryResult = VirtualQuery((LPCVOID)address, &mbi, sizeof(mbi));
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {
+            // VirtualQuery failed with exception, skip to next page
+            address += PAGE_SIZE;
+            continue;
+        }
+        
+        if (queryResult == 0) {
             address += PAGE_SIZE;  // Skip to next page
             continue;
         }
@@ -249,9 +262,18 @@ bool InjectionDetector::IsThreadSuspicious(uint32_t threadId) {
         return false;
     }
     
-    // Check if start address is in a valid module
+    // Safely query memory information about thread start address
     MEMORY_BASIC_INFORMATION mbi;
-    if (VirtualQuery(startAddress, &mbi, sizeof(mbi)) == 0) {
+    size_t queryResult = 0;
+    __try {
+        queryResult = VirtualQuery(startAddress, &mbi, sizeof(mbi));
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        // Failed to query, assume suspicious
+        return true;
+    }
+    
+    if (queryResult == 0) {
         return true;  // Can't query = suspicious
     }
     

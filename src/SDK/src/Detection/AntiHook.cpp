@@ -8,6 +8,7 @@
  */
 
 #include "Internal/Detection.hpp"
+#include "Internal/SafeMemory.hpp"
 #include <algorithm>
 #include <cstring>
 #include <chrono>
@@ -79,16 +80,36 @@ namespace {
 }
 
 // AntiHookDetector implementation
-void AntiHookDetector::Initialize() {}
+void AntiHookDetector::Initialize() {
+#ifdef _WIN32
+    SetupDllNotification();
+#endif
+}
 
-void AntiHookDetector::Shutdown() {}
+void AntiHookDetector::Shutdown() {
+#ifdef _WIN32
+    CleanupDllNotification();
+#endif
+}
 
 bool AntiHookDetector::IsInlineHooked(const FunctionProtection& func) {
-    // Read current bytes at function address
-    const uint8_t* currentBytes = reinterpret_cast<const uint8_t*>(func.address);
+    // Verify memory is readable before accessing
+    if (!SafeMemory::IsReadable(reinterpret_cast<const void*>(func.address), func.prologue_size)) {
+        // Memory is not readable (possibly freed/unmapped)
+        return false;  // Can't verify, assume not hooked to avoid false positives
+    }
     
-    // Compare with original prologue
-    if (memcmp(currentBytes, func.original_prologue.data(), func.prologue_size) != 0) {
+    // Read current bytes at function address using safe access
+    uint8_t currentBytes[32];  // Max prologue size from Context.hpp
+    if (!SafeMemory::SafeRead(reinterpret_cast<const void*>(func.address), 
+                               currentBytes, func.prologue_size)) {
+        // Failed to read (access violation despite IsReadable check)
+        return false;
+    }
+    
+    // Compare with original prologue using safe comparison
+    if (!SafeMemory::SafeCompare(reinterpret_cast<const void*>(func.address),
+                                  func.original_prologue.data(), func.prologue_size)) {
         // Bytes changed - check for hook patterns
         for (const auto& pattern : HOOK_PATTERNS) {
             if (pattern.bytes.size() <= func.prologue_size) {
@@ -110,52 +131,115 @@ bool AntiHookDetector::IsIATHooked(const char* module_name, const char* function
     HMODULE hModule = GetModuleHandle(nullptr);
     if (!hModule) return false;
     
-    // Parse PE headers with defensive checks
-    PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)hModule;
-    if (dosHeader->e_magic != IMAGE_DOS_SIGNATURE) return false;
+    // Maximum reasonable PE header offset (64KB)
+    static constexpr LONG MAX_PE_HEADER_OFFSET = 0x10000;
     
-    PIMAGE_NT_HEADERS ntHeaders = (PIMAGE_NT_HEADERS)
-        ((BYTE*)hModule + dosHeader->e_lfanew);
-    if (ntHeaders->Signature != IMAGE_NT_SIGNATURE) return false;
-    
-    // Get import directory
-    DWORD importDirRVA = ntHeaders->OptionalHeader
-        .DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress;
-    if (importDirRVA == 0) return false;
-    
-    PIMAGE_IMPORT_DESCRIPTOR importDesc = (PIMAGE_IMPORT_DESCRIPTOR)
-        ((BYTE*)hModule + importDirRVA);
-    
-    // Find the target module
-    while (importDesc->Name != 0) {
-        const char* dllName = (const char*)((BYTE*)hModule + importDesc->Name);
+    // Wrap PE parsing in SEH to catch malformed headers
+    __try {
+        // Parse PE headers with defensive checks
+        PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)hModule;
         
-        if (_stricmp(dllName, module_name) == 0) {
-            // Found the module - now find the function
-            PIMAGE_THUNK_DATA origThunk = (PIMAGE_THUNK_DATA)
-                ((BYTE*)hModule + importDesc->OriginalFirstThunk);
-            PIMAGE_THUNK_DATA iatThunk = (PIMAGE_THUNK_DATA)
-                ((BYTE*)hModule + importDesc->FirstThunk);
-            
-            while (origThunk->u1.AddressOfData != 0) {
-                if (!(origThunk->u1.Ordinal & IMAGE_ORDINAL_FLAG)) {
-                    PIMAGE_IMPORT_BY_NAME importName = (PIMAGE_IMPORT_BY_NAME)
-                        ((BYTE*)hModule + origThunk->u1.AddressOfData);
-                    
-                    if (strcmp((char*)importName->Name, function_name) == 0) {
-                        // Found the function - validate IAT entry
-                        uintptr_t iatAddress = iatThunk->u1.Function;
-                        return !IsAddressInModule(iatAddress, module_name);
-                    }
-                }
-                origThunk++;
-                iatThunk++;
-            }
+        // Verify DOS header is readable
+        if (!SafeMemory::IsReadable(dosHeader, sizeof(IMAGE_DOS_HEADER))) {
+            return false;
         }
-        importDesc++;
+        
+        if (dosHeader->e_magic != IMAGE_DOS_SIGNATURE) return false;
+        
+        // Verify NT headers location is within bounds and readable
+        if (dosHeader->e_lfanew < 0 || dosHeader->e_lfanew > MAX_PE_HEADER_OFFSET) {
+            return false;  // Unreasonable offset
+        }
+        
+        PIMAGE_NT_HEADERS ntHeaders = (PIMAGE_NT_HEADERS)
+            ((BYTE*)hModule + dosHeader->e_lfanew);
+        
+        // Verify NT headers are readable
+        if (!SafeMemory::IsReadable(ntHeaders, sizeof(IMAGE_NT_HEADERS))) {
+            return false;
+        }
+        
+        if (ntHeaders->Signature != IMAGE_NT_SIGNATURE) return false;
+        
+        // Get import directory
+        DWORD importDirRVA = ntHeaders->OptionalHeader
+            .DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress;
+        if (importDirRVA == 0) return false;
+        
+        PIMAGE_IMPORT_DESCRIPTOR importDesc = (PIMAGE_IMPORT_DESCRIPTOR)
+            ((BYTE*)hModule + importDirRVA);
+        
+        // Verify import descriptor is readable
+        if (!SafeMemory::IsReadable(importDesc, sizeof(IMAGE_IMPORT_DESCRIPTOR))) {
+            return false;
+        }
+        
+        // Find the target module
+        while (importDesc->Name != 0) {
+            // Verify this descriptor entry is readable
+            if (!SafeMemory::IsReadable(importDesc, sizeof(IMAGE_IMPORT_DESCRIPTOR))) {
+                break;
+            }
+            
+            const char* dllName = (const char*)((BYTE*)hModule + importDesc->Name);
+            
+            // Verify DLL name string is readable
+            if (!SafeMemory::IsReadable(dllName, 1)) {
+                importDesc++;
+                continue;
+            }
+            
+            if (_stricmp(dllName, module_name) == 0) {
+                // Found the module - now find the function
+                PIMAGE_THUNK_DATA origThunk = (PIMAGE_THUNK_DATA)
+                    ((BYTE*)hModule + importDesc->OriginalFirstThunk);
+                PIMAGE_THUNK_DATA iatThunk = (PIMAGE_THUNK_DATA)
+                    ((BYTE*)hModule + importDesc->FirstThunk);
+                
+                // Verify thunks are readable
+                if (!SafeMemory::IsReadable(origThunk, sizeof(IMAGE_THUNK_DATA)) ||
+                    !SafeMemory::IsReadable(iatThunk, sizeof(IMAGE_THUNK_DATA))) {
+                    return false;
+                }
+                
+                while (origThunk->u1.AddressOfData != 0) {
+                    // Verify each thunk entry is readable
+                    if (!SafeMemory::IsReadable(origThunk, sizeof(IMAGE_THUNK_DATA)) ||
+                        !SafeMemory::IsReadable(iatThunk, sizeof(IMAGE_THUNK_DATA))) {
+                        break;
+                    }
+                    
+                    if (!(origThunk->u1.Ordinal & IMAGE_ORDINAL_FLAG)) {
+                        PIMAGE_IMPORT_BY_NAME importName = (PIMAGE_IMPORT_BY_NAME)
+                            ((BYTE*)hModule + origThunk->u1.AddressOfData);
+                        
+                        // Verify import name structure is readable
+                        if (!SafeMemory::IsReadable(importName, sizeof(IMAGE_IMPORT_BY_NAME))) {
+                            origThunk++;
+                            iatThunk++;
+                            continue;
+                        }
+                        
+                        if (strcmp((char*)importName->Name, function_name) == 0) {
+                            // Found the function - validate IAT entry
+                            uintptr_t iatAddress = iatThunk->u1.Function;
+                            return !IsAddressInModule(iatAddress, module_name);
+                        }
+                    }
+                    origThunk++;
+                    iatThunk++;
+                }
+            }
+            importDesc++;
+        }
+        
+        return false;  // Function not found in imports
     }
-    
-    return false;  // Function not found in imports
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        // Access violation or other exception during PE parsing
+        // Return false (not hooked) instead of crashing
+        return false;
+    }
 #else
     (void)module_name;
     (void)function_name;
@@ -164,7 +248,15 @@ bool AntiHookDetector::IsIATHooked(const char* module_name, const char* function
 }
 
 bool AntiHookDetector::HasSuspiciousJump(const void* address) {
-    const uint8_t* bytes = static_cast<const uint8_t*>(address);
+    // Verify memory is readable
+    if (!SafeMemory::IsReadable(address, 2)) {
+        return false;  // Can't read, assume not suspicious
+    }
+    
+    uint8_t bytes[2];
+    if (!SafeMemory::SafeRead(address, bytes, 2)) {
+        return false;  // Failed to read
+    }
     
     // Check first byte for immediate jump/call indicators
     switch (bytes[0]) {
@@ -309,6 +401,116 @@ std::vector<ViolationEvent> AntiHookDetector::FullScan() {
     
     return violations;
 }
+
+void AntiHookDetector::UnregisterFunctionsInModule(uintptr_t module_base) {
+#ifdef _WIN32
+    if (module_base == 0) return;
+    
+    // Get module information to determine its address range
+    MODULEINFO modInfo;
+    if (!GetModuleInformation(GetCurrentProcess(), 
+                              reinterpret_cast<HMODULE>(module_base),
+                              &modInfo, sizeof(modInfo))) {
+        return;
+    }
+    
+    uintptr_t moduleStart = reinterpret_cast<uintptr_t>(modInfo.lpBaseOfDll);
+    uintptr_t moduleEnd = moduleStart + modInfo.SizeOfImage;
+    
+    std::lock_guard<std::mutex> lock(functions_mutex_);
+    
+    // Remove all functions in this module's address range
+    registered_functions_.erase(
+        std::remove_if(registered_functions_.begin(), registered_functions_.end(),
+            [moduleStart, moduleEnd](const FunctionProtection& f) {
+                return f.address >= moduleStart && f.address < moduleEnd;
+            }),
+        registered_functions_.end()
+    );
+#else
+    (void)module_base;
+#endif
+}
+
+#ifdef _WIN32
+void CALLBACK AntiHookDetector::DllNotificationCallback(
+    ULONG notification_reason,
+    const void* notification_data,
+    void* context) {
+    
+    // LDR_DLL_NOTIFICATION_REASON_UNLOADED = 2
+    if (notification_reason != 2) {
+        return;
+    }
+    
+    if (!context || !notification_data) {
+        return;
+    }
+    
+    // Cast to LDR_DLL_NOTIFICATION_DATA structure
+    struct LDR_DLL_NOTIFICATION_DATA {
+        ULONG Flags;
+        const UNICODE_STRING* FullDllName;
+        const UNICODE_STRING* BaseDllName;
+        void* DllBase;
+        ULONG SizeOfImage;
+    };
+    
+    const auto* data = static_cast<const LDR_DLL_NOTIFICATION_DATA*>(notification_data);
+    AntiHookDetector* detector = static_cast<AntiHookDetector*>(context);
+    
+    // Unregister all functions in the unloaded module
+    detector->UnregisterFunctionsInModule(reinterpret_cast<uintptr_t>(data->DllBase));
+}
+
+void AntiHookDetector::SetupDllNotification() {
+    // LdrRegisterDllNotification is available from Windows Vista onwards
+    typedef NTSTATUS(NTAPI* pLdrRegisterDllNotification)(
+        ULONG flags,
+        void* callback,
+        void* context,
+        void** cookie);
+    
+    static auto LdrRegisterDllNotification = 
+        (pLdrRegisterDllNotification)GetProcAddress(
+            GetModuleHandleW(L"ntdll.dll"),
+            "LdrRegisterDllNotification");
+    
+    if (!LdrRegisterDllNotification) {
+        // Function not available (pre-Vista), skip notification setup
+        return;
+    }
+    
+    // Register for DLL load/unload notifications
+    NTSTATUS status = LdrRegisterDllNotification(
+        0,
+        reinterpret_cast<void*>(&AntiHookDetector::DllNotificationCallback),
+        this,
+        &dll_notification_cookie_);
+    
+    if (status != 0) {
+        dll_notification_cookie_ = nullptr;
+    }
+}
+
+void AntiHookDetector::CleanupDllNotification() {
+    if (!dll_notification_cookie_) {
+        return;
+    }
+    
+    typedef NTSTATUS(NTAPI* pLdrUnregisterDllNotification)(void* cookie);
+    
+    static auto LdrUnregisterDllNotification = 
+        (pLdrUnregisterDllNotification)GetProcAddress(
+            GetModuleHandleW(L"ntdll.dll"),
+            "LdrUnregisterDllNotification");
+    
+    if (LdrUnregisterDllNotification) {
+        LdrUnregisterDllNotification(dll_notification_cookie_);
+        dll_notification_cookie_ = nullptr;
+    }
+}
+#endif
 
 } // namespace SDK
 } // namespace Sentinel
