@@ -182,6 +182,12 @@ enum class ErrorCode : uint16_t {
     /// Certificate validation failed
     CertificateInvalid = 0x0309,
     
+    /// Weak cryptographic key detected
+    WeakKey = 0x030A,
+    
+    /// Key not loaded
+    KeyNotLoaded = 0x030B,
+    
     // ========================================================================
     // Network Errors (0x0400-0x04FF)
     // ========================================================================
