@@ -27,6 +27,7 @@ option(SENTINEL_SDK_ENABLE_PROFILING "Enable performance profiling" OFF)
 set(SDK_SOURCES
     src/SentinelSDK.cpp
     src/Internal/InternalUtils.cpp
+    src/Internal/CorrelationEngine.cpp
     src/Core/Heartbeat.cpp
     src/Core/MemoryProtection.cpp
     src/Core/FunctionProtection.cpp
@@ -50,6 +51,7 @@ set(SDK_HEADERS
     src/Internal/Detection.hpp
     src/Internal/Protection.hpp
     src/Internal/Whitelist.hpp
+    src/Internal/CorrelationEngine.hpp
 )
 
 # Header files for IDE organization only (not compiled)

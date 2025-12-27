@@ -8,6 +8,7 @@
 #include "Internal/Context.hpp"
 #include "Internal/Detection.hpp"
 #include "Internal/Protection.hpp"
+#include "Internal/CorrelationEngine.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -63,6 +64,9 @@ struct SDKContext {
     std::unique_ptr<IntegrityChecker> integrity;
     std::unique_ptr<SpeedHackDetector> speed_hack;
     
+    // Correlation engine
+    std::unique_ptr<CorrelationEngine> correlation;
+    
     // Network
     std::unique_ptr<PacketEncryption> packet_crypto;
     std::unique_ptr<CloudReporter> reporter;
@@ -115,19 +119,50 @@ void HeartbeatThreadFunc() {
 void ReportViolation(const ViolationEvent& event) {
     if (!g_context) return;
     
-    g_context->stats.violations_detected++;
-    
-    // Call user callback if registered
-    if (g_context->config.violation_callback) {
-        g_context->config.violation_callback(&event, g_context->config.callback_user_data);
-    }
-    
-    // Report to cloud if configured
-    if (g_context->reporter && 
-        (static_cast<uint32_t>(g_context->config.default_action) & 
-         static_cast<uint32_t>(ResponseAction::Report))) {
-        g_context->reporter->QueueEvent(event);
-        g_context->stats.violations_reported++;
+    // Route through correlation engine if available
+    if (g_context->correlation) {
+        Severity correlated_severity;
+        bool should_report;
+        
+        if (!g_context->correlation->ProcessViolation(event, correlated_severity, should_report)) {
+            // Event was suppressed by correlation (e.g., whitelisted)
+            return;
+        }
+        
+        // Create correlated event with adjusted severity
+        ViolationEvent correlated_event = event;
+        correlated_event.severity = correlated_severity;
+        
+        g_context->stats.violations_detected++;
+        
+        // Call user callback if registered (with correlated severity)
+        if (g_context->config.violation_callback) {
+            g_context->config.violation_callback(&correlated_event, g_context->config.callback_user_data);
+        }
+        
+        // Only report to cloud if correlation engine approves
+        if (should_report && g_context->reporter && 
+            (static_cast<uint32_t>(g_context->config.default_action) & 
+             static_cast<uint32_t>(ResponseAction::Report))) {
+            g_context->reporter->QueueEvent(correlated_event);
+            g_context->stats.violations_reported++;
+        }
+    } else {
+        // Fallback to original behavior if no correlation engine
+        g_context->stats.violations_detected++;
+        
+        // Call user callback if registered
+        if (g_context->config.violation_callback) {
+            g_context->config.violation_callback(&event, g_context->config.callback_user_data);
+        }
+        
+        // Report to cloud if configured
+        if (g_context->reporter && 
+            (static_cast<uint32_t>(g_context->config.default_action) & 
+             static_cast<uint32_t>(ResponseAction::Report))) {
+            g_context->reporter->QueueEvent(event);
+            g_context->stats.violations_reported++;
+        }
     }
 }
 
@@ -186,6 +221,10 @@ SENTINEL_API ErrorCode SENTINEL_CALL Initialize(const Configuration* config) {
         g_context->speed_hack->Initialize();
     }
     
+    // Initialize correlation engine (always enabled for false-positive prevention)
+    g_context->correlation = std::make_unique<CorrelationEngine>();
+    g_context->correlation->Initialize();
+    
     // Initialize network if cloud endpoint provided
     if (config->cloud_endpoint && strlen(config->cloud_endpoint) > 0) {
         g_context->packet_crypto = std::make_unique<PacketEncryption>();
@@ -220,6 +259,7 @@ SENTINEL_API void SENTINEL_CALL Shutdown() {
     g_context->anti_hook.reset();
     g_context->integrity.reset();
     g_context->speed_hack.reset();
+    g_context->correlation.reset();
     g_context->packet_crypto.reset();
     g_context->reporter.reset();
     
