@@ -2,17 +2,36 @@
 # Sentinel Tests - CMake Configuration
 # ============================================================================
 
+# Add test harness library
+add_library(SentinelTestHarness STATIC
+    TestHarness.cpp
+    TestHarness.hpp
+)
+
+target_link_libraries(SentinelTestHarness
+    PUBLIC
+        SentinelCore
+        gtest
+)
+
+target_include_directories(SentinelTestHarness
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
 # Core library tests
 add_executable(CoreTests
     Core/test_main.cpp
     Core/test_crypto.cpp
     Core/test_constant_time.cpp
     Core/test_secure_zero.cpp
+    Core/test_harness.cpp
 )
 
 target_link_libraries(CoreTests
     PRIVATE
         SentinelCore
+        SentinelTestHarness
         gtest
         gtest_main
 )
@@ -25,6 +44,7 @@ add_executable(SDKTests
 target_link_libraries(SDKTests
     PRIVATE
         SentinelSDK_static
+        SentinelTestHarness
         gtest
         gtest_main
 )
@@ -45,6 +65,7 @@ target_include_directories(PatchGeneratorTests
 target_link_libraries(PatchGeneratorTests
     PRIVATE
         SentinelCore
+        SentinelTestHarness
         gtest
         gtest_main
 )
@@ -68,6 +89,7 @@ target_include_directories(VMDeobfuscatorTests
 target_link_libraries(VMDeobfuscatorTests
     PRIVATE
         SentinelCore
+        SentinelTestHarness
         gtest
         gtest_main
 )
@@ -86,6 +108,7 @@ if(SENTINEL_BUILD_CORTEX)
     target_link_libraries(CortexTests
         PRIVATE
             SentinelCore
+            SentinelTestHarness
             capstone
             gtest
             gtest_main
