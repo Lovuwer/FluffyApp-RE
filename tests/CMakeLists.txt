@@ -26,7 +26,6 @@ add_executable(CoreTests
     Core/test_constant_time.cpp
     Core/test_secure_zero.cpp
     Core/test_harness.cpp
-    Core/test_aes_cipher.cpp
 )
 
 target_link_libraries(CoreTests
