@@ -80,9 +80,17 @@ namespace {
 }
 
 // AntiHookDetector implementation
-void AntiHookDetector::Initialize() {}
+void AntiHookDetector::Initialize() {
+#ifdef _WIN32
+    SetupDllNotification();
+#endif
+}
 
-void AntiHookDetector::Shutdown() {}
+void AntiHookDetector::Shutdown() {
+#ifdef _WIN32
+    CleanupDllNotification();
+#endif
+}
 
 bool AntiHookDetector::IsInlineHooked(const FunctionProtection& func) {
     // Verify memory is readable before accessing
@@ -390,6 +398,116 @@ std::vector<ViolationEvent> AntiHookDetector::FullScan() {
     
     return violations;
 }
+
+void AntiHookDetector::UnregisterFunctionsInModule(uintptr_t module_base) {
+#ifdef _WIN32
+    if (module_base == 0) return;
+    
+    // Get module information to determine its address range
+    MODULEINFO modInfo;
+    if (!GetModuleInformation(GetCurrentProcess(), 
+                              reinterpret_cast<HMODULE>(module_base),
+                              &modInfo, sizeof(modInfo))) {
+        return;
+    }
+    
+    uintptr_t moduleStart = reinterpret_cast<uintptr_t>(modInfo.lpBaseOfDll);
+    uintptr_t moduleEnd = moduleStart + modInfo.SizeOfImage;
+    
+    std::lock_guard<std::mutex> lock(functions_mutex_);
+    
+    // Remove all functions in this module's address range
+    registered_functions_.erase(
+        std::remove_if(registered_functions_.begin(), registered_functions_.end(),
+            [moduleStart, moduleEnd](const FunctionProtection& f) {
+                return f.address >= moduleStart && f.address < moduleEnd;
+            }),
+        registered_functions_.end()
+    );
+#else
+    (void)module_base;
+#endif
+}
+
+#ifdef _WIN32
+void CALLBACK AntiHookDetector::DllNotificationCallback(
+    ULONG notification_reason,
+    const void* notification_data,
+    void* context) {
+    
+    // LDR_DLL_NOTIFICATION_REASON_UNLOADED = 2
+    if (notification_reason != 2) {
+        return;
+    }
+    
+    if (!context || !notification_data) {
+        return;
+    }
+    
+    // Cast to LDR_DLL_NOTIFICATION_DATA structure
+    struct LDR_DLL_NOTIFICATION_DATA {
+        ULONG Flags;
+        const UNICODE_STRING* FullDllName;
+        const UNICODE_STRING* BaseDllName;
+        void* DllBase;
+        ULONG SizeOfImage;
+    };
+    
+    const auto* data = static_cast<const LDR_DLL_NOTIFICATION_DATA*>(notification_data);
+    AntiHookDetector* detector = static_cast<AntiHookDetector*>(context);
+    
+    // Unregister all functions in the unloaded module
+    detector->UnregisterFunctionsInModule(reinterpret_cast<uintptr_t>(data->DllBase));
+}
+
+void AntiHookDetector::SetupDllNotification() {
+    // LdrRegisterDllNotification is available from Windows Vista onwards
+    typedef NTSTATUS(NTAPI* pLdrRegisterDllNotification)(
+        ULONG flags,
+        void* callback,
+        void* context,
+        void** cookie);
+    
+    static auto LdrRegisterDllNotification = 
+        (pLdrRegisterDllNotification)GetProcAddress(
+            GetModuleHandleW(L"ntdll.dll"),
+            "LdrRegisterDllNotification");
+    
+    if (!LdrRegisterDllNotification) {
+        // Function not available (pre-Vista), skip notification setup
+        return;
+    }
+    
+    // Register for DLL load/unload notifications
+    NTSTATUS status = LdrRegisterDllNotification(
+        0,
+        reinterpret_cast<void*>(&AntiHookDetector::DllNotificationCallback),
+        this,
+        &dll_notification_cookie_);
+    
+    if (status != 0) {
+        dll_notification_cookie_ = nullptr;
+    }
+}
+
+void AntiHookDetector::CleanupDllNotification() {
+    if (!dll_notification_cookie_) {
+        return;
+    }
+    
+    typedef NTSTATUS(NTAPI* pLdrUnregisterDllNotification)(void* cookie);
+    
+    static auto LdrUnregisterDllNotification = 
+        (pLdrUnregisterDllNotification)GetProcAddress(
+            GetModuleHandleW(L"ntdll.dll"),
+            "LdrUnregisterDllNotification");
+    
+    if (LdrUnregisterDllNotification) {
+        LdrUnregisterDllNotification(dll_notification_cookie_);
+        dll_notification_cookie_ = nullptr;
+    }
+}
+#endif
 
 } // namespace SDK
 } // namespace Sentinel

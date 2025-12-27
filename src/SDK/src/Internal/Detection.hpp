@@ -57,6 +57,7 @@ public:
     
     void RegisterFunction(const FunctionProtection& func);
     void UnregisterFunction(uintptr_t address);
+    void UnregisterFunctionsInModule(uintptr_t module_base);
     
     bool CheckFunction(uintptr_t address);
     bool IsIATHooked(const char* module_name, const char* function_name);
@@ -67,6 +68,16 @@ private:
     bool IsInlineHooked(const FunctionProtection& func);
     bool HasSuspiciousJump(const void* address);
     std::vector<ViolationEvent> ScanCriticalAPIs();
+    
+#ifdef _WIN32
+    static void CALLBACK DllNotificationCallback(
+        ULONG notification_reason,
+        const void* notification_data,
+        void* context);
+    void SetupDllNotification();
+    void CleanupDllNotification();
+    void* dll_notification_cookie_ = nullptr;
+#endif
     
     std::vector<FunctionProtection> registered_functions_;
     std::mutex functions_mutex_;
@@ -82,6 +93,7 @@ public:
     
     void RegisterRegion(const MemoryRegion& region);
     void UnregisterRegion(uintptr_t address);
+    void UnregisterRegionsInModule(uintptr_t module_base);
     
     std::vector<ViolationEvent> QuickCheck();
     std::vector<ViolationEvent> FullScan();

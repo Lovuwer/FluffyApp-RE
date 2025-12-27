@@ -97,6 +97,36 @@ void IntegrityChecker::UnregisterRegion(uintptr_t address) {
     );
 }
 
+void IntegrityChecker::UnregisterRegionsInModule(uintptr_t module_base) {
+#ifdef _WIN32
+    if (module_base == 0) return;
+    
+    // Get module information to determine its address range
+    MODULEINFO modInfo;
+    if (!GetModuleInformation(GetCurrentProcess(), 
+                              reinterpret_cast<HMODULE>(module_base),
+                              &modInfo, sizeof(modInfo))) {
+        return;
+    }
+    
+    uintptr_t moduleStart = reinterpret_cast<uintptr_t>(modInfo.lpBaseOfDll);
+    uintptr_t moduleEnd = moduleStart + modInfo.SizeOfImage;
+    
+    std::lock_guard<std::mutex> lock(regions_mutex_);
+    
+    // Remove all regions in this module's address range
+    registered_regions_.erase(
+        std::remove_if(registered_regions_.begin(), registered_regions_.end(),
+            [moduleStart, moduleEnd](const MemoryRegion& r) {
+                return r.address >= moduleStart && r.address < moduleEnd;
+            }),
+        registered_regions_.end()
+    );
+#else
+    (void)module_base;
+#endif
+}
+
 std::vector<ViolationEvent> IntegrityChecker::QuickCheck() {
     std::vector<ViolationEvent> violations;
     
