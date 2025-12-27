@@ -28,12 +28,6 @@ static void DummyFunction1() {
     (void)x;
 }
 
-static void DummyFunction2() {
-    // Another simple function
-    volatile int y = 100;
-    (void)y;
-}
-
 /**
  * Test 1: Clean Function
  * Verifies that CheckFunction() returns false for a clean function
@@ -146,11 +140,16 @@ TEST(AntiHookTests, RegistrationUnregistration) {
     detector.Initialize();
     
     std::vector<FunctionProtection> functions;
+    std::vector<uint8_t*> buffers;
     
     // Register 100 functions
     for (int i = 0; i < 100; i++) {
+        uint8_t* buffer = new uint8_t[16];
+        memset(buffer, 0x90, 16);
+        buffers.push_back(buffer);
+        
         FunctionProtection func;
-        func.address = 0x1000 + (i * 0x100);  // Dummy addresses
+        func.address = reinterpret_cast<uintptr_t>(buffer);
         func.name = "Function_" + std::to_string(i);
         func.prologue_size = 16;
         memset(func.original_prologue.data(), 0x90, 16);
@@ -173,6 +172,11 @@ TEST(AntiHookTests, RegistrationUnregistration) {
     EXPECT_TRUE(violations.empty())
         << "Remaining registered functions should not be hooked";
     
+    // Cleanup
+    for (auto* buffer : buffers) {
+        delete[] buffer;
+    }
+    
     detector.Shutdown();
 }
 
@@ -193,19 +197,26 @@ TEST(AntiHookTests, ThreadSafety) {
     for (int t = 0; t < numThreads; t++) {
         threads.emplace_back([&detector, t, operationsPerThread]() {
             for (int i = 0; i < operationsPerThread; i++) {
+                // Allocate real memory for each function
+                uint8_t* buffer = new uint8_t[16];
+                memset(buffer, 0x55, 16);
+                
                 FunctionProtection func;
-                func.address = 0x10000 + (t * 10000) + (i * 100);
+                func.address = reinterpret_cast<uintptr_t>(buffer);
                 func.name = "ThreadFunc_" + std::to_string(t) + "_" + std::to_string(i);
                 func.prologue_size = 16;
                 memset(func.original_prologue.data(), 0x55, 16);
                 
                 detector.RegisterFunction(func);
                 
-                // Try to check the function
+                // Try to check the function (should be clean)
                 detector.CheckFunction(func.address);
                 
                 // Unregister
                 detector.UnregisterFunction(func.address);
+                
+                // Cleanup
+                delete[] buffer;
             }
         });
     }
@@ -229,10 +240,16 @@ TEST(AntiHookTests, QuickCheckVsFullScan) {
     AntiHookDetector detector;
     detector.Initialize();
     
+    std::vector<uint8_t*> buffers;
+    
     // Register 20 functions (more than QuickCheck sample size of 10)
     for (int i = 0; i < 20; i++) {
+        uint8_t* buffer = new uint8_t[16];
+        memset(buffer, 0x90, 16);
+        buffers.push_back(buffer);
+        
         FunctionProtection func;
-        func.address = 0x20000 + (i * 0x100);
+        func.address = reinterpret_cast<uintptr_t>(buffer);
         func.name = "ScanFunc_" + std::to_string(i);
         func.prologue_size = 16;
         memset(func.original_prologue.data(), 0x90, 16);
@@ -249,47 +266,57 @@ TEST(AntiHookTests, QuickCheckVsFullScan) {
     EXPECT_TRUE(fullViolations.empty())
         << "Full scan should find no violations in clean state";
     
+    // Cleanup
+    for (auto* buffer : buffers) {
+        delete[] buffer;
+    }
+    
     detector.Shutdown();
 }
 
 /**
- * Test 6: HasSuspiciousJump
- * Verifies that suspicious jump instructions are detected
+ * Test 6: Unregistered Function Suspicious Jump Detection
+ * Verifies that suspicious jump instructions are detected via CheckFunction
  */
 TEST(AntiHookTests, SuspiciousJump) {
     AntiHookDetector detector;
     detector.Initialize();
     
-    // Test various suspicious patterns
+    // Test various suspicious patterns through CheckFunction (unregistered)
     {
         uint8_t jmpRel32[5] = {0xE9, 0x00, 0x00, 0x00, 0x00};
-        bool isSuspicious = detector.HasSuspiciousJump(jmpRel32);
-        EXPECT_TRUE(isSuspicious) << "JMP rel32 should be suspicious";
+        uintptr_t addr = reinterpret_cast<uintptr_t>(jmpRel32);
+        bool isHooked = detector.CheckFunction(addr);
+        EXPECT_TRUE(isHooked) << "JMP rel32 should be detected as hooked";
     }
     
     {
         uint8_t callRel32[5] = {0xE8, 0x00, 0x00, 0x00, 0x00};
-        bool isSuspicious = detector.HasSuspiciousJump(callRel32);
-        EXPECT_TRUE(isSuspicious) << "CALL rel32 should be suspicious";
+        uintptr_t addr = reinterpret_cast<uintptr_t>(callRel32);
+        bool isHooked = detector.CheckFunction(addr);
+        EXPECT_TRUE(isHooked) << "CALL rel32 should be detected as hooked";
     }
     
     {
         uint8_t int3[1] = {0xCC};
-        bool isSuspicious = detector.HasSuspiciousJump(int3);
-        EXPECT_TRUE(isSuspicious) << "INT 3 should be suspicious";
+        uintptr_t addr = reinterpret_cast<uintptr_t>(int3);
+        bool isHooked = detector.CheckFunction(addr);
+        EXPECT_TRUE(isHooked) << "INT 3 should be detected as hooked";
     }
     
     {
         uint8_t movRax[2] = {0x48, 0xB8};
-        bool isSuspicious = detector.HasSuspiciousJump(movRax);
-        EXPECT_TRUE(isSuspicious) << "MOV RAX, imm64 should be suspicious";
+        uintptr_t addr = reinterpret_cast<uintptr_t>(movRax);
+        bool isHooked = detector.CheckFunction(addr);
+        EXPECT_TRUE(isHooked) << "MOV RAX, imm64 should be detected as hooked";
     }
     
     // Test normal prologue
     {
         uint8_t normalPrologue[5] = {0x55, 0x48, 0x89, 0xE5, 0x53};  // push rbp; mov rbp, rsp; push rbx
-        bool isSuspicious = detector.HasSuspiciousJump(normalPrologue);
-        EXPECT_FALSE(isSuspicious) << "Normal prologue should not be suspicious";
+        uintptr_t addr = reinterpret_cast<uintptr_t>(normalPrologue);
+        bool isHooked = detector.CheckFunction(addr);
+        EXPECT_FALSE(isHooked) << "Normal prologue should not be detected as hooked";
     }
     
     detector.Shutdown();
