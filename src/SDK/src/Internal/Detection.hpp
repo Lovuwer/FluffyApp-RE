@@ -115,6 +115,8 @@ private:
     uint64_t GetSystemTime();
     uint64_t GetPerformanceCounter();
     uint64_t GetRDTSC();
+    bool ValidateSourceRatios();
+    bool ValidateAgainstWallClock();
     
     // Multiple time sources for cross-validation
     uint64_t baseline_system_time_ = 0;
@@ -126,6 +128,11 @@ private:
     
     float current_time_scale_ = 1.0f;
     int anomaly_count_ = 0;
+    
+    // Wall clock validation state
+    uint64_t wall_clock_baseline_time_ = 0;
+    uint64_t wall_clock_baseline_qpc_ = 0;
+    int frame_counter_ = 0;
     
     static constexpr float MAX_TIME_SCALE_DEVIATION = 0.1f;  // 10% tolerance
 };
