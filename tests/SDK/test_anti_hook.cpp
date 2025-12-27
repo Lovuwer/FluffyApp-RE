@@ -461,3 +461,82 @@ TEST(AntiHookTests, EmptyDetector) {
     
     detector.Shutdown();
 }
+
+#ifdef _WIN32
+/**
+ * Test 11: IAT Clean Function Check
+ * Verifies that IsIATHooked returns false for a known clean imported function
+ */
+TEST(AntiHookTests, IATCleanFunction) {
+    AntiHookDetector detector;
+    detector.Initialize();
+    
+    // GetModuleHandleA should be imported by this test executable
+    // and should not be hooked in a clean state
+    bool isHooked = detector.IsIATHooked("kernel32.dll", "GetModuleHandleA");
+    
+    EXPECT_FALSE(isHooked)
+        << "GetModuleHandleA should not be hooked in clean process";
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test 12: IAT Critical API Scan Clean
+ * Verifies that ScanCriticalAPIs returns empty list on clean process
+ */
+TEST(AntiHookTests, IATCriticalAPIScanClean) {
+    AntiHookDetector detector;
+    detector.Initialize();
+    
+    // Run full scan which includes IAT checks
+    std::vector<ViolationEvent> violations = detector.FullScan();
+    
+    // Filter to only IAT hook violations
+    std::vector<ViolationEvent> iatViolations;
+    for (const auto& v : violations) {
+        if (v.type == ViolationType::IATHook) {
+            iatViolations.push_back(v);
+        }
+    }
+    
+    EXPECT_TRUE(iatViolations.empty())
+        << "Clean process should not have IAT hooks detected";
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test 13: IAT Non-Imported Function
+ * Verifies that checking a non-imported function returns false (not an error)
+ */
+TEST(AntiHookTests, IATNonImportedFunction) {
+    AntiHookDetector detector;
+    detector.Initialize();
+    
+    // Check a function that's unlikely to be imported
+    bool isHooked = detector.IsIATHooked("kernel32.dll", "NonExistentFunction123");
+    
+    EXPECT_FALSE(isHooked)
+        << "Non-imported function should return false, not error";
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test 14: IAT Module Not Imported
+ * Verifies that checking a module not in imports returns false
+ */
+TEST(AntiHookTests, IATModuleNotImported) {
+    AntiHookDetector detector;
+    detector.Initialize();
+    
+    // Check a module that's unlikely to be imported
+    bool isHooked = detector.IsIATHooked("nonexistent.dll", "SomeFunction");
+    
+    EXPECT_FALSE(isHooked)
+        << "Module not in imports should return false, not error";
+    
+    detector.Shutdown();
+}
+#endif
