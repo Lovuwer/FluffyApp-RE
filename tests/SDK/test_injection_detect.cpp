@@ -256,4 +256,158 @@ TEST(InjectionDetectTests, MultipleRWXAllocations) {
     
     detector.Shutdown();
 }
+
+/**
+ * Test 9: Baseline Filtering - Memory Allocated Before Initialization
+ * Verify that memory allocated BEFORE Initialize() is not flagged
+ */
+TEST(InjectionDetectTests, BaselineFiltering) {
+    // Allocate RWX memory BEFORE initializing detector
+    const size_t allocSize = 4096;
+    void* baselineMemory = VirtualAlloc(
+        nullptr,
+        allocSize,
+        MEM_COMMIT | MEM_RESERVE,
+        PAGE_EXECUTE_READWRITE
+    );
+    
+    ASSERT_NE(baselineMemory, nullptr) << "Failed to allocate baseline RWX memory";
+    
+    // Fill with NOPs
+    memset(baselineMemory, 0x90, allocSize);
+    
+    // NOW initialize the detector (should capture baseline)
+    InjectionDetector detector;
+    detector.Initialize();
+    
+    // Scan - baseline memory should not be detected (or have low score)
+    std::vector<ViolationEvent> violations = detector.ScanLoadedModules();
+    
+    // Check if baseline memory was reported
+    bool baselineDetected = false;
+    uintptr_t baselineAddr = reinterpret_cast<uintptr_t>(baselineMemory);
+    
+    for (const auto& violation : violations) {
+        if (violation.type == ViolationType::InjectedCode &&
+            violation.address >= baselineAddr &&
+            violation.address < baselineAddr + allocSize) {
+            baselineDetected = true;
+            // If detected, should have reduced severity due to baseline
+            EXPECT_LE(violation.severity, Severity::Warning)
+                << "Baseline memory should have reduced severity if detected";
+            break;
+        }
+    }
+    
+    // Ideally, baseline memory should not be detected at all
+    EXPECT_FALSE(baselineDetected) 
+        << "Baseline memory should not be flagged (score reduced by -0.5)";
+    
+    // Cleanup
+    VirtualFree(baselineMemory, 0, MEM_RELEASE);
+    detector.Shutdown();
+}
+
+/**
+ * Test 10: New Allocation Detection - Memory Allocated After Initialization
+ * Verify that NEW RWX memory allocated AFTER Initialize() IS detected
+ */
+TEST(InjectionDetectTests, NewAllocationDetection) {
+    // Initialize detector first (captures baseline)
+    InjectionDetector detector;
+    detector.Initialize();
+    
+    // NOW allocate RWX memory (after baseline)
+    const size_t allocSize = 4096;
+    void* newMemory = VirtualAlloc(
+        nullptr,
+        allocSize,
+        MEM_COMMIT | MEM_RESERVE,
+        PAGE_EXECUTE_READWRITE
+    );
+    
+    ASSERT_NE(newMemory, nullptr) << "Failed to allocate new RWX memory";
+    memset(newMemory, 0x90, allocSize);
+    
+    // Scan - new memory SHOULD be detected
+    std::vector<ViolationEvent> violations = detector.ScanLoadedModules();
+    
+    // Check if new memory was reported
+    bool newMemoryDetected = false;
+    uintptr_t newAddr = reinterpret_cast<uintptr_t>(newMemory);
+    
+    for (const auto& violation : violations) {
+        if (violation.type == ViolationType::InjectedCode &&
+            violation.address >= newAddr &&
+            violation.address < newAddr + allocSize) {
+            newMemoryDetected = true;
+            // Should have higher severity (not in baseline)
+            EXPECT_GE(violation.severity, Severity::Warning)
+                << "New RWX memory should be flagged with appropriate severity";
+            break;
+        }
+    }
+    
+    EXPECT_TRUE(newMemoryDetected) 
+        << "New RWX allocation after baseline should be detected";
+    
+    // Cleanup
+    VirtualFree(newMemory, 0, MEM_RELEASE);
+    detector.Shutdown();
+}
+
+/**
+ * Test 11: Severity Scoring - Verify Different Severities Based on Score
+ * Test that severity levels are assigned correctly based on suspicion score
+ */
+TEST(InjectionDetectTests, SeverityScoring) {
+    InjectionDetector detector;
+    detector.Initialize();
+    
+    // Allocate small RWX memory (shellcode-sized) - should have HIGH score
+    // Size < 4KB = +0.1, RWX = +0.3, small PE shellcode = higher score
+    void* smallRWX = VirtualAlloc(nullptr, 512, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    ASSERT_NE(smallRWX, nullptr);
+    
+    // Allocate large RX memory (JIT-like) - should have LOWER score  
+    // Size > 1MB = -0.1, RX (not RWX) = +0.2
+    void* largeRX = VirtualAlloc(nullptr, 2 * 1024 * 1024, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READ);
+    ASSERT_NE(largeRX, nullptr);
+    
+    // Scan
+    std::vector<ViolationEvent> violations = detector.ScanLoadedModules();
+    
+    // Find the violations for our allocations
+    Severity smallRWXSeverity = Severity::Info;
+    Severity largeRXSeverity = Severity::Info;
+    bool foundSmall = false;
+    bool foundLarge = false;
+    
+    uintptr_t smallAddr = reinterpret_cast<uintptr_t>(smallRWX);
+    uintptr_t largeAddr = reinterpret_cast<uintptr_t>(largeRX);
+    
+    for (const auto& violation : violations) {
+        if (violation.type == ViolationType::InjectedCode) {
+            if (violation.address >= smallAddr && violation.address < smallAddr + 512) {
+                smallRWXSeverity = violation.severity;
+                foundSmall = true;
+            }
+            if (violation.address >= largeAddr && violation.address < largeAddr + 2 * 1024 * 1024) {
+                largeRXSeverity = violation.severity;
+                foundLarge = true;
+            }
+        }
+    }
+    
+    // Small RWX should be detected with higher severity than large RX
+    if (foundSmall && foundLarge) {
+        EXPECT_GT(static_cast<int>(smallRWXSeverity), static_cast<int>(largeRXSeverity))
+            << "Small RWX should have higher severity than large RX";
+    }
+    
+    // Cleanup
+    VirtualFree(smallRWX, 0, MEM_RELEASE);
+    VirtualFree(largeRX, 0, MEM_RELEASE);
+    detector.Shutdown();
+}
 #endif

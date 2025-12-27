@@ -23,7 +23,6 @@
 #include <sstream>
 #include <iomanip>
 #include <chrono>
-#include <cwctype>
 
 namespace Sentinel {
 namespace SDK {
@@ -186,37 +185,30 @@ bool InjectionDetector::IsKnownJITRegion(uintptr_t address) {
             moduleName = modulePath;
         }
         
-        // Convert to lowercase for case-insensitive comparison
-        wchar_t lowerName[MAX_PATH];
-        size_t i;
-        for (i = 0; i < MAX_PATH - 1 && moduleName[i] != L'\0'; i++) {
-            lowerName[i] = (wchar_t)towlower(moduleName[i]);
-        }
-        lowerName[i] = L'\0';
-        
+        // Use case-insensitive comparison for known JIT modules
         // Check for .NET CLR JIT
-        if (wcsstr(lowerName, L"clrjit.dll") != nullptr ||
-            wcsstr(lowerName, L"clr.dll") != nullptr ||
-            wcsstr(lowerName, L"coreclr.dll") != nullptr) {
+        if (_wcsicmp(moduleName, L"clrjit.dll") == 0 ||
+            _wcsicmp(moduleName, L"clr.dll") == 0 ||
+            _wcsicmp(moduleName, L"coreclr.dll") == 0) {
             return true;
         }
         
         // Check for V8 JavaScript engine
-        if (wcsstr(lowerName, L"v8.dll") != nullptr ||
-            wcsstr(lowerName, L"libv8.dll") != nullptr) {
+        if (_wcsicmp(moduleName, L"v8.dll") == 0 ||
+            _wcsicmp(moduleName, L"libv8.dll") == 0) {
             return true;
         }
         
         // Check for Unity IL2CPP
-        if (wcsstr(lowerName, L"gameassembly.dll") != nullptr) {
+        if (_wcsicmp(moduleName, L"gameassembly.dll") == 0) {
             return true;
         }
         
         // Check for LuaJIT
-        if (wcsstr(lowerName, L"luajit.dll") != nullptr ||
-            wcsstr(lowerName, L"lua51.dll") != nullptr ||
-            wcsstr(lowerName, L"lua52.dll") != nullptr ||
-            wcsstr(lowerName, L"lua53.dll") != nullptr) {
+        if (_wcsicmp(moduleName, L"luajit.dll") == 0 ||
+            _wcsicmp(moduleName, L"lua51.dll") == 0 ||
+            _wcsicmp(moduleName, L"lua52.dll") == 0 ||
+            _wcsicmp(moduleName, L"lua53.dll") == 0) {
             return true;
         }
     }
@@ -469,11 +461,12 @@ bool InjectionDetector::HasPEHeader(uintptr_t address) const {
             return false;
         }
         
-        // Get PE header offset
+        // Get PE header offset (at 0x3C)
         uint32_t peOffset = *(uint32_t*)(ptr + 0x3C);
         
-        // Verify PE offset is reasonable
-        if (peOffset > 0x1000) {
+        // Verify PE offset is reasonable and within bounds
+        // Leave room for PE signature (4 bytes)
+        if (peOffset > 0x1000 - 4) {
             return false;
         }
         
@@ -508,11 +501,17 @@ bool InjectionDetector::IsNearKnownModule(uintptr_t address) const {
                 uintptr_t modBase = (uintptr_t)modInfo.lpBaseOfDll;
                 uintptr_t modEnd = modBase + modInfo.SizeOfImage;
                 
-                // Check if within proximity
-                if (address >= modBase && address < modEnd + proximity_threshold) {
+                // Check if address is within the module or within proximity_threshold
+                // Address is "near" if it's within module or within threshold of module boundaries
+                if (address >= modBase && address < modEnd) {
+                    return true;  // Inside module
+                }
+                // Before module start
+                if (address < modBase && (modBase - address) <= proximity_threshold) {
                     return true;
                 }
-                if (address + proximity_threshold >= modBase && address < modBase) {
+                // After module end
+                if (address >= modEnd && (address - modEnd) < proximity_threshold) {
                     return true;
                 }
             }
