@@ -42,6 +42,7 @@ target_link_libraries(CoreTests
 add_executable(SDKTests
     SDK/test_main.cpp
     SDK/test_whitelist.cpp
+    SDK/test_anti_debug.cpp
 )
 
 target_include_directories(SDKTests
