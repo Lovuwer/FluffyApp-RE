@@ -179,12 +179,24 @@ TEST(InjectionDetectTests, RepeatedScans) {
     detector.Initialize();
     
     // Run multiple scans in succession
+    std::vector<ViolationEvent> previousViolations1;
+    std::vector<ViolationEvent> previousViolations2;
+    
     for (int i = 0; i < 5; i++) {
         std::vector<ViolationEvent> violations1 = detector.ScanLoadedModules();
         std::vector<ViolationEvent> violations2 = detector.ScanThreads();
         
-        // Each scan should complete successfully
-        EXPECT_TRUE(true) << "Scan iteration " << i << " completed";
+        // Each scan should complete successfully (if we get here, it didn't crash)
+        // Results should be consistent across iterations in a stable environment
+        if (i > 0) {
+            EXPECT_EQ(violations1.size(), previousViolations1.size())
+                << "Scan iteration " << i << " should produce consistent results";
+            EXPECT_EQ(violations2.size(), previousViolations2.size())
+                << "Scan iteration " << i << " should produce consistent results";
+        }
+        
+        previousViolations1 = violations1;
+        previousViolations2 = violations2;
     }
     
     detector.Shutdown();

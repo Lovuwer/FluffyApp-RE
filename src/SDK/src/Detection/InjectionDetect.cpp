@@ -21,6 +21,7 @@
 #include <string>
 #include <sstream>
 #include <iomanip>
+#include <chrono>
 
 namespace Sentinel {
 namespace SDK {
@@ -87,9 +88,10 @@ std::vector<ViolationEvent> InjectionDetector::ScanLoadedModules() {
             // Use a static string literal to avoid use-after-free
             static const char* detail_msg = "Executable private memory detected";
             ev.details = detail_msg;
-            ev.timestamp = 0;
+            ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
             ev.module_name = nullptr;
-            ev.detection_id = 0;
+            ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
             violations.push_back(ev);
         }
         
@@ -187,10 +189,11 @@ std::vector<ViolationEvent> InjectionDetector::ScanThreads() {
                     // Use a static string literal to avoid use-after-free
                     static const char* detail_msg = "Thread with suspicious start address detected";
                     ev.details = detail_msg;
-                    ev.timestamp = 0;
-                    ev.address = 0;
+                    ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now().time_since_epoch()).count();
+                    ev.address = te.th32ThreadID;  // Store thread ID in address field
                     ev.module_name = nullptr;
-                    ev.detection_id = 0;
+                    ev.detection_id = static_cast<uint32_t>(te.th32ThreadID ^ ev.timestamp);
                     violations.push_back(ev);
                 }
             }
