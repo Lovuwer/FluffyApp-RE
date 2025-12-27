@@ -11,6 +11,7 @@
 #include "Internal/Context.hpp"
 #include <vector>
 #include <chrono>
+#include <cstring>
 
 #ifdef _WIN32
 #include <windows.h>

@@ -136,12 +136,19 @@ bool InjectionDetector::IsSuspiciousRegion(const MEMORY_BASIC_INFORMATION& mbi) 
 }
 
 bool InjectionDetector::IsKnownJITRegion(uintptr_t address) {
-    // Placeholder - could check for: 
-    // - .NET CLR heap
-    // - V8 isolate
-    // - LuaJIT
-    // For now, return false (conservative - may false positive on JIT)
-    (void)address;
+    // TODO: Implement JIT region whitelist detection
+    // This function is intentionally a placeholder to prevent false positives
+    // on legitimate JIT-compiled code (e.g., .NET CLR heap, V8 isolate, LuaJIT).
+    // 
+    // Future implementation should check if the address falls within:
+    // - .NET CLR JIT heap regions
+    // - V8 JavaScript engine isolate
+    // - LuaJIT compiler regions
+    // - Other legitimate JIT compiler memory
+    //
+    // For now, return false (conservative approach - may cause false positives
+    // on applications using JIT compilation, but ensures detection of injected code).
+    (void)address;  // Suppress unused parameter warning
     return false;
 }
 
