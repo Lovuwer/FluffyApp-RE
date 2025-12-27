@@ -90,8 +90,42 @@ TEST(AntiDebugTests, FullCheckEquivalence) {
     std::vector<ViolationEvent> quickCheck = detector.Check();
     std::vector<ViolationEvent> fullCheck = detector.FullCheck();
     
-    EXPECT_EQ(quickCheck.size(), fullCheck.size())
-        << "Quick check and full check returned different numbers of violations";
+    // FullCheck includes additional checks (hardware BP, debug port)
+    // So it should have >= violations compared to quick check
+    EXPECT_GE(fullCheck.size(), quickCheck.size())
+        << "Full check should include at least as many violations as quick check";
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test: Hardware breakpoint detection returns false without debugger
+ * This test verifies that hardware breakpoint detection returns false
+ * when no debugger is attached and no hardware breakpoints are set.
+ */
+TEST(AntiDebugTests, NoHardwareBreakpointsDetected) {
+    AntiDebugDetector detector;
+    detector.Initialize();
+    
+    // Run full check which includes hardware breakpoint detection
+    std::vector<ViolationEvent> violations = detector.FullCheck();
+    
+    // In a clean environment, we should not detect hardware breakpoints
+    // Check for violations with Critical severity and DebuggerAttached type
+    // that contain hardware breakpoint-related details
+    bool hardwareBPDetected = false;
+    for (const auto& violation : violations) {
+        if (violation.type == ViolationType::DebuggerAttached &&
+            violation.severity == Severity::Critical &&
+            violation.details && 
+            std::string(violation.details).find("Hardware breakpoints") != std::string::npos) {
+            hardwareBPDetected = true;
+            break;
+        }
+    }
+    
+    EXPECT_FALSE(hardwareBPDetected)
+        << "Hardware breakpoints should not be detected in clean environment";
     
     detector.Shutdown();
 }
@@ -110,4 +144,20 @@ TEST(AntiDebugTests, FullCheckEquivalence) {
  * - Check() should return at least one ViolationEvent
  * - The violation should have type ViolationType::DebuggerAttached
  * - The violation should have severity Severity::Critical or Severity::High
+ * 
+ * To manually test hardware breakpoint detection:
+ * 1. Build the test executable in Debug mode
+ * 2. Attach a debugger (x64dbg, WinDbg, or Visual Studio)
+ * 3. Set a hardware breakpoint on any memory address or register
+ *    - In x64dbg: Right-click on an address -> Breakpoint -> Hardware, Access -> Byte
+ *    - In WinDbg: Use "ba" command (e.g., "ba r1 <address>")
+ *    - In Visual Studio: Debug -> New Breakpoint -> Data Breakpoint
+ * 4. Run the NoHardwareBreakpointsDetected test
+ * 5. Verify that the test detects the hardware breakpoint and reports a violation
+ * 
+ * Expected behavior with hardware breakpoint:
+ * - FullCheck() should detect hardware breakpoint
+ * - A ViolationEvent with details "Hardware breakpoints detected in debug registers" should be present
+ * - The violation should have type ViolationType::DebuggerAttached
+ * - The violation should have severity Severity::Critical
  */

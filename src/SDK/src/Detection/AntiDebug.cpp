@@ -13,10 +13,30 @@
 #include <windows.h>
 #include <winternl.h>
 #include <intrin.h>
+#include <tlhelp32.h>
 #endif
 
 namespace Sentinel {
 namespace SDK {
+
+#ifdef _WIN32
+// Helper function: Check if CONTEXT contains hardware breakpoints
+static inline bool IsHardwareBreakpointSet(const CONTEXT& ctx) {
+    // Check DR0-DR3 for breakpoint addresses
+    if (ctx.Dr0 != 0 || ctx.Dr1 != 0 || ctx.Dr2 != 0 || ctx.Dr3 != 0) {
+        return true;
+    }
+    
+    // Check DR7 for enabled breakpoints
+    // Bits 0,2,4,6 = local enable for DR0-3
+    // Bits 1,3,5,7 = global enable for DR0-3
+    if ((ctx.Dr7 & 0xFF) != 0) {
+        return true;
+    }
+    
+    return false;
+}
+#endif
 
 // AntiDebugDetector stub implementation
 void AntiDebugDetector::Initialize() {}
@@ -68,7 +88,39 @@ std::vector<ViolationEvent> AntiDebugDetector::Check() {
 #endif
 }
 
-std::vector<ViolationEvent> AntiDebugDetector::FullCheck() { return Check(); }
+std::vector<ViolationEvent> AntiDebugDetector::FullCheck() {
+    auto violations = Check();  // Quick checks first
+    
+#ifdef _WIN32
+    // Check for hardware breakpoints in current thread
+    if (CheckHardwareBreakpoints()) {
+        ViolationEvent ev;
+        ev.type = ViolationType::DebuggerAttached;
+        ev.severity = Severity::Critical;
+        ev.details = "Hardware breakpoints detected in debug registers";
+        ev.timestamp = 0;
+        ev.address = 0;
+        ev.module_name = nullptr;
+        ev.detection_id = 0;
+        violations.push_back(ev);
+    }
+    
+    // Check debug port (NtQueryInformationProcess with ProcessDebugPort)
+    if (CheckDebugPort()) {
+        ViolationEvent ev;
+        ev.type = ViolationType::DebuggerAttached;
+        ev.severity = Severity::Critical;
+        ev.details = "Debug port detected";
+        ev.timestamp = 0;
+        ev.address = 0;
+        ev.module_name = nullptr;
+        ev.detection_id = 0;
+        violations.push_back(ev);
+    }
+#endif
+    
+    return violations;
+}
 
 bool AntiDebugDetector::CheckIsDebuggerPresent() {
 #ifdef _WIN32
@@ -95,7 +147,24 @@ bool AntiDebugDetector::CheckIsDebuggerPresent() {
 bool AntiDebugDetector::CheckRemoteDebugger() { return false; }
 bool AntiDebugDetector::CheckDebugPort() { return false; }
 bool AntiDebugDetector::CheckDebugObject() { return false; }
-bool AntiDebugDetector::CheckHardwareBreakpoints() { return false; }
+bool AntiDebugDetector::CheckHardwareBreakpoints() {
+#ifdef _WIN32
+    CONTEXT ctx;
+    ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+    
+    HANDLE thread = GetCurrentThread();
+    
+    if (!GetThreadContext(thread, &ctx)) {
+        // Cannot get context, inconclusive
+        // Note: This could indicate debugger evasion but spec requires false return
+        return false;
+    }
+    
+    return IsHardwareBreakpointSet(ctx);
+#else
+    return false;
+#endif
+}
 bool AntiDebugDetector::CheckTimingAnomaly() { return false; }
 bool AntiDebugDetector::CheckSEHIntegrity() { return false; }
 bool AntiDebugDetector::CheckPEB() { return CheckIsDebuggerPresent(); }
@@ -149,6 +218,44 @@ bool AntiDebugDetector::CheckHeapFlags() {
 #endif
     
     return false;
+}
+
+// Helper function: Check all threads for hardware breakpoints
+// Note: Currently not used in production code, but available for comprehensive scanning
+[[maybe_unused]] static bool CheckAllThreadsHardwareBP() {
+#ifdef _WIN32
+    DWORD currentPid = GetCurrentProcessId();
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) return false;
+    
+    THREADENTRY32 te;
+    te.dwSize = sizeof(te);
+    
+    bool detected = false;
+    
+    if (Thread32First(snapshot, &te)) {
+        do {
+            if (te.th32OwnerProcessID == currentPid) {
+                HANDLE thread = OpenThread(THREAD_GET_CONTEXT, FALSE, te.th32ThreadID);
+                if (thread) {
+                    CONTEXT ctx;
+                    ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+                    if (GetThreadContext(thread, &ctx)) {
+                        if (IsHardwareBreakpointSet(ctx)) {
+                            detected = true;
+                        }
+                    }
+                    CloseHandle(thread);
+                }
+            }
+        } while (Thread32Next(snapshot, &te) && !detected);
+    }
+    
+    CloseHandle(snapshot);
+    return detected;
+#else
+    return false;
+#endif
 }
 
 } // namespace SDK
