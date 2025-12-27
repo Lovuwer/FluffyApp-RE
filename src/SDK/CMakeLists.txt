@@ -86,6 +86,7 @@ if(WIN32)
         crypt32
         ws2_32
         winhttp
+        psapi
     )
 elseif(UNIX)
     list(APPEND SDK_COMPILE_DEFINITIONS SENTINEL_PLATFORM_LINUX)

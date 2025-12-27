@@ -15,7 +15,6 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <psapi.h>
-#pragma comment(lib, "psapi.lib")
 #endif
 
 namespace Sentinel {
@@ -257,7 +256,8 @@ std::vector<ViolationEvent> AntiHookDetector::ScanCriticalAPIs() {
         {"user32.dll", "SetWindowsHookExW"},
     };
     
-    for (const auto& api : CRITICAL_APIS) {
+    for (size_t i = 0; i < CRITICAL_APIS.size(); i++) {
+        const auto& api = CRITICAL_APIS[i];
         if (IsIATHooked(api.module, api.function)) {
             ViolationEvent ev;
             ev.type = ViolationType::IATHook;
@@ -268,7 +268,8 @@ std::vector<ViolationEvent> AntiHookDetector::ScanCriticalAPIs() {
             ev.module_name = api.module;
             ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count();
-            ev.detection_id = static_cast<uint32_t>(ev.timestamp);
+            // Include API index to prevent ID collisions
+            ev.detection_id = static_cast<uint32_t>(ev.timestamp ^ (i << 24));
             violations.push_back(ev);
         }
     }
