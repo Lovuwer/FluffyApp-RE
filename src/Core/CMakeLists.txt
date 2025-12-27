@@ -19,6 +19,7 @@ target_sources(SentinelCore
         Crypto/HMAC.cpp
         Crypto/ConstantTimeCompare.cpp
         Crypto/SecureZero.cpp
+        Crypto/Base64.cpp
         
         # Memory manipulation
         Memory/MemoryScanner.cpp
@@ -32,6 +33,7 @@ target_sources(SentinelCore
         Network/TlsContext.cpp
         Network/CertPinner.cpp
         Network/RequestSigner.cpp
+        Network/CertificatePinning.cpp
         
         # Utilities
         Utils/Logger.cpp

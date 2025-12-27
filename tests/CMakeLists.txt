@@ -28,6 +28,7 @@ add_executable(CoreTests
     Core/test_harness.cpp
     Core/test_aes_cipher.cpp
     Core/test_rsa_signer.cpp
+    Core/test_certificate_pinning.cpp
 )
 
 target_link_libraries(CoreTests
