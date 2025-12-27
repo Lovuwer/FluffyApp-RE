@@ -142,8 +142,15 @@ public:
     std::vector<ViolationEvent> ScanThreads();
     
 private:
+    void EnumerateKnownModules();
     bool IsModuleSuspicious(const wchar_t* module_path);
     bool IsThreadSuspicious(uint32_t thread_id);
+    
+#ifdef _WIN32
+    bool IsSuspiciousRegion(const MEMORY_BASIC_INFORMATION& mbi);
+    bool IsKnownJITRegion(uintptr_t address);
+    std::string DescribeRegion(const MEMORY_BASIC_INFORMATION& mbi);
+#endif
     
     std::vector<std::wstring> known_modules_;
 };
