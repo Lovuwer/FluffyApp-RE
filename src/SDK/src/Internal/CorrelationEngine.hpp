@@ -4,7 +4,7 @@
  * Prevents false-positive bans by correlating multiple independent signals
  * before triggering enforcement actions.
  * 
- * Copyright (c) 2024 Sentinel Security. All rights reserved.
+ * Copyright (c) 2025 Sentinel Security. All rights reserved.
  */
 
 #pragma once

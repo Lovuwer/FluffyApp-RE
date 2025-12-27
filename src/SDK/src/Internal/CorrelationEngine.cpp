@@ -1,7 +1,7 @@
 /**
  * Sentinel SDK - Detection Correlation Engine Implementation
  * 
- * Copyright (c) 2024 Sentinel Security. All rights reserved.
+ * Copyright (c) 2025 Sentinel Security. All rights reserved.
  */
 
 #include "CorrelationEngine.hpp"
@@ -10,6 +10,7 @@
 
 #ifdef _WIN32
 #include <Windows.h>
+#include <intrin.h>
 #include <tlhelp32.h>
 #include <psapi.h>
 #else
