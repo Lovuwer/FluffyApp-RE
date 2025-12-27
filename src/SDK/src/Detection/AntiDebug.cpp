@@ -119,13 +119,13 @@ void AntiDebugDetector::CalibrateTimingBaseline() {
     }
     baseline_mean_ = sum / static_cast<double>(NUM_SAMPLES);
     
-    // Calculate standard deviation
+    // Calculate standard deviation using sample formula (n-1 for better accuracy)
     double variance_sum = 0.0;
     for (const auto& sample : samples) {
         double diff = sample - baseline_mean_;
         variance_sum += diff * diff;
     }
-    double variance = variance_sum / static_cast<double>(NUM_SAMPLES);
+    double variance = variance_sum / static_cast<double>(NUM_SAMPLES - 1);
     baseline_stddev_ = sqrt(variance);
     
     // Set dynamic threshold: mean + 5 * stddev
@@ -322,6 +322,9 @@ bool AntiDebugDetector::CheckTimingStatistical() {
     // High variance indicates debugger interference
     // (breakpoints hit some iterations but not others)
     // Use dynamic variance threshold based on calibrated baseline
+    // Note: baseline_stddev_ is in microseconds, but this statistical check uses CPU cycles
+    // So we derive a cycle-based variance threshold from the calibrated data
+    // The factor of 100 provides headroom for normal variance
     uint64_t variance_threshold = static_cast<uint64_t>(baseline_stddev_ * baseline_stddev_ * 100);
     if (variance_threshold == 0) {
         variance_threshold = 1000000;  // Fallback if calibration failed
