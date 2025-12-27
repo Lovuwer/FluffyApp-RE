@@ -246,3 +246,105 @@ TEST_F(WhitelistTest, InitializeShutdownCycle) {
     }
     EXPECT_FALSE(found) << "Custom entry persisted after shutdown/init cycle";
 }
+
+// Test 11: Thread Origin Whitelist - System DLLs
+TEST_F(WhitelistTest, ThreadOriginSystemDLLs) {
+    // Verify system DLLs are in the thread origin whitelist
+    auto entries = manager.GetEntries();
+    
+    bool foundNtdll = false;
+    bool foundKernel32 = false;
+    bool foundKernelBase = false;
+    
+    for (const auto& entry : entries) {
+        if (entry.type == WhitelistType::ThreadOrigin) {
+            if (entry.identifier == "ntdll.dll") {
+                foundNtdll = true;
+                EXPECT_TRUE(entry.builtin);
+                EXPECT_EQ(entry.reason, "Windows NT kernel layer - thread pool workers");
+            }
+            if (entry.identifier == "kernel32.dll") {
+                foundKernel32 = true;
+                EXPECT_TRUE(entry.builtin);
+            }
+            if (entry.identifier == "kernelbase.dll") {
+                foundKernelBase = true;
+                EXPECT_TRUE(entry.builtin);
+            }
+        }
+    }
+    
+    EXPECT_TRUE(foundNtdll) << "ntdll.dll thread origin not found";
+    EXPECT_TRUE(foundKernel32) << "kernel32.dll thread origin not found";
+    EXPECT_TRUE(foundKernelBase) << "kernelbase.dll thread origin not found";
+}
+
+// Test 12: Thread Origin Whitelist - CLR Runtime
+TEST_F(WhitelistTest, ThreadOriginCLRRuntime) {
+    // Verify .NET CLR modules are in the thread origin whitelist
+    auto entries = manager.GetEntries();
+    
+    bool foundClr = false;
+    bool foundCoreClr = false;
+    bool foundClrJit = false;
+    bool foundMscorwks = false;
+    bool foundMscorsvr = false;
+    
+    for (const auto& entry : entries) {
+        if (entry.type == WhitelistType::ThreadOrigin) {
+            if (entry.identifier == "clr.dll") foundClr = true;
+            if (entry.identifier == "coreclr.dll") foundCoreClr = true;
+            if (entry.identifier == "clrjit.dll") foundClrJit = true;
+            if (entry.identifier == "mscorwks.dll") foundMscorwks = true;
+            if (entry.identifier == "mscorsvr.dll") foundMscorsvr = true;
+        }
+    }
+    
+    EXPECT_TRUE(foundClr) << "clr.dll thread origin not found";
+    EXPECT_TRUE(foundCoreClr) << "coreclr.dll thread origin not found";
+    EXPECT_TRUE(foundClrJit) << "clrjit.dll thread origin not found";
+    EXPECT_TRUE(foundMscorwks) << "mscorwks.dll thread origin not found";
+    EXPECT_TRUE(foundMscorsvr) << "mscorsvr.dll thread origin not found";
+}
+
+// Test 13: Custom Thread Origin Whitelist
+TEST_F(WhitelistTest, CustomThreadOriginWhitelist) {
+    // Add a custom thread origin entry
+    WhitelistEntry customEntry;
+    customEntry.type = WhitelistType::ThreadOrigin;
+    customEntry.identifier = "MyGameEngine.dll";
+    customEntry.reason = "Custom game engine job system";
+    customEntry.builtin = false;
+    
+    manager.Add(customEntry);
+    
+    // Verify it was added
+    auto entries = manager.GetEntries();
+    bool found = false;
+    for (const auto& entry : entries) {
+        if (entry.identifier == "MyGameEngine.dll" && 
+            entry.type == WhitelistType::ThreadOrigin) {
+            found = true;
+            EXPECT_FALSE(entry.builtin);
+            EXPECT_EQ(entry.reason, "Custom game engine job system");
+            break;
+        }
+    }
+    EXPECT_TRUE(found) << "Custom thread origin entry not added";
+    
+    // Remove the entry
+    manager.Remove("MyGameEngine.dll");
+    
+    // Verify it was removed
+    entries = manager.GetEntries();
+    found = false;
+    for (const auto& entry : entries) {
+        if (entry.identifier == "MyGameEngine.dll" && 
+            entry.type == WhitelistType::ThreadOrigin) {
+            found = true;
+            break;
+        }
+    }
+    EXPECT_FALSE(found) << "Custom thread origin entry was not removed";
+}
+
