@@ -41,6 +41,7 @@ target_link_libraries(CoreTests
 # SDK tests
 add_executable(SDKTests
     SDK/test_main.cpp
+    SDK/test_whitelist.cpp
 )
 
 target_link_libraries(SDKTests
