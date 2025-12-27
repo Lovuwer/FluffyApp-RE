@@ -16,6 +16,9 @@
 #include <openssl/evp.h>
 #include <openssl/rsa.h>
 #include <openssl/pem.h>
+#include <thread>
+#include <atomic>
+#include <chrono>
 
 using namespace Sentinel;
 using namespace Sentinel::Network;
