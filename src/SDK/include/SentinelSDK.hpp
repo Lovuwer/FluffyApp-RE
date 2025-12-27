@@ -74,10 +74,13 @@ enum class ErrorCode : uint32_t {
     
     // Runtime errors (100-199)
     InvalidParameter = 100,
+    InvalidArgument = 100,  // Alias for compatibility
     InternalError = 101,
     OutOfMemory = 102,
     Timeout = 103,
     NetworkError = 104,
+    BufferTooSmall = 105,
+    InvalidInput = 106,
     
     // Security events (200-299)
     TamperingDetected = 200,
@@ -88,6 +91,11 @@ enum class ErrorCode : uint32_t {
     ProcessManipulation = 205,
     SignatureMismatch = 206,
     IntegrityViolation = 207,
+    ReplayDetected = 208,
+    AuthenticationFailed = 209,
+    
+    // Cryptographic errors (250-299)
+    CryptoError = 250,
     
     // Configuration errors (300-399)
     InvalidConfiguration = 300,
