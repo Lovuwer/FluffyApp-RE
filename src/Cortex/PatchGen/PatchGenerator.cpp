@@ -171,7 +171,7 @@ Sentinel::Result<PatchOperation> PatchGenerator::CreateInlinePatch(
     const std::string& name) {
     
     if (original.empty() || replacement.empty()) {
-        return Sentinel::Result<PatchOperation>::Error(Sentinel::ErrorCode::InvalidParameter, "Empty bytes");
+        return Sentinel::Result<PatchOperation>::Error(Sentinel::ErrorCode::InvalidArgument, "Empty bytes");
     }
     
     PatchOperation patch;
@@ -198,7 +198,7 @@ Sentinel::Result<PatchOperation> PatchGenerator::CreateDetourPatch(
     const std::string& name) {
     
     if (hook_handler.empty()) {
-        return Sentinel::Result<PatchOperation>::Error(Sentinel::ErrorCode::InvalidParameter, "Empty hook handler");
+        return Sentinel::Result<PatchOperation>::Error(Sentinel::ErrorCode::InvalidArgument, "Empty hook handler");
     }
     
     PatchOperation patch;
@@ -239,7 +239,7 @@ Sentinel::Result<PatchOperation> PatchGenerator::CreateSignaturePatch(
     const std::string& name) {
     
     if (pattern.empty() || replacement.empty()) {
-        return Sentinel::Result<PatchOperation>::Error(Sentinel::ErrorCode::InvalidParameter, "Empty pattern or replacement");
+        return Sentinel::Result<PatchOperation>::Error(Sentinel::ErrorCode::InvalidArgument, "Empty pattern or replacement");
     }
     
     PatchOperation patch;
@@ -262,7 +262,7 @@ Sentinel::Result<PatchOperation> PatchGenerator::CreateNopPatch(
     const std::string& name) {
     
     if (size == 0) {
-        return Sentinel::Result<PatchOperation>::Error(Sentinel::ErrorCode::InvalidParameter, "Zero size");
+        return Sentinel::Result<PatchOperation>::Error(Sentinel::ErrorCode::InvalidArgument, "Zero size");
     }
     
     PatchOperation patch;
@@ -316,7 +316,7 @@ Sentinel::Result<PatchOperation> PatchGenerator::CreateCodecavePatch(
     const std::string& name) {
     
     if (cave_code.empty()) {
-        return Sentinel::Result<PatchOperation>::Error(Sentinel::ErrorCode::InvalidParameter, "Empty cave code");
+        return Sentinel::Result<PatchOperation>::Error(Sentinel::ErrorCode::InvalidArgument, "Empty cave code");
     }
     
     PatchOperation patch;
@@ -523,7 +523,7 @@ Sentinel::Result<void> PatchGenerator::RemovePatchFromSet(PatchSet& set, const s
         [&patch_id](const PatchOperation& p) { return p.id == patch_id; });
     
     if (it == set.patches.end()) {
-        return Sentinel::Result<void>::Error(Sentinel::ErrorCode::NotFound, "Patch not found");
+        return Sentinel::Result<void>::Error(Sentinel::ErrorCode::PatchNotFound, "Patch not found");
     }
     
     set.patches.erase(it);

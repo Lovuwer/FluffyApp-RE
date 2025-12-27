@@ -394,7 +394,7 @@ Sentinel::Result<DeobfuscationResult> VMDeobfuscatorEngine::analyze(
     
     if (!m_impl->initialized) {
         return Sentinel::Result<DeobfuscationResult>::Error(
-            Sentinel::ErrorCode::NotInitialized, "Engine not initialized");
+            Sentinel::ErrorCode::InvalidState, "Engine not initialized");
     }
     
     // Read binary
