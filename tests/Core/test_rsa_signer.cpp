@@ -263,9 +263,10 @@ TEST(RSASigner, TamperingDetection) {
     
     Signature signature = signResult.value();
     
-    // Tamper with the signature (flip one bit)
+    // Tamper with the signature (flip one bit in the middle)
     ASSERT_GT(signature.size(), 10u) << "Signature should be large enough to modify";
-    signature[10] ^= 0x01;  // Flip one bit
+    const size_t tamperIndex = signature.size() / 2;  // Modify middle byte
+    signature[tamperIndex] ^= 0x01;  // Flip one bit
     
     // Verification should fail
     RSASigner verifier;
@@ -296,7 +297,10 @@ TEST(RSASigner, VerifyWithoutKey) {
     
     std::string testData = "Test data";
     ByteSpan dataSpan(reinterpret_cast<const Byte*>(testData.data()), testData.size());
-    ByteBuffer fakeSignature(256, 0x00);  // Fake signature
+    
+    // For a 2048-bit RSA key, signature size is 256 bytes
+    constexpr size_t expectedSignatureSize = 256;
+    ByteBuffer fakeSignature(expectedSignatureSize, 0x00);  // Fake signature
     
     auto verifyResult = verifier.verify(dataSpan, fakeSignature);
     ASSERT_TRUE(verifyResult.isFailure()) << "Verify without key should fail";

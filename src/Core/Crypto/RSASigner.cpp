@@ -191,10 +191,9 @@ public:
             return false;
         }
         
-        // For OpenSSL 3.0+, check if the key has private components
-        // We can't directly access the RSA structure, so we check if we can sign
-        // In practice, if we loaded a private key successfully, this will be true
-        // If we loaded only a public key, EVP_PKEY_get_bn_param for private params will fail
+        // For OpenSSL 3.0+, check if the key has the private exponent 'd' parameter
+        // If we loaded a private key, this will succeed
+        // If we loaded only a public key, this will fail
         BIGNUM* d = nullptr;
         int result = EVP_PKEY_get_bn_param(m_pkey, OSSL_PKEY_PARAM_RSA_D, &d);
         if (result == 1 && d != nullptr) {
