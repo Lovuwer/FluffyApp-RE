@@ -14,6 +14,7 @@
  */
 
 #include <Sentinel/Core/Crypto.hpp>
+#include "TestHarness.hpp"
 #include <gtest/gtest.h>
 #include <cstring>
 #include <vector>
@@ -21,6 +22,7 @@
 
 using namespace Sentinel;
 using namespace Sentinel::Crypto;
+using namespace Sentinel::Testing;
 
 // ============================================================================
 // Unit Test 1: Basic Functionality
@@ -31,8 +33,8 @@ TEST(SecureZero, BasicFunctionality_256Bytes) {
     constexpr size_t bufferSize = 256;
     std::vector<Byte> buffer(bufferSize);
     
-    // Fill with 0xAA pattern
-    std::memset(buffer.data(), 0xAA, bufferSize);
+    // Fill with 0xAA pattern using test harness
+    fillPattern(buffer.data(), bufferSize, 0xAA);
     
     // Verify buffer is filled with 0xAA
     for (size_t i = 0; i < bufferSize; ++i) {
@@ -42,10 +44,8 @@ TEST(SecureZero, BasicFunctionality_256Bytes) {
     // Call secureZero
     secureZero(buffer.data(), bufferSize);
     
-    // Verify all bytes are now 0x00
-    for (size_t i = 0; i < bufferSize; ++i) {
-        EXPECT_EQ(buffer[i], 0x00) << "Buffer not zeroed at index " << i;
-    }
+    // Verify all bytes are now 0x00 using test harness
+    ASSERT_ZEROED(buffer.data(), bufferSize);
 }
 
 // ============================================================================
@@ -76,28 +76,14 @@ TEST(SecureZero, LargeBuffer_1MB) {
     constexpr size_t bufferSize = 1024 * 1024;
     std::vector<Byte> buffer(bufferSize);
     
-    // Fill with non-zero pattern
-    for (size_t i = 0; i < bufferSize; ++i) {
-        buffer[i] = static_cast<Byte>(i & 0xFF);
-    }
+    // Fill with non-zero pattern using test harness
+    fillPattern(buffer.data(), bufferSize, 0xBB);
     
     // Call secureZero
     secureZero(buffer.data(), bufferSize);
     
-    // Verify all bytes are zeroed
-    // Sample check at various positions for efficiency
-    EXPECT_EQ(buffer[0], 0x00) << "First byte not zeroed";
-    EXPECT_EQ(buffer[bufferSize / 4], 0x00) << "Quarter position not zeroed";
-    EXPECT_EQ(buffer[bufferSize / 2], 0x00) << "Middle not zeroed";
-    EXPECT_EQ(buffer[3 * bufferSize / 4], 0x00) << "Three-quarter position not zeroed";
-    EXPECT_EQ(buffer[bufferSize - 1], 0x00) << "Last byte not zeroed";
-    
-    // Full verification (may be slow, but ensures correctness)
-    for (size_t i = 0; i < bufferSize; ++i) {
-        if (buffer[i] != 0x00) {
-            FAIL() << "Buffer not zeroed at index " << i;
-        }
-    }
+    // Verify all bytes are zeroed using test harness
+    ASSERT_ZEROED(buffer.data(), bufferSize);
 }
 
 // ============================================================================
@@ -165,8 +151,8 @@ TEST(SecureZero, UnalignedPointer_Works) {
     constexpr size_t bufferSize = 128;
     std::vector<Byte> buffer(bufferSize + 16);
     
-    // Fill entire buffer with pattern
-    std::memset(buffer.data(), 0xBB, buffer.size());
+    // Fill entire buffer with pattern using test harness
+    fillPattern(buffer.data(), buffer.size(), 0xBB);
     
     // Test with unaligned pointer (offset by 1)
     Byte* unalignedPtr = buffer.data() + 1;
@@ -175,10 +161,8 @@ TEST(SecureZero, UnalignedPointer_Works) {
     // Zero unaligned region
     secureZero(unalignedPtr, testSize);
     
-    // Verify the unaligned region is zeroed
-    for (size_t i = 0; i < testSize; ++i) {
-        EXPECT_EQ(unalignedPtr[i], 0x00) << "Unaligned region not zeroed at offset " << i;
-    }
+    // Verify the unaligned region is zeroed using test harness
+    ASSERT_ZEROED(unalignedPtr, testSize);
     
     // Verify surrounding bytes are unchanged
     EXPECT_EQ(buffer[0], 0xBB) << "Byte before unaligned region was modified";
@@ -243,19 +227,17 @@ TEST(SecureZero, AESKey_Integration) {
 }
 
 TEST(SecureZero, ByteBuffer_Integration) {
-    // Create a ByteBuffer with sensitive data
-    ByteBuffer sensitiveData(512);
-    for (size_t i = 0; i < sensitiveData.size(); ++i) {
-        sensitiveData[i] = static_cast<Byte>(i & 0xFF);
-    }
+    // Create a ByteBuffer with random test data from test harness
+    ByteBuffer sensitiveData = randomBytes(512);
+    
+    // Verify it's not all zeros initially
+    ASSERT_FALSE(isZeroed(sensitiveData.data(), sensitiveData.size()));
     
     // Zero the buffer
     secureZero(sensitiveData.data(), sensitiveData.size());
     
-    // Verify all zeroed
-    for (size_t i = 0; i < sensitiveData.size(); ++i) {
-        EXPECT_EQ(sensitiveData[i], 0x00) << "ByteBuffer not zeroed at index " << i;
-    }
+    // Verify all zeroed using test harness
+    ASSERT_ZEROED(sensitiveData.data(), sensitiveData.size());
 }
 
 // ============================================================================
@@ -266,26 +248,25 @@ TEST(SecureZero, Performance_10MB) {
     constexpr size_t size = 10 * 1024 * 1024;  // 10 MB
     std::vector<Byte> buffer(size);
     
-    // Fill with pattern
-    std::memset(buffer.data(), 0xAA, size);
+    // Fill with pattern using test harness
+    fillPattern(buffer.data(), size, 0xAA);
     
-    auto start = Clock::now();
+    // Measure time using test harness
+    auto duration_ns = measureTime([&]() {
+        secureZero(buffer.data(), size);
+        // Refill for next iteration
+        fillPattern(buffer.data(), size, 0xAA);
+    }, 10);  // 10 iterations for better average
+    
+    // Verify it was actually zeroed (do one final zero without refill)
     secureZero(buffer.data(), size);
-    auto end = Clock::now();
-    
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-    
-    // Verify it was actually zeroed
-    bool allZero = true;
-    for (size_t i = 0; i < size && allZero; ++i) {
-        if (buffer[i] != 0x00) {
-            allZero = false;
-        }
-    }
-    
-    EXPECT_TRUE(allZero) << "10MB buffer not completely zeroed";
+    ASSERT_ZEROED(buffer.data(), size);
     
     // Print performance information (not a pass/fail criterion)
-    std::cout << "Performance: Zeroed 10MB in " << duration.count() << " microseconds"
-              << " (" << (10.0 / (duration.count() / 1000000.0)) << " MB/s)" << std::endl;
+    double duration_us = duration_ns / 1000.0;
+    double duration_s = duration_us / 1000000.0;
+    double mb_per_sec = (10.0 / duration_s);
+    
+    std::cout << "Performance: Zeroed 10MB in " << duration_us << " microseconds"
+              << " (" << mb_per_sec << " MB/s)" << std::endl;
 }

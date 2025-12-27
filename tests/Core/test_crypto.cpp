@@ -9,6 +9,7 @@
  */
 
 #include <Sentinel/Core/Crypto.hpp>
+#include "TestHarness.hpp"
 #include <gtest/gtest.h>
 #include <thread>
 #include <vector>
@@ -18,6 +19,7 @@
 
 using namespace Sentinel;
 using namespace Sentinel::Crypto;
+using namespace Sentinel::Testing;
 
 // ============================================================================
 // Unit Tests
@@ -665,6 +667,38 @@ TEST(HMAC, Verify_ModifiedData_ReturnsFalse) {
     ASSERT_TRUE(verifyResult.isSuccess());
     EXPECT_FALSE(verifyResult.value()) << "Verification should fail with modified data";
 }
+
+TEST(HMAC, Verify_BitFlippedMAC_AlwaysFails) {
+    // Use test harness to test bit flipping attacks
+    ByteBuffer key = randomBytes(32);
+    ByteBuffer data = randomBytes(128);
+    
+    HMAC hmac(key, HashAlgorithm::SHA256);
+    
+    // Compute correct HMAC
+    auto computeResult = hmac.compute(data);
+    ASSERT_CRYPTO_SUCCESS(computeResult);
+    ByteBuffer correctMac = computeResult.value();
+    
+    // Verify correct MAC works
+    auto verifyCorrect = hmac.verify(data, correctMac);
+    ASSERT_TRUE(verifyCorrect.isSuccess() && verifyCorrect.value());
+    
+    // Use BitFlipper to test every single-bit corruption
+    int failureCount = 0;
+    BitFlipper::forEachBitFlip(correctMac, [&](const ByteBuffer& tamperedMac, size_t /* bit */) {
+        auto verifyResult = hmac.verify(data, tamperedMac);
+        if (verifyResult.isSuccess() && !verifyResult.value()) {
+            failureCount++;
+        }
+    });
+    
+    // All single-bit corruptions should be detected
+    size_t totalBits = correctMac.size() * 8;
+    EXPECT_EQ(failureCount, static_cast<int>(totalBits)) 
+        << "HMAC should reject all single-bit corruptions";
+}
+
 
 // ============================================================================
 // HMAC Constant-Time Verification Test
