@@ -44,6 +44,11 @@ add_executable(SDKTests
     SDK/test_whitelist.cpp
 )
 
+target_include_directories(SDKTests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/SDK/src
+)
+
 target_link_libraries(SDKTests
     PRIVATE
         SentinelSDK_static

@@ -7,6 +7,7 @@
 #include "Internal/Whitelist.hpp"
 #include <algorithm>
 #include <cstring>
+#include <limits.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -14,6 +15,11 @@
 #include <wintrust.h>
 #include <softpub.h>
 #pragma comment(lib, "wintrust.lib")
+#else
+// Define MAX_PATH for non-Windows platforms
+#ifndef MAX_PATH
+#define MAX_PATH 4096
+#endif
 #endif
 
 namespace Sentinel {
@@ -86,7 +92,9 @@ void WhitelistManager::LoadBuiltinWhitelist() {
         WhitelistType::ThreadOrigin,
         "clrjit.dll",
         ".NET JIT compiler threads",
-        true
+        true,
+        std::nullopt,
+        std::nullopt
     });
     
     // Virtual machine timing tolerance
@@ -94,21 +102,27 @@ void WhitelistManager::LoadBuiltinWhitelist() {
         WhitelistType::TimingException,
         "VMware",
         "VMware virtualization detected",
-        true
+        true,
+        std::nullopt,
+        std::nullopt
     });
     
     entries_.push_back({
         WhitelistType::TimingException,
         "VirtualBox",
         "VirtualBox virtualization detected",
-        true
+        true,
+        std::nullopt,
+        std::nullopt
     });
     
     entries_.push_back({
         WhitelistType::TimingException,
         "Hyper-V",
         "Hyper-V virtualization detected",
-        true
+        true,
+        std::nullopt,
+        std::nullopt
     });
 }
 
@@ -148,20 +162,32 @@ bool WhitelistManager::IsModuleWhitelisted(const wchar_t* modulePath) const {
     
     // Extract module name from path
     const wchar_t* moduleName = wcsrchr(modulePath, L'\\');
+    const wchar_t* moduleNameSlash = wcsrchr(modulePath, L'/');
+    
+    // Use whichever separator appears last in the path
+    if (moduleName && moduleNameSlash) {
+        moduleName = (moduleName > moduleNameSlash) ? moduleName : moduleNameSlash;
+    } else if (moduleNameSlash) {
+        moduleName = moduleNameSlash;
+    }
+    
     if (moduleName) {
-        moduleName++; // Skip the backslash
+        moduleName++; // Skip the separator
     } else {
         moduleName = modulePath;
     }
     
     // Convert to narrow string for comparison
     char narrowName[MAX_PATH];
-    size_t converted = 0;
 #ifdef _WIN32
+    size_t converted = 0;
     wcstombs_s(&converted, narrowName, MAX_PATH, moduleName, _TRUNCATE);
 #else
-    wcstombs(narrowName, moduleName, MAX_PATH - 1);
-    narrowName[MAX_PATH - 1] = '\0';
+    size_t len = wcstombs(narrowName, moduleName, MAX_PATH - 1);
+    if (len == static_cast<size_t>(-1)) {
+        return false;  // Conversion failed
+    }
+    narrowName[len] = '\0';
 #endif
     
     // Convert to lowercase for case-insensitive comparison
@@ -178,11 +204,13 @@ bool WhitelistManager::IsModuleWhitelisted(const wchar_t* modulePath) const {
             
             if (lowerIdentifier == narrowName) {
                 // If signature verification is required, check it
+#ifdef _WIN32
                 if (entry.signer.has_value()) {
                     if (!VerifyModuleSignature(modulePath, entry.signer.value())) {
                         continue; // Signature mismatch, not whitelisted
                     }
                 }
+#endif
                 return true;
             }
         }
