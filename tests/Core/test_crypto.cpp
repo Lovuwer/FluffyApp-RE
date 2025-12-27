@@ -610,6 +610,49 @@ TEST(HMAC_SHA512, RFC4231_TestCase3) {
         << "HMAC-SHA512 RFC 4231 Test Case 3 failed";
 }
 
+// RFC 4231 SHA-384 Test Case 1
+TEST(HMAC_SHA384, RFC4231_TestCase1) {
+    // Key = 0x0b repeated 20 times
+    ByteBuffer key(20, 0x0b);
+    
+    // Data = "Hi There"
+    std::string data = "Hi There";
+    ByteSpan dataSpan(reinterpret_cast<const Byte*>(data.data()), data.size());
+    
+    // Expected HMAC-SHA384 (from RFC 4231)
+    std::string expectedHex = "afd03944d84895626b0825f4ab46907f15f9dadbe4101ec682aa034c7cebc59cfaea9ea9076ede7f4af152e8b2fa9cb6";
+    ByteBuffer expected = hexToBytes(expectedHex);
+    
+    HMAC hmac(key, HashAlgorithm::SHA384);
+    auto result = hmac.compute(dataSpan);
+    
+    ASSERT_TRUE(result.isSuccess()) << "HMAC computation failed";
+    EXPECT_EQ(bytesToHex(result.value()), expectedHex)
+        << "HMAC-SHA384 RFC 4231 Test Case 1 failed";
+}
+
+// RFC 4231 SHA-384 Test Case 2
+TEST(HMAC_SHA384, RFC4231_TestCase2) {
+    // Key = "Jefe"
+    std::string keyStr = "Jefe";
+    ByteSpan key(reinterpret_cast<const Byte*>(keyStr.data()), keyStr.size());
+    
+    // Data = "what do ya want for nothing?"
+    std::string data = "what do ya want for nothing?";
+    ByteSpan dataSpan(reinterpret_cast<const Byte*>(data.data()), data.size());
+    
+    // Expected HMAC-SHA384 (from RFC 4231)
+    std::string expectedHex = "af45d2e376484031617f78d2b58a6b1b9c7ef464f5a01b47e42ec3736322445e8e2240ca5e69e2c78b3239ecfab21649";
+    ByteBuffer expected = hexToBytes(expectedHex);
+    
+    HMAC hmac(key, HashAlgorithm::SHA384);
+    auto result = hmac.compute(dataSpan);
+    
+    ASSERT_TRUE(result.isSuccess()) << "HMAC computation failed";
+    EXPECT_EQ(bytesToHex(result.value()), expectedHex)
+        << "HMAC-SHA384 RFC 4231 Test Case 2 failed";
+}
+
 // ============================================================================
 // HMAC Verification Tests
 // ============================================================================
