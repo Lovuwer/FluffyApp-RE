@@ -31,6 +31,7 @@ set(SDK_SOURCES
     src/Core/MemoryProtection.cpp
     src/Core/FunctionProtection.cpp
     src/Core/ValueProtection.cpp
+    src/Core/Whitelist.cpp
     src/Detection/AntiDebug.cpp
     src/Detection/AntiHook.cpp
     src/Detection/IntegrityCheck.cpp
@@ -48,6 +49,7 @@ set(SDK_HEADERS
     src/Internal/Context.hpp
     src/Internal/Detection.hpp
     src/Internal/Protection.hpp
+    src/Internal/Whitelist.hpp
 )
 
 # Header files for IDE organization only (not compiled)

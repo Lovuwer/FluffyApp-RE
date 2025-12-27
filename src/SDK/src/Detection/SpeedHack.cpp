@@ -16,7 +16,20 @@ namespace SDK {
 void SpeedHackDetector::Initialize() {}
 void SpeedHackDetector::Shutdown() {}
 void SpeedHackDetector::UpdateBaseline() {}
-bool SpeedHackDetector::ValidateFrame() { return true; }
+
+bool SpeedHackDetector::ValidateFrame() {
+    // TODO: Full implementation
+    // Example integration with whitelist for VM detection:
+    /*
+    if (g_whitelist && g_whitelist->IsVirtualizedEnvironment()) {
+        // Relax thresholds for VMs
+        constexpr float VM_THRESHOLD = 0.3f;  // 30% instead of 10%
+        // ... use relaxed threshold
+    }
+    */
+    return true;
+}
+
 uint64_t SpeedHackDetector::GetSystemTime() { return 0; }
 uint64_t SpeedHackDetector::GetPerformanceCounter() { return 0; }
 uint64_t SpeedHackDetector::GetRDTSC() { return 0; }
