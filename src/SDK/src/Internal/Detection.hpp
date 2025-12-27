@@ -85,6 +85,7 @@ public:
     
     bool CheckFunction(uintptr_t address);
     bool IsIATHooked(const char* module_name, const char* function_name);
+    bool IsDelayLoadIATHooked(const char* module_name, const char* function_name);
     std::vector<ViolationEvent> QuickCheck();
     std::vector<ViolationEvent> FullScan();
     

@@ -76,6 +76,208 @@ namespace {
         
         return address >= moduleBase && address < moduleEnd;
     }
+    
+    // Helper to check if a DLL name is an API set
+    bool IsApiSetDll(const char* dllName) {
+        if (!dllName) return false;
+        // API sets have the pattern "api-ms-win-*.dll" or "ext-ms-win-*.dll"
+        return (_strnicmp(dllName, "api-ms-win-", 11) == 0 ||
+                _strnicmp(dllName, "ext-ms-win-", 11) == 0);
+    }
+    
+    // Resolve API set DLL to actual host DLL using ApiSetResolveToHost
+    bool ResolveApiSetToHost(const char* apiSetName, char* hostName, size_t hostNameSize) {
+        if (!apiSetName || !hostName || hostNameSize == 0) return false;
+        
+        // ApiSetResolveToHost is available on Windows 8+
+        typedef BOOL(WINAPI* pApiSetResolveToHost)(
+            PCSTR apiSetName,
+            PSTR hostName,
+            PDWORD hostNameSize);
+        
+        static auto ApiSetResolveToHost = (pApiSetResolveToHost)GetProcAddress(
+            GetModuleHandleA("ntdll.dll"),
+            "ApiSetResolveToHost");
+        
+        if (!ApiSetResolveToHost) {
+            // Not available on this system, fallback to common mappings
+            // Most API sets resolve to kernelbase.dll or other system DLLs
+            if (_strnicmp(apiSetName, "api-ms-win-core-", 16) == 0) {
+                strncpy_s(hostName, hostNameSize, "kernelbase.dll", _TRUNCATE);
+                return true;
+            }
+            return false;
+        }
+        
+        DWORD size = static_cast<DWORD>(hostNameSize);
+        return ApiSetResolveToHost(apiSetName, hostName, &size) != FALSE;
+    }
+    
+    // Get the export address from a module for a given function name
+    // Returns 0 if not found
+    uintptr_t GetExportAddress(HMODULE hModule, const char* functionName) {
+        if (!hModule || !functionName) return 0;
+        
+        __try {
+            PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)hModule;
+            if (dosHeader->e_magic != IMAGE_DOS_SIGNATURE) return 0;
+            
+            PIMAGE_NT_HEADERS ntHeaders = (PIMAGE_NT_HEADERS)
+                ((BYTE*)hModule + dosHeader->e_lfanew);
+            if (ntHeaders->Signature != IMAGE_NT_SIGNATURE) return 0;
+            
+            DWORD exportDirRVA = ntHeaders->OptionalHeader
+                .DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
+            if (exportDirRVA == 0) return 0;
+            
+            PIMAGE_EXPORT_DIRECTORY exportDir = (PIMAGE_EXPORT_DIRECTORY)
+                ((BYTE*)hModule + exportDirRVA);
+            
+            DWORD* nameRVAs = (DWORD*)((BYTE*)hModule + exportDir->AddressOfNames);
+            WORD* ordinals = (WORD*)((BYTE*)hModule + exportDir->AddressOfNameOrdinals);
+            DWORD* funcRVAs = (DWORD*)((BYTE*)hModule + exportDir->AddressOfFunctions);
+            
+            // Search for function name
+            for (DWORD i = 0; i < exportDir->NumberOfNames; i++) {
+                const char* exportName = (const char*)((BYTE*)hModule + nameRVAs[i]);
+                if (strcmp(exportName, functionName) == 0) {
+                    DWORD funcRVA = funcRVAs[ordinals[i]];
+                    return (uintptr_t)hModule + funcRVA;
+                }
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {
+            return 0;
+        }
+        
+        return 0;
+    }
+    
+    // Check if an export is a forwarder (points to another DLL)
+    // Returns the forward string (e.g., "ntdll.RtlAllocateHeap") or nullptr
+    const char* GetExportForwarder(HMODULE hModule, uintptr_t exportAddress) {
+        if (!hModule || !exportAddress) return nullptr;
+        
+        __try {
+            PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)hModule;
+            if (dosHeader->e_magic != IMAGE_DOS_SIGNATURE) return nullptr;
+            
+            PIMAGE_NT_HEADERS ntHeaders = (PIMAGE_NT_HEADERS)
+                ((BYTE*)hModule + dosHeader->e_lfanew);
+            if (ntHeaders->Signature != IMAGE_NT_SIGNATURE) return nullptr;
+            
+            DWORD exportDirRVA = ntHeaders->OptionalHeader
+                .DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
+            DWORD exportDirSize = ntHeaders->OptionalHeader
+                .DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].Size;
+            
+            if (exportDirRVA == 0) return nullptr;
+            
+            // Check if the export address is within the export directory
+            // If so, it's a forwarder string
+            uintptr_t moduleBase = (uintptr_t)hModule;
+            uintptr_t exportDirStart = moduleBase + exportDirRVA;
+            uintptr_t exportDirEnd = exportDirStart + exportDirSize;
+            
+            if (exportAddress >= exportDirStart && exportAddress < exportDirEnd) {
+                // This is a forwarder - the address points to a string
+                return (const char*)exportAddress;
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {
+            return nullptr;
+        }
+        
+        return nullptr;
+    }
+    
+    // Resolve export forwarding chain up to maxDepth levels
+    // Returns the final module and address, or 0 if not resolved
+    uintptr_t ResolveExportForward(const char* moduleName, const char* functionName, int maxDepth = 3) {
+        if (!moduleName || !functionName || maxDepth <= 0) return 0;
+        
+        HMODULE hModule = GetModuleHandleA(moduleName);
+        if (!hModule) return 0;
+        
+        uintptr_t exportAddr = GetExportAddress(hModule, functionName);
+        if (exportAddr == 0) return 0;
+        
+        // Check if this is a forwarder
+        const char* forwarder = GetExportForwarder(hModule, exportAddr);
+        if (!forwarder) {
+            // Not a forwarder, return the address
+            return exportAddr;
+        }
+        
+        // Parse the forwarder string (e.g., "ntdll.RtlAllocateHeap")
+        char forwardModule[256];
+        char forwardFunction[256];
+        const char* dot = strchr(forwarder, '.');
+        if (!dot) return exportAddr;  // Invalid forwarder format
+        
+        size_t moduleLen = dot - forwarder;
+        if (moduleLen >= sizeof(forwardModule) - 4) return exportAddr;
+        
+        strncpy_s(forwardModule, sizeof(forwardModule), forwarder, moduleLen);
+        forwardModule[moduleLen] = '\0';
+        strcat_s(forwardModule, sizeof(forwardModule), ".dll");
+        
+        strncpy_s(forwardFunction, sizeof(forwardFunction), dot + 1, _TRUNCATE);
+        
+        // Recursively resolve the forward
+        return ResolveExportForward(forwardModule, forwardFunction, maxDepth - 1);
+    }
+    
+    // Known system forward allowlist
+    struct KnownForward {
+        const char* sourceModule;
+        const char* targetModule;
+    };
+    
+    const KnownForward KNOWN_FORWARDS[] = {
+        {"kernel32.dll", "ntdll.dll"},        // Many heap/memory functions
+        {"kernel32.dll", "kernelbase.dll"},   // Core Windows functions
+        {"kernelbase.dll", "ntdll.dll"},      // Low-level system calls
+        {"advapi32.dll", "kernelbase.dll"},   // Registry/security functions
+    };
+    
+    // Check if a forward from sourceModule to targetModule is in the allowlist
+    bool IsKnownForward(const char* sourceModule, const char* targetModule) {
+        if (!sourceModule || !targetModule) return false;
+        
+        for (const auto& forward : KNOWN_FORWARDS) {
+            if (_stricmp(sourceModule, forward.sourceModule) == 0 &&
+                _stricmp(targetModule, forward.targetModule) == 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    // Get module name from an address
+    bool GetModuleNameFromAddress(uintptr_t address, char* moduleName, size_t moduleNameSize) {
+        if (!moduleName || moduleNameSize == 0) return false;
+        
+        HMODULE hModule;
+        if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                (LPCSTR)address,
+                                &hModule)) {
+            return false;
+        }
+        
+        char fullPath[MAX_PATH];
+        if (GetModuleFileNameA(hModule, fullPath, sizeof(fullPath)) == 0) {
+            return false;
+        }
+        
+        // Extract just the filename
+        const char* filename = strrchr(fullPath, '\\');
+        filename = filename ? filename + 1 : fullPath;
+        
+        strncpy_s(moduleName, moduleNameSize, filename, _TRUNCATE);
+        return true;
+    }
 #endif
 }
 
@@ -223,7 +425,56 @@ bool AntiHookDetector::IsIATHooked(const char* module_name, const char* function
                         if (strcmp((char*)importName->Name, function_name) == 0) {
                             // Found the function - validate IAT entry
                             uintptr_t iatAddress = iatThunk->u1.Function;
-                            return !IsAddressInModule(iatAddress, module_name);
+                            
+                            // Check if IAT points inside the expected module
+                            if (IsAddressInModule(iatAddress, module_name)) {
+                                return false;  // Not hooked
+                            }
+                            
+                            // IAT points outside the module - could be a hook or legitimate forward
+                            
+                            // 1. Check if source module is an API set
+                            char resolvedModule[256];
+                            const char* actualModule = module_name;
+                            if (IsApiSetDll(module_name)) {
+                                if (ResolveApiSetToHost(module_name, resolvedModule, sizeof(resolvedModule))) {
+                                    actualModule = resolvedModule;
+                                    // Check if IAT points to resolved API set host
+                                    if (IsAddressInModule(iatAddress, actualModule)) {
+                                        return false;  // API set correctly resolved
+                                    }
+                                }
+                            }
+                            
+                            // 2. Get the module where IAT actually points
+                            char targetModule[256];
+                            if (!GetModuleNameFromAddress(iatAddress, targetModule, sizeof(targetModule))) {
+                                // Can't determine target module - assume hooked
+                                return true;
+                            }
+                            
+                            // 3. Check if this is a known system forward
+                            if (IsKnownForward(actualModule, targetModule)) {
+                                // This is a known legitimate forward
+                                return false;
+                            }
+                            
+                            // 4. Check if the expected module exports a forwarder for this function
+                            uintptr_t resolvedExport = ResolveExportForward(actualModule, function_name, 3);
+                            if (resolvedExport != 0) {
+                                // Get module of resolved export
+                                char resolvedTargetModule[256];
+                                if (GetModuleNameFromAddress(resolvedExport, resolvedTargetModule, sizeof(resolvedTargetModule))) {
+                                    // Check if the resolved export and IAT point to the same module
+                                    if (_stricmp(targetModule, resolvedTargetModule) == 0) {
+                                        // IAT follows the export forward chain - legitimate
+                                        return false;
+                                    }
+                                }
+                            }
+                            
+                            // IAT points somewhere unexpected - likely hooked
+                            return true;
                         }
                     }
                     origThunk++;
@@ -238,6 +489,192 @@ bool AntiHookDetector::IsIATHooked(const char* module_name, const char* function
     __except (EXCEPTION_EXECUTE_HANDLER) {
         // Access violation or other exception during PE parsing
         // Return false (not hooked) instead of crashing
+        return false;
+    }
+#else
+    (void)module_name;
+    (void)function_name;
+    return false;  // Not implemented for non-Windows platforms
+#endif
+}
+
+bool AntiHookDetector::IsDelayLoadIATHooked(const char* module_name, const char* function_name) {
+#ifdef _WIN32
+    // Get current module base
+    HMODULE hModule = GetModuleHandle(nullptr);
+    if (!hModule) return false;
+    
+    // Maximum reasonable PE header offset (64KB)
+    static constexpr LONG MAX_PE_HEADER_OFFSET = 0x10000;
+    
+    // Wrap PE parsing in SEH to catch malformed headers
+    __try {
+        // Parse PE headers with defensive checks
+        PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)hModule;
+        
+        // Verify DOS header is readable
+        if (!SafeMemory::IsReadable(dosHeader, sizeof(IMAGE_DOS_HEADER))) {
+            return false;
+        }
+        
+        if (dosHeader->e_magic != IMAGE_DOS_SIGNATURE) return false;
+        
+        // Verify NT headers location is within bounds and readable
+        if (dosHeader->e_lfanew < 0 || dosHeader->e_lfanew > MAX_PE_HEADER_OFFSET) {
+            return false;  // Unreasonable offset
+        }
+        
+        PIMAGE_NT_HEADERS ntHeaders = (PIMAGE_NT_HEADERS)
+            ((BYTE*)hModule + dosHeader->e_lfanew);
+        
+        // Verify NT headers are readable
+        if (!SafeMemory::IsReadable(ntHeaders, sizeof(IMAGE_NT_HEADERS))) {
+            return false;
+        }
+        
+        if (ntHeaders->Signature != IMAGE_NT_SIGNATURE) return false;
+        
+        // Get delay-load import directory
+        DWORD delayImportDirRVA = ntHeaders->OptionalHeader
+            .DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT].VirtualAddress;
+        if (delayImportDirRVA == 0) {
+            return false;  // No delay-load imports
+        }
+        
+        // Delay-load import descriptor structure
+        struct IMAGE_DELAYLOAD_DESCRIPTOR {
+            DWORD Attributes;
+            DWORD DllNameRVA;
+            DWORD ModuleHandleRVA;
+            DWORD ImportAddressTableRVA;
+            DWORD ImportNameTableRVA;
+            DWORD BoundImportAddressTableRVA;
+            DWORD UnloadInformationTableRVA;
+            DWORD TimeDateStamp;
+        };
+        
+        IMAGE_DELAYLOAD_DESCRIPTOR* delayDesc = (IMAGE_DELAYLOAD_DESCRIPTOR*)
+            ((BYTE*)hModule + delayImportDirRVA);
+        
+        // Verify delay descriptor is readable
+        if (!SafeMemory::IsReadable(delayDesc, sizeof(IMAGE_DELAYLOAD_DESCRIPTOR))) {
+            return false;
+        }
+        
+        // Find the target module
+        while (delayDesc->DllNameRVA != 0) {
+            // Verify this descriptor entry is readable
+            if (!SafeMemory::IsReadable(delayDesc, sizeof(IMAGE_DELAYLOAD_DESCRIPTOR))) {
+                break;
+            }
+            
+            const char* dllName = (const char*)((BYTE*)hModule + delayDesc->DllNameRVA);
+            
+            // Verify DLL name string is readable
+            if (!SafeMemory::IsReadable(dllName, 1)) {
+                delayDesc++;
+                continue;
+            }
+            
+            if (_stricmp(dllName, module_name) == 0) {
+                // Found the module - check if it's loaded yet
+                HMODULE* moduleHandle = (HMODULE*)((BYTE*)hModule + delayDesc->ModuleHandleRVA);
+                
+                // Verify module handle pointer is readable
+                if (!SafeMemory::IsReadable(moduleHandle, sizeof(HMODULE))) {
+                    delayDesc++;
+                    continue;
+                }
+                
+                if (*moduleHandle == nullptr) {
+                    // Module not loaded yet - can't check for hooks
+                    return false;
+                }
+                
+                // Module is loaded - check IAT entries
+                PIMAGE_THUNK_DATA nameThunk = (PIMAGE_THUNK_DATA)
+                    ((BYTE*)hModule + delayDesc->ImportNameTableRVA);
+                PIMAGE_THUNK_DATA iatThunk = (PIMAGE_THUNK_DATA)
+                    ((BYTE*)hModule + delayDesc->ImportAddressTableRVA);
+                
+                // Verify thunks are readable
+                if (!SafeMemory::IsReadable(nameThunk, sizeof(IMAGE_THUNK_DATA)) ||
+                    !SafeMemory::IsReadable(iatThunk, sizeof(IMAGE_THUNK_DATA))) {
+                    return false;
+                }
+                
+                while (nameThunk->u1.AddressOfData != 0) {
+                    // Verify each thunk entry is readable
+                    if (!SafeMemory::IsReadable(nameThunk, sizeof(IMAGE_THUNK_DATA)) ||
+                        !SafeMemory::IsReadable(iatThunk, sizeof(IMAGE_THUNK_DATA))) {
+                        break;
+                    }
+                    
+                    if (!(nameThunk->u1.Ordinal & IMAGE_ORDINAL_FLAG)) {
+                        PIMAGE_IMPORT_BY_NAME importName = (PIMAGE_IMPORT_BY_NAME)
+                            ((BYTE*)hModule + nameThunk->u1.AddressOfData);
+                        
+                        // Verify import name structure is readable
+                        if (!SafeMemory::IsReadable(importName, sizeof(IMAGE_IMPORT_BY_NAME))) {
+                            nameThunk++;
+                            iatThunk++;
+                            continue;
+                        }
+                        
+                        if (strcmp((char*)importName->Name, function_name) == 0) {
+                            // Found the function - validate IAT entry using same logic as IsIATHooked
+                            uintptr_t iatAddress = iatThunk->u1.Function;
+                            
+                            // Check if IAT points inside the expected module
+                            if (IsAddressInModule(iatAddress, module_name)) {
+                                return false;  // Not hooked
+                            }
+                            
+                            // Apply same forward/API set resolution logic
+                            char resolvedModule[256];
+                            const char* actualModule = module_name;
+                            if (IsApiSetDll(module_name)) {
+                                if (ResolveApiSetToHost(module_name, resolvedModule, sizeof(resolvedModule))) {
+                                    actualModule = resolvedModule;
+                                    if (IsAddressInModule(iatAddress, actualModule)) {
+                                        return false;
+                                    }
+                                }
+                            }
+                            
+                            char targetModule[256];
+                            if (!GetModuleNameFromAddress(iatAddress, targetModule, sizeof(targetModule))) {
+                                return true;
+                            }
+                            
+                            if (IsKnownForward(actualModule, targetModule)) {
+                                return false;
+                            }
+                            
+                            uintptr_t resolvedExport = ResolveExportForward(actualModule, function_name, 3);
+                            if (resolvedExport != 0) {
+                                char resolvedTargetModule[256];
+                                if (GetModuleNameFromAddress(resolvedExport, resolvedTargetModule, sizeof(resolvedTargetModule))) {
+                                    if (_stricmp(targetModule, resolvedTargetModule) == 0) {
+                                        return false;
+                                    }
+                                }
+                            }
+                            
+                            return true;
+                        }
+                    }
+                    nameThunk++;
+                    iatThunk++;
+                }
+            }
+            delayDesc++;
+        }
+        
+        return false;  // Function not found in delay-load imports
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        // Access violation or other exception during PE parsing
         return false;
     }
 #else
@@ -353,10 +790,17 @@ std::vector<ViolationEvent> AntiHookDetector::ScanCriticalAPIs() {
     
     for (size_t i = 0; i < CRITICAL_APIS.size(); i++) {
         const auto& api = CRITICAL_APIS[i];
-        if (IsIATHooked(api.module, api.function)) {
+        
+        // Check both regular IAT and delay-load IAT
+        bool isHooked = IsIATHooked(api.module, api.function);
+        if (!isHooked) {
+            isHooked = IsDelayLoadIATHooked(api.module, api.function);
+        }
+        
+        if (isHooked) {
             ViolationEvent ev;
             ev.type = ViolationType::IATHook;
-            ev.severity = Severity::Critical;
+            ev.severity = Severity::High;  // Reduced from Critical - IAT hooks are primitive
             ev.address = 0;
             static const char* detail_msg = "IAT hook detected";
             ev.details = detail_msg;
