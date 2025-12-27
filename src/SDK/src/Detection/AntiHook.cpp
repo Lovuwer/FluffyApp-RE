@@ -216,7 +216,8 @@ namespace {
         if (!dot) return exportAddr;  // Invalid forwarder format
         
         size_t moduleLen = dot - forwarder;
-        if (moduleLen >= sizeof(forwardModule) - 4) return exportAddr;
+        constexpr size_t DLL_SUFFIX_LEN = 4;  // Length of ".dll"
+        if (moduleLen >= sizeof(forwardModule) - DLL_SUFFIX_LEN) return exportAddr;
         
         strncpy_s(forwardModule, sizeof(forwardModule), forwarder, moduleLen);
         forwardModule[moduleLen] = '\0';
@@ -234,20 +235,23 @@ namespace {
         const char* targetModule;
     };
     
-    const KnownForward KNOWN_FORWARDS[] = {
+    constexpr KnownForward KNOWN_FORWARDS[] = {
         {"kernel32.dll", "ntdll.dll"},        // Many heap/memory functions
         {"kernel32.dll", "kernelbase.dll"},   // Core Windows functions
         {"kernelbase.dll", "ntdll.dll"},      // Low-level system calls
         {"advapi32.dll", "kernelbase.dll"},   // Registry/security functions
     };
+    constexpr size_t KNOWN_FORWARDS_COUNT = sizeof(KNOWN_FORWARDS) / sizeof(KNOWN_FORWARDS[0]);
     
     // Check if a forward from sourceModule to targetModule is in the allowlist
     bool IsKnownForward(const char* sourceModule, const char* targetModule) {
         if (!sourceModule || !targetModule) return false;
         
-        for (const auto& forward : KNOWN_FORWARDS) {
-            if (_stricmp(sourceModule, forward.sourceModule) == 0 &&
-                _stricmp(targetModule, forward.targetModule) == 0) {
+        // Linear search is acceptable for small allowlists (4 entries)
+        // If this grows beyond ~10 entries, consider using a hash set
+        for (size_t i = 0; i < KNOWN_FORWARDS_COUNT; i++) {
+            if (_stricmp(sourceModule, KNOWN_FORWARDS[i].sourceModule) == 0 &&
+                _stricmp(targetModule, KNOWN_FORWARDS[i].targetModule) == 0) {
                 return true;
             }
         }
@@ -534,6 +538,11 @@ bool AntiHookDetector::IsDelayLoadIATHooked(const char* module_name, const char*
         
         if (ntHeaders->Signature != IMAGE_NT_SIGNATURE) return false;
         
+        // Verify DataDirectory has enough entries before accessing DELAY_IMPORT
+        if (ntHeaders->OptionalHeader.NumberOfRvaAndSizes <= IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT) {
+            return false;  // DataDirectory too small
+        }
+        
         // Get delay-load import directory
         DWORD delayImportDirRVA = ntHeaders->OptionalHeader
             .DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT].VirtualAddress;
@@ -541,17 +550,21 @@ bool AntiHookDetector::IsDelayLoadIATHooked(const char* module_name, const char*
             return false;  // No delay-load imports
         }
         
-        // Delay-load import descriptor structure
-        struct IMAGE_DELAYLOAD_DESCRIPTOR {
-            DWORD Attributes;
-            DWORD DllNameRVA;
-            DWORD ModuleHandleRVA;
-            DWORD ImportAddressTableRVA;
-            DWORD ImportNameTableRVA;
-            DWORD BoundImportAddressTableRVA;
-            DWORD UnloadInformationTableRVA;
-            DWORD TimeDateStamp;
+        // Use system-defined delay-load descriptor structure from delayimp.h
+        // If not available, we define it locally for compatibility
+        #ifndef _DELAY_IMP_VER
+        struct ImgDelayDescr {
+            DWORD grAttrs;
+            DWORD rvaDLLName;
+            DWORD rvaHmod;
+            DWORD rvaIAT;
+            DWORD rvaINT;
+            DWORD rvaBoundIAT;
+            DWORD rvaUnloadIAT;
+            DWORD dwTimeStamp;
         };
+        #define IMAGE_DELAYLOAD_DESCRIPTOR ImgDelayDescr
+        #endif
         
         IMAGE_DELAYLOAD_DESCRIPTOR* delayDesc = (IMAGE_DELAYLOAD_DESCRIPTOR*)
             ((BYTE*)hModule + delayImportDirRVA);
@@ -562,13 +575,13 @@ bool AntiHookDetector::IsDelayLoadIATHooked(const char* module_name, const char*
         }
         
         // Find the target module
-        while (delayDesc->DllNameRVA != 0) {
+        while (delayDesc->rvaDLLName != 0) {
             // Verify this descriptor entry is readable
             if (!SafeMemory::IsReadable(delayDesc, sizeof(IMAGE_DELAYLOAD_DESCRIPTOR))) {
                 break;
             }
             
-            const char* dllName = (const char*)((BYTE*)hModule + delayDesc->DllNameRVA);
+            const char* dllName = (const char*)((BYTE*)hModule + delayDesc->rvaDLLName);
             
             // Verify DLL name string is readable
             if (!SafeMemory::IsReadable(dllName, 1)) {
@@ -578,7 +591,7 @@ bool AntiHookDetector::IsDelayLoadIATHooked(const char* module_name, const char*
             
             if (_stricmp(dllName, module_name) == 0) {
                 // Found the module - check if it's loaded yet
-                HMODULE* moduleHandle = (HMODULE*)((BYTE*)hModule + delayDesc->ModuleHandleRVA);
+                HMODULE* moduleHandle = (HMODULE*)((BYTE*)hModule + delayDesc->rvaHmod);
                 
                 // Verify module handle pointer is readable
                 if (!SafeMemory::IsReadable(moduleHandle, sizeof(HMODULE))) {
@@ -593,9 +606,9 @@ bool AntiHookDetector::IsDelayLoadIATHooked(const char* module_name, const char*
                 
                 // Module is loaded - check IAT entries
                 PIMAGE_THUNK_DATA nameThunk = (PIMAGE_THUNK_DATA)
-                    ((BYTE*)hModule + delayDesc->ImportNameTableRVA);
+                    ((BYTE*)hModule + delayDesc->rvaINT);
                 PIMAGE_THUNK_DATA iatThunk = (PIMAGE_THUNK_DATA)
-                    ((BYTE*)hModule + delayDesc->ImportAddressTableRVA);
+                    ((BYTE*)hModule + delayDesc->rvaIAT);
                 
                 // Verify thunks are readable
                 if (!SafeMemory::IsReadable(nameThunk, sizeof(IMAGE_THUNK_DATA)) ||
