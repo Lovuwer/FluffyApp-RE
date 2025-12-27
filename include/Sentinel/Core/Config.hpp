@@ -52,11 +52,12 @@ public:
     struct Options {
         size_t max_file_size = 1024 * 1024;  // 1MB default
         bool verify_signature = false;
-        ByteBuffer signature_public_key;
-        std::string allowed_directory;       // Restrict to directory
+        ByteBuffer signature_public_key{};
+        std::string allowed_directory{};       // Restrict to directory
     };
     
-    explicit SecureConfigLoader(const Options& options = {});
+    SecureConfigLoader();
+    explicit SecureConfigLoader(const Options& options);
     ~SecureConfigLoader();
     
     /**

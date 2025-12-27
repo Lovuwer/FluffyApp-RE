@@ -244,6 +244,9 @@ public:
     }
 };
 
+SecureConfigLoader::SecureConfigLoader()
+    : m_impl(std::make_unique<Impl>(Options{})) {}
+
 SecureConfigLoader::SecureConfigLoader(const Options& options)
     : m_impl(std::make_unique<Impl>(options)) {}
 

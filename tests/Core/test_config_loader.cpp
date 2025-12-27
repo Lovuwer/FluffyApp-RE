@@ -20,6 +20,10 @@
 #include <gtest/gtest.h>
 #include <fstream>
 #include <filesystem>
+#include <openssl/evp.h>
+#include <openssl/rsa.h>
+#include <openssl/pem.h>
+#include <openssl/bn.h>
 
 using namespace Sentinel;
 using namespace Sentinel::Config;
@@ -27,6 +31,85 @@ using namespace Sentinel::Crypto;
 using namespace Sentinel::Testing;
 
 namespace fs = std::filesystem;
+
+// ============================================================================
+// Helper Functions - Key Generation for Tests
+// ============================================================================
+
+/**
+ * @brief Generate RSA key pair for testing
+ */
+static EVP_PKEY* generateTestKey(int bits = 2048) {
+    EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, nullptr);
+    if (!ctx) {
+        return nullptr;
+    }
+    
+    if (EVP_PKEY_keygen_init(ctx) != 1) {
+        EVP_PKEY_CTX_free(ctx);
+        return nullptr;
+    }
+    
+    if (EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, bits) != 1) {
+        EVP_PKEY_CTX_free(ctx);
+        return nullptr;
+    }
+    
+    // Set public exponent
+    BIGNUM* bn_e = BN_new();
+    if (!bn_e || !BN_set_word(bn_e, 65537)) {
+        BN_free(bn_e);
+        EVP_PKEY_CTX_free(ctx);
+        return nullptr;
+    }
+    
+    if (EVP_PKEY_CTX_set1_rsa_keygen_pubexp(ctx, bn_e) != 1) {
+        BN_free(bn_e);
+        EVP_PKEY_CTX_free(ctx);
+        return nullptr;
+    }
+    
+    BN_free(bn_e);
+    
+    EVP_PKEY* pkey = nullptr;
+    if (EVP_PKEY_keygen(ctx, &pkey) != 1) {
+        EVP_PKEY_CTX_free(ctx);
+        return nullptr;
+    }
+    
+    EVP_PKEY_CTX_free(ctx);
+    return pkey;
+}
+
+/**
+ * @brief Export private key to DER format
+ */
+static ByteBuffer exportPrivateKeyDER(EVP_PKEY* pkey) {
+    unsigned char* der = nullptr;
+    int len = i2d_PrivateKey(pkey, &der);
+    if (len <= 0) {
+        return ByteBuffer();
+    }
+    
+    ByteBuffer result(der, der + len);
+    OPENSSL_free(der);
+    return result;
+}
+
+/**
+ * @brief Export public key to DER format
+ */
+static ByteBuffer exportPublicKeyDER(EVP_PKEY* pkey) {
+    unsigned char* der = nullptr;
+    int len = i2d_PUBKEY(pkey, &der);
+    if (len <= 0) {
+        return ByteBuffer();
+    }
+    
+    ByteBuffer result(der, der + len);
+    OPENSSL_free(der);
+    return result;
+}
 
 // ============================================================================
 // Test Fixture
@@ -68,17 +151,16 @@ protected:
     
     // Helper to generate test key pair
     void generateTestKeyPair() {
-        RSASigner signer;
-        auto result = signer.generateKeyPair();
-        ASSERT_TRUE(result.isSuccess());
+        EVP_PKEY* pkey = generateTestKey(2048);
+        ASSERT_NE(pkey, nullptr);
         
-        auto privKeyResult = signer.exportPrivateKey();
-        ASSERT_TRUE(privKeyResult.isSuccess());
-        privateKey = privKeyResult.value();
+        privateKey = exportPrivateKeyDER(pkey);
+        publicKey = exportPublicKeyDER(pkey);
         
-        auto pubKeyResult = signer.exportPublicKey();
-        ASSERT_TRUE(pubKeyResult.isSuccess());
-        publicKey = pubKeyResult.value();
+        EVP_PKEY_free(pkey);
+        
+        ASSERT_FALSE(privateKey.empty());
+        ASSERT_FALSE(publicKey.empty());
     }
     
     // Helper to sign data
