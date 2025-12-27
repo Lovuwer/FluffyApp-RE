@@ -561,6 +561,29 @@ SENTINEL_API void SENTINEL_CALL GetStatistics(Statistics* stats);
  */
 SENTINEL_API void SENTINEL_CALL ResetStatistics();
 
+// ==================== Whitelist Configuration ====================
+
+/**
+ * Add a thread origin to the whitelist
+ * Allows threads starting from the specified module to bypass MEM_PRIVATE checks
+ * Useful for game engines with custom job systems or threading libraries
+ * 
+ * @param module_name Module name (e.g., "MyGameEngine.dll")
+ * @param reason Description for logging (e.g., "Game engine job system")
+ * @return Error code
+ */
+SENTINEL_API ErrorCode SENTINEL_CALL WhitelistThreadOrigin(
+    const char* module_name,
+    const char* reason);
+
+/**
+ * Remove a thread origin from the whitelist
+ * Note: Cannot remove built-in whitelist entries
+ * 
+ * @param module_name Module name to remove
+ */
+SENTINEL_API void SENTINEL_CALL RemoveThreadOriginWhitelist(const char* module_name);
+
 // ==================== Helper Macros ====================
 
 // Inline operator overloads for flags
