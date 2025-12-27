@@ -4,12 +4,19 @@
  * Copyright (c) 2025 Sentinel Security. All rights reserved.
  * 
  * Task 11: Inline Hook Detection Implementation
+ * Task 12: IAT Hook Detection Implementation
  */
 
 #include "Internal/Detection.hpp"
 #include <algorithm>
 #include <cstring>
 #include <chrono>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <psapi.h>
+#pragma comment(lib, "psapi.lib")
+#endif
 
 namespace Sentinel {
 namespace SDK {
@@ -51,6 +58,25 @@ namespace {
         }
         return true;
     }
+    
+#ifdef _WIN32
+    // Helper function to check if an address is within a module's address range
+    bool IsAddressInModule(uintptr_t address, const char* moduleName) {
+        HMODULE hModule = GetModuleHandleA(moduleName);
+        if (!hModule) return false;
+        
+        MODULEINFO modInfo;
+        if (!GetModuleInformation(GetCurrentProcess(), hModule, 
+                                  &modInfo, sizeof(modInfo))) {
+            return false;
+        }
+        
+        uintptr_t moduleBase = (uintptr_t)modInfo.lpBaseOfDll;
+        uintptr_t moduleEnd = moduleBase + modInfo.SizeOfImage;
+        
+        return address >= moduleBase && address < moduleEnd;
+    }
+#endif
 }
 
 // AntiHookDetector implementation
@@ -79,8 +105,60 @@ bool AntiHookDetector::IsInlineHooked(const FunctionProtection& func) {
     return false;
 }
 
-bool AntiHookDetector::IsIATHooked(const char*, const char*) { 
-    return false; 
+bool AntiHookDetector::IsIATHooked(const char* module_name, const char* function_name) {
+#ifdef _WIN32
+    // Get current module base
+    HMODULE hModule = GetModuleHandle(nullptr);
+    if (!hModule) return false;
+    
+    // Parse PE headers
+    PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)hModule;
+    PIMAGE_NT_HEADERS ntHeaders = (PIMAGE_NT_HEADERS)
+        ((BYTE*)hModule + dosHeader->e_lfanew);
+    
+    // Get import directory
+    DWORD importDirRVA = ntHeaders->OptionalHeader
+        .DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress;
+    if (importDirRVA == 0) return false;
+    
+    PIMAGE_IMPORT_DESCRIPTOR importDesc = (PIMAGE_IMPORT_DESCRIPTOR)
+        ((BYTE*)hModule + importDirRVA);
+    
+    // Find the target module
+    while (importDesc->Name != 0) {
+        const char* dllName = (const char*)((BYTE*)hModule + importDesc->Name);
+        
+        if (_stricmp(dllName, module_name) == 0) {
+            // Found the module - now find the function
+            PIMAGE_THUNK_DATA origThunk = (PIMAGE_THUNK_DATA)
+                ((BYTE*)hModule + importDesc->OriginalFirstThunk);
+            PIMAGE_THUNK_DATA iatThunk = (PIMAGE_THUNK_DATA)
+                ((BYTE*)hModule + importDesc->FirstThunk);
+            
+            while (origThunk->u1.AddressOfData != 0) {
+                if (!(origThunk->u1.Ordinal & IMAGE_ORDINAL_FLAG)) {
+                    PIMAGE_IMPORT_BY_NAME importName = (PIMAGE_IMPORT_BY_NAME)
+                        ((BYTE*)hModule + origThunk->u1.AddressOfData);
+                    
+                    if (strcmp((char*)importName->Name, function_name) == 0) {
+                        // Found the function - validate IAT entry
+                        uintptr_t iatAddress = iatThunk->u1.Function;
+                        return !IsAddressInModule(iatAddress, module_name);
+                    }
+                }
+                origThunk++;
+                iatThunk++;
+            }
+        }
+        importDesc++;
+    }
+    
+    return false;  // Function not found in imports
+#else
+    (void)module_name;
+    (void)function_name;
+    return false;  // Not implemented for non-Windows platforms
+#endif
 }
 
 bool AntiHookDetector::HasSuspiciousJump(const void* address) {
@@ -157,11 +235,53 @@ std::vector<ViolationEvent> AntiHookDetector::QuickCheck() {
     return violations;
 }
 
+std::vector<ViolationEvent> AntiHookDetector::ScanCriticalAPIs() {
+    std::vector<ViolationEvent> violations;
+    
+#ifdef _WIN32
+    // List of security-critical APIs to check
+    struct APICheck {
+        const char* module;
+        const char* function;
+    };
+    
+    const std::vector<APICheck> CRITICAL_APIS = {
+        {"kernel32.dll", "VirtualAlloc"},
+        {"kernel32.dll", "VirtualProtect"},
+        {"kernel32.dll", "CreateRemoteThread"},
+        {"kernel32.dll", "WriteProcessMemory"},
+        {"kernel32.dll", "ReadProcessMemory"},
+        {"ntdll.dll", "NtQueryInformationProcess"},
+        {"ntdll.dll", "NtSetInformationThread"},
+        {"user32.dll", "GetAsyncKeyState"},
+        {"user32.dll", "SetWindowsHookExW"},
+    };
+    
+    for (const auto& api : CRITICAL_APIS) {
+        if (IsIATHooked(api.module, api.function)) {
+            ViolationEvent ev;
+            ev.type = ViolationType::IATHook;
+            ev.severity = Severity::Critical;
+            ev.address = 0;
+            static const char* detail_msg = "IAT hook detected";
+            ev.details = detail_msg;
+            ev.module_name = api.module;
+            ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            ev.detection_id = static_cast<uint32_t>(ev.timestamp);
+            violations.push_back(ev);
+        }
+    }
+#endif
+    
+    return violations;
+}
+
 std::vector<ViolationEvent> AntiHookDetector::FullScan() {
     std::vector<ViolationEvent> violations;
     std::lock_guard<std::mutex> lock(functions_mutex_);
     
-    // Check all registered functions
+    // Inline hook checks
     for (const auto& func : registered_functions_) {
         if (IsInlineHooked(func)) {
             ViolationEvent ev;
@@ -177,6 +297,11 @@ std::vector<ViolationEvent> AntiHookDetector::FullScan() {
             violations.push_back(ev);
         }
     }
+    
+    // IAT hook checks
+    auto iatViolations = ScanCriticalAPIs();
+    violations.insert(violations.end(), 
+                     iatViolations.begin(), iatViolations.end());
     
     return violations;
 }

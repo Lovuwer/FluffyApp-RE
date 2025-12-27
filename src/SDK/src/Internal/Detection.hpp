@@ -59,13 +59,14 @@ public:
     void UnregisterFunction(uintptr_t address);
     
     bool CheckFunction(uintptr_t address);
+    bool IsIATHooked(const char* module_name, const char* function_name);
     std::vector<ViolationEvent> QuickCheck();
     std::vector<ViolationEvent> FullScan();
     
 private:
     bool IsInlineHooked(const FunctionProtection& func);
-    bool IsIATHooked(const char* module_name, const char* function_name);
     bool HasSuspiciousJump(const void* address);
+    std::vector<ViolationEvent> ScanCriticalAPIs();
     
     std::vector<FunctionProtection> registered_functions_;
     std::mutex functions_mutex_;
