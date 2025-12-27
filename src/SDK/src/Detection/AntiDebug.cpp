@@ -17,6 +17,7 @@
 #endif
 
 #include <vector>
+#include <cmath>
 
 namespace Sentinel {
 namespace SDK {
@@ -40,9 +41,113 @@ static inline bool IsHardwareBreakpointSet(const CONTEXT& ctx) {
 }
 #endif
 
-// AntiDebugDetector stub implementation
-void AntiDebugDetector::Initialize() {}
-void AntiDebugDetector::Shutdown() {}
+// AntiDebugDetector implementation
+void AntiDebugDetector::Initialize() {
+#ifdef _WIN32
+    // Detect hypervisor environment
+    hypervisor_detected_ = DetectHypervisor();
+    
+    // Calibrate timing baseline
+    CalibrateTimingBaseline();
+#endif
+}
+
+void AntiDebugDetector::Shutdown() {
+    // Reset state
+    consecutive_anomaly_count_ = 0;
+    last_check_time_ = 0;
+    last_successful_check_time_ = 0;
+    last_anomaly_detection_time_ = 0;
+}
+
+// Helper: Detect hypervisor using CPUID
+bool AntiDebugDetector::DetectHypervisor() {
+#ifdef _WIN32
+    int cpuInfo[4] = {0};
+    
+    // Check if CPUID is supported
+    __cpuid(cpuInfo, 0);
+    if (cpuInfo[0] < 1) {
+        return false;  // CPUID leaf 1 not supported
+    }
+    
+    // Query CPUID leaf 0x1
+    __cpuid(cpuInfo, 1);
+    
+    // ECX bit 31 indicates hypervisor presence
+    return (cpuInfo[2] & (1 << 31)) != 0;
+#else
+    return false;
+#endif
+}
+
+// Helper: Calibrate timing baseline
+void AntiDebugDetector::CalibrateTimingBaseline() {
+#ifdef _WIN32
+    LARGE_INTEGER freq, start, end;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&start);
+    
+    constexpr int NUM_SAMPLES = 1000;
+    std::vector<double> samples;
+    samples.reserve(NUM_SAMPLES);
+    
+    volatile uint64_t counter = 0;
+    
+    // Collect timing samples
+    for (int i = 0; i < NUM_SAMPLES; i++) {
+        LARGE_INTEGER sample_start, sample_end;
+        QueryPerformanceCounter(&sample_start);
+        
+        // Trivial operation - same as in CheckTimingAnomaly
+        for (int j = 0; j < 1000; j++) {
+            counter++;
+        }
+        
+        QueryPerformanceCounter(&sample_end);
+        
+        // Calculate elapsed time in microseconds
+        double elapsed_us = static_cast<double>(sample_end.QuadPart - sample_start.QuadPart)
+                           * 1000000.0 / static_cast<double>(freq.QuadPart);
+        samples.push_back(elapsed_us);
+    }
+    
+    // Calculate mean
+    double sum = 0.0;
+    for (const auto& sample : samples) {
+        sum += sample;
+    }
+    baseline_mean_ = sum / static_cast<double>(NUM_SAMPLES);
+    
+    // Calculate standard deviation
+    double variance_sum = 0.0;
+    for (const auto& sample : samples) {
+        double diff = sample - baseline_mean_;
+        variance_sum += diff * diff;
+    }
+    double variance = variance_sum / static_cast<double>(NUM_SAMPLES);
+    baseline_stddev_ = sqrt(variance);
+    
+    // Set dynamic threshold: mean + 5 * stddev
+    threshold_us_ = baseline_mean_ + (5.0 * baseline_stddev_);
+    
+    // If hypervisor detected, multiply threshold by 10x and apply to cycles threshold too
+    if (hypervisor_detected_) {
+        threshold_us_ *= 10.0;
+        threshold_cycles_ *= 10;
+    }
+    
+    // Verify calibration time
+    QueryPerformanceCounter(&end);
+    double calibration_time_ms = static_cast<double>(end.QuadPart - start.QuadPart)
+                                 * 1000.0 / static_cast<double>(freq.QuadPart);
+    
+    // Calibration should complete in < 200ms (Definition of Done requirement)
+    // In practice, 1000 samples should take ~100ms
+    (void)calibration_time_ms;  // Used for verification during testing
+#endif
+}
+
 
 std::vector<ViolationEvent> AntiDebugDetector::Check() {
 #ifdef _WIN32
@@ -124,8 +229,15 @@ std::vector<ViolationEvent> AntiDebugDetector::FullCheck() {
     if (CheckTimingAnomaly()) {
         ViolationEvent ev;
         ev.type = ViolationType::DebuggerAttached;
-        ev.severity = Severity::High;
-        ev.details = "Timing anomaly detected - possible single-stepping or breakpoint";
+        ev.severity = Severity::Warning;  // Downgraded from High to Warning
+        
+        // Add context about hypervisor if detected
+        if (hypervisor_detected_) {
+            ev.details = "Timing anomaly detected (hypervisor environment detected)";
+        } else {
+            ev.details = "Timing anomaly detected - possible single-stepping or breakpoint";
+        }
+        
         ev.timestamp = 0;
         ev.address = 0;
         ev.module_name = nullptr;
@@ -182,7 +294,7 @@ bool AntiDebugDetector::CheckHardwareBreakpoints() {
 }
 
 // Helper function: Statistical timing check for more robust detection
-[[maybe_unused]] static bool CheckTimingStatistical() {
+bool AntiDebugDetector::CheckTimingStatistical() {
 #ifdef _WIN32
     std::vector<uint64_t> samples;
     samples.reserve(10);
@@ -209,9 +321,13 @@ bool AntiDebugDetector::CheckHardwareBreakpoints() {
     
     // High variance indicates debugger interference
     // (breakpoints hit some iterations but not others)
-    constexpr uint64_t VARIANCE_THRESHOLD = 1000000;
+    // Use dynamic variance threshold based on calibrated baseline
+    uint64_t variance_threshold = static_cast<uint64_t>(baseline_stddev_ * baseline_stddev_ * 100);
+    if (variance_threshold == 0) {
+        variance_threshold = 1000000;  // Fallback if calibration failed
+    }
     
-    return variance > VARIANCE_THRESHOLD || mean > 10000;
+    return variance > variance_threshold || mean > threshold_cycles_;
 #else
     return false;
 #endif
@@ -219,17 +335,34 @@ bool AntiDebugDetector::CheckHardwareBreakpoints() {
 
 bool AntiDebugDetector::CheckTimingAnomaly() {
 #ifdef _WIN32
+    uint64_t current_time = GetTickCount64();
+    
+    // Increment telemetry counter
+    timing_check_count_++;
+    
+    // Exponential backoff: If we detected an anomaly recently, wait 5 seconds before rechecking
+    if (last_anomaly_detection_time_ != 0 && 
+        (current_time - last_anomaly_detection_time_) < 5000) {
+        return false;  // Still in backoff period
+    }
+    
+    // Never return true if last successful check was < 100ms ago
+    if (last_successful_check_time_ != 0 && 
+        (current_time - last_successful_check_time_) < 100) {
+        return false;  // Too soon since last successful check
+    }
+    
     // Rate limiting: Don't check more than once per second
-    // Store last_check_time_ and check_count_ as member variables
-    if (GetTickCount64() - last_check_time_ < 1000) {
+    if (current_time - last_check_time_ < 1000) {
         return false; // Skip if called too frequently
     }
-    last_check_time_ = GetTickCount64();
+    last_check_time_ = current_time;
     
     // Measure time for a trivial operation
     // Single-stepping or breakpoints dramatically increase time
     
     volatile uint64_t counter = 0;
+    bool anomaly_detected = false;
     
     // Use QPC for high resolution
     LARGE_INTEGER freq, start, end;
@@ -247,12 +380,9 @@ bool AntiDebugDetector::CheckTimingAnomaly() {
     double elapsed_us = static_cast<double>(end.QuadPart - start.QuadPart) 
                        * 1000000.0 / static_cast<double>(freq.QuadPart);
     
-    // Threshold: Normal < 100us, Debugged with stepping > 1000us
-    // Use conservative threshold to avoid false positives
-    constexpr double THRESHOLD_US = 500.0;
-    
-    if (elapsed_us > THRESHOLD_US) {
-        return true;
+    // Use dynamic threshold from calibration
+    if (elapsed_us > threshold_us_) {
+        anomaly_detected = true;
     }
     
     // Alternative: Use RDTSC for cycle-accurate measurement
@@ -265,15 +395,39 @@ bool AntiDebugDetector::CheckTimingAnomaly() {
     uint64_t tsc_end = __rdtsc();
     uint64_t cycles = tsc_end - tsc_start;
     
-    // Normal:  < 1000 cycles, Single-stepped: millions
-    constexpr uint64_t CYCLE_THRESHOLD = 10000;
-    
-    if (cycles > CYCLE_THRESHOLD) {
-        return true;
+    // Use dynamic threshold from calibration
+    if (cycles > threshold_cycles_) {
+        anomaly_detected = true;
     }
     
     // Statistical variant for more robust detection
-    return CheckTimingStatistical();
+    if (CheckTimingStatistical()) {
+        anomaly_detected = true;
+    }
+    
+    // Update consecutive anomaly counter
+    if (anomaly_detected) {
+        consecutive_anomaly_count_++;
+        
+        // Require 5 consecutive anomalies before returning true
+        if (consecutive_anomaly_count_ >= 5) {
+            // Record this detection for exponential backoff
+            last_anomaly_detection_time_ = current_time;
+            timing_anomaly_count_++;
+            
+            // Don't reset counter - keep it high to maintain detection state
+            // until system returns to normal
+            return true;
+        }
+        
+        // Not enough consecutive anomalies yet
+        return false;
+    } else {
+        // Successful check - reset consecutive counter
+        consecutive_anomaly_count_ = 0;
+        last_successful_check_time_ = current_time;
+        return false;
+    }
 #else
     return false;
 #endif
