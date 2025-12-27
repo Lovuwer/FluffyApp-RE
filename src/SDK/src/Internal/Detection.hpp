@@ -12,6 +12,7 @@
 
 #include <vector>
 #include <cstdint>
+#include <mutex>
 
 namespace Sentinel {
 namespace SDK {
@@ -67,6 +68,7 @@ private:
     bool HasSuspiciousJump(const void* address);
     
     std::vector<FunctionProtection> registered_functions_;
+    std::mutex functions_mutex_;
 };
 
 /**
