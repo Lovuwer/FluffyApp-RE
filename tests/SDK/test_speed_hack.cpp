@@ -130,29 +130,23 @@ TEST(SpeedHackTests, Performance) {
         Sleep(10);
     }
     
-    // Measure execution time
+    // Measure execution time more accurately without sleep interference
     LARGE_INTEGER freq, start, end;
     QueryPerformanceFrequency(&freq);
     
-    const int iterations = 100;
-    QueryPerformanceCounter(&start);
+    const int iterations = 1000;
     
+    // Measure just the ValidateFrame calls without any sleep
+    QueryPerformanceCounter(&start);
     for (int i = 0; i < iterations; i++) {
         detector.ValidateFrame();
-        Sleep(10);  // Simulate frame delay
     }
-    
     QueryPerformanceCounter(&end);
     
-    // Calculate average time per ValidateFrame call (excluding Sleep)
-    // Since we're calling it 100 times, we need to estimate the actual execution time
+    // Calculate average time per ValidateFrame call
     double totalElapsedMs = static_cast<double>(end.QuadPart - start.QuadPart) 
                            * 1000.0 / static_cast<double>(freq.QuadPart);
-    
-    // Subtract the sleep time (10ms * 100 iterations = 1000ms)
-    double estimatedSleepTime = 10.0 * iterations;
-    double actualExecutionTime = totalElapsedMs - estimatedSleepTime;
-    double avgTimePerCall = actualExecutionTime / iterations;
+    double avgTimePerCall = totalElapsedMs / iterations;
     
     // Each call should take less than 1ms on average
     EXPECT_LT(avgTimePerCall, 1.0)

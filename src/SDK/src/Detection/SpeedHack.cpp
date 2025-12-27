@@ -81,6 +81,11 @@ void SpeedHackDetector::UpdateBaseline() {
     
     current_time_scale_ = 1.0f;
     anomaly_count_ = 0;
+    
+    // Reset wall clock baseline
+    wall_clock_baseline_time_ = 0;
+    wall_clock_baseline_qpc_ = 0;
+    frame_counter_ = 0;
 }
 
 bool SpeedHackDetector::ValidateSourceRatios() {
@@ -106,7 +111,7 @@ bool SpeedHackDetector::ValidateSourceRatios() {
     
     // Calculate ratio between time sources
     // Ideally this should be ~1.0
-    if (elapsedSystem > 10) {  // Avoid division by very small numbers
+    if (elapsedSystem > 10) {  // Avoid division by very small numbers (10ms threshold)
         double ratio = elapsedPerfMs / (double)elapsedSystem;
         
         // Update running time scale estimate
@@ -143,7 +148,7 @@ bool SpeedHackDetector::ValidateAgainstWallClock() {
     GetSystemTimeAsFileTime(&ft);
     
     uint64_t wallTime = ((uint64_t)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
-    // Convert to milliseconds (FILETIME is 100ns intervals)
+    // Convert to milliseconds (FILETIME is 100-nanosecond intervals since January 1, 1601)
     wallTime /= 10000;
 #else
     // Linux: use system_clock (wall clock)
@@ -153,17 +158,14 @@ bool SpeedHackDetector::ValidateAgainstWallClock() {
 #endif
     
     // Compare with QPC-derived time
-    static uint64_t baselineWallTime = 0;
-    static uint64_t baselineQPC = 0;
-    
-    if (baselineWallTime == 0) {
-        baselineWallTime = wallTime;
-        baselineQPC = GetPerformanceCounter();
+    if (wall_clock_baseline_time_ == 0) {
+        wall_clock_baseline_time_ = wallTime;
+        wall_clock_baseline_qpc_ = GetPerformanceCounter();
         return true;
     }
     
-    uint64_t elapsedWall = wallTime - baselineWallTime;
-    uint64_t elapsedQPC = GetPerformanceCounter() - baselineQPC;
+    uint64_t elapsedWall = wallTime - wall_clock_baseline_time_;
+    uint64_t elapsedQPC = GetPerformanceCounter() - wall_clock_baseline_qpc_;
     
 #ifdef _WIN32
     LARGE_INTEGER freq;
@@ -195,8 +197,7 @@ bool SpeedHackDetector::ValidateFrame() {
     }
     
     // Periodic wall-clock validation (expensive, do less often)
-    static int frameCounter = 0;
-    if (++frameCounter % 60 == 0) {  // Every 60 frames
+    if (++frame_counter_ % 60 == 0) {  // Every 60 frames
         if (!ValidateAgainstWallClock()) {
             return false;
         }
