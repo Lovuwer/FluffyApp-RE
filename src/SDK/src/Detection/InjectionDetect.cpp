@@ -84,7 +84,9 @@ std::vector<ViolationEvent> InjectionDetector::ScanLoadedModules() {
             ev.type = ViolationType::InjectedCode;
             ev.severity = Severity::Critical;
             ev.address = (uintptr_t)mbi.BaseAddress;
-            ev.details = DescribeRegion(mbi).c_str();
+            // Use a static string literal to avoid use-after-free
+            static const char* detail_msg = "Executable private memory detected";
+            ev.details = detail_msg;
             ev.timestamp = 0;
             ev.module_name = nullptr;
             ev.detection_id = 0;
@@ -182,8 +184,9 @@ std::vector<ViolationEvent> InjectionDetector::ScanThreads() {
                     ViolationEvent ev;
                     ev.type = ViolationType::SuspiciousThread;
                     ev.severity = Severity::High;
-                    ev.details = ("Suspicious thread start address: TID " + 
-                                 std::to_string(te.th32ThreadID)).c_str();
+                    // Use a static string literal to avoid use-after-free
+                    static const char* detail_msg = "Thread with suspicious start address detected";
+                    ev.details = detail_msg;
                     ev.timestamp = 0;
                     ev.address = 0;
                     ev.module_name = nullptr;
