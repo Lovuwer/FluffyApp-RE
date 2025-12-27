@@ -20,6 +20,25 @@
 namespace Sentinel {
 namespace SDK {
 
+// Portable popcount implementation
+namespace {
+    inline uint32_t popcount(uint32_t x) {
+#if defined(__GNUC__) || defined(__clang__)
+        return __builtin_popcount(x);
+#elif defined(_MSC_VER)
+        return __popcnt(x);
+#else
+        // Fallback implementation
+        uint32_t count = 0;
+        while (x) {
+            count += x & 1;
+            x >>= 1;
+        }
+        return count;
+#endif
+    }
+}
+
 CorrelationEngine::CorrelationEngine()
     : state_{}
     , environment_{}
@@ -84,16 +103,18 @@ bool CorrelationEngine::ProcessViolation(
     // Determine correlated severity
     out_correlated_severity = DegradeSeverity(event.severity);
     
-    // Determine if should report
-    // Only report Critical to cloud if we have 2+ correlated signals
-    if (out_correlated_severity == Severity::Critical) {
-        uint32_t signal_count = static_cast<uint32_t>(state_.signals.size());
-        if (signal_count < MIN_SIGNALS_FOR_CRITICAL) {
-            out_correlated_severity = Severity::High;  // Downgrade
-        }
+    // Determine if should report to cloud
+    // Cloud reporting requires 2+ signals minimum
+    uint32_t signal_count = static_cast<uint32_t>(state_.signals.size());
+    
+    if (signal_count < 2) {
+        // Single signal: never report to cloud, only log locally
+        out_should_report = false;
+    } else if (out_correlated_severity == Severity::Critical) {
+        // Critical requires 2+ signals
         out_should_report = (signal_count >= MIN_SIGNALS_FOR_CRITICAL);
     } else {
-        // Non-critical events can be logged locally
+        // Non-critical events can be reported with 2+ signals
         out_should_report = (out_correlated_severity >= Severity::Warning);
     }
     
@@ -111,7 +132,7 @@ bool CorrelationEngine::ShouldAllowAction(ResponseAction action) const {
     
     if (is_ban || is_terminate) {
         // Ban and Terminate require explicit multi-signal confirmation
-        uint32_t unique_count = __builtin_popcount(state_.unique_categories);
+        uint32_t unique_count = popcount(state_.unique_categories);
         return (unique_count >= MIN_UNIQUE_SIGNALS) && 
                (state_.score >= MIN_CORRELATION_THRESHOLD);
     }
@@ -132,7 +153,7 @@ double CorrelationEngine::GetCorrelationScore() const {
 
 uint32_t CorrelationEngine::GetUniqueSignalCount() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    return __builtin_popcount(state_.unique_categories);
+    return popcount(state_.unique_categories);
 }
 
 void CorrelationEngine::Reset() {

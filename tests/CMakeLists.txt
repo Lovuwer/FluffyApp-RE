@@ -50,6 +50,7 @@ add_executable(SDKTests
     SDK/test_injection_detect.cpp
     SDK/test_speed_hack.cpp
     SDK/test_packet_encryption.cpp
+    SDK/test_correlation_engine.cpp
 )
 
 target_include_directories(SDKTests
