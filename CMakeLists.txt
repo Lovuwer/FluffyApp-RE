@@ -146,6 +146,8 @@ else()
     add_compile_options(-fstack-protector-strong)
     
     # Position Independent Executable (for ASLR)
+    # Note: -fPIC is already set globally. PIE provides additional ASLR for executables
+    # but may conflict with shared libraries. CMake handles this appropriately.
     add_compile_options(-fPIE)
     add_link_options(-pie)
     
