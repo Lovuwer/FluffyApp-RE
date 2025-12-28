@@ -855,7 +855,8 @@ bool AntiDebugDetector::CheckTimingAnomaly() {
 // to detect debuggers that manipulate exception handling for anti-debug bypass.
 //
 // Implementation Details:
-// 1. SEH Chain Walking: Walks the SEH chain from TIB (FS:[0] on x86, GS:[0] on x64)
+// 1. SEH Chain Walking: Walks the SEH chain from TIB (FS:[0] on x86 32-bit)
+//    Note: x64 does not use SEH chains - exceptions are handled via function tables
 // 2. Handler Validation: Verifies each handler is within a known module
 // 3. VEH Detection: Detects Vectored Exception Handlers (note: full enumeration requires undocumented APIs)
 // 4. Exception Behavior Test: Triggers a controlled exception to verify it's handled correctly
@@ -883,15 +884,16 @@ bool AntiDebugDetector::CheckSEHIntegrity() {
         mov eax, fs:[0]
         mov pExceptionRecord, eax
     }
-    #elif defined(__GNUC__)
+    #elif defined(__GNUC__) || defined(__clang__)
     // GCC/Clang: Use inline assembly with AT&T syntax
     __asm__ __volatile__ (
         "movl %%fs:0, %0"
         : "=r" (pExceptionRecord)
     );
     #else
-    // Fallback: Try to read using __readfsdword intrinsic
-    pExceptionRecord = (EXCEPTION_REGISTRATION_RECORD*)__readfsdword(0);
+    // Fallback: Skip SEH chain walking on unsupported compilers
+    // Only exception behavior test will run
+    pExceptionRecord = (EXCEPTION_REGISTRATION_RECORD*)0xFFFFFFFF;
     #endif
     
     // Walk the chain (max 64 entries to avoid infinite loops from corruption)
@@ -960,7 +962,6 @@ bool AntiDebugDetector::CheckSEHIntegrity() {
     // If a debugger is attached and configured to intercept exceptions,
     // the exception may be consumed before reaching our handler
     
-    volatile bool exception_triggered = false;
     volatile bool exception_handled = false;
     
     __try {
@@ -973,7 +974,6 @@ bool AntiDebugDetector::CheckSEHIntegrity() {
     __except(EXCEPTION_EXECUTE_HANDLER) {
         // Exception was caught by our handler
         exception_handled = true;
-        exception_triggered = true;
     }
     
     // If exception was triggered but not handled, debugger may have consumed it
@@ -996,10 +996,18 @@ bool AntiDebugDetector::CheckSEHIntegrity() {
     // Try to detect VEH by checking if exception is handled before SEH
     // This is a heuristic that may indicate VEH presence
     
-    // Note: On x64, we skip SEH chain walking but still perform exception tests
+    // Note: On x64, we skip SEH chain walking (not used on x64) but still perform exception tests
     #ifdef _WIN64
-    // On x64, we rely on exception behavior testing
-    // SEH chain is not used - exceptions are handled via function tables
+    // On x64, exceptions are handled via function tables in the image (.pdata section)
+    // SEH chain is not used. We rely on:
+    // 1. Exception behavior testing (already performed above)
+    // 2. VEH detection heuristics (future enhancement could enumerate VEH list)
+    // 
+    // Current implementation on x64 is limited to exception behavior testing.
+    // For more comprehensive x64 detection, consider:
+    // - Scanning .pdata section for unexpected exception handlers
+    // - Detecting RtlAddVectoredExceptionHandler calls
+    // - Monitoring LdrpVectorHandlerList (undocumented)
     #endif
     
     return anomaly_detected;
