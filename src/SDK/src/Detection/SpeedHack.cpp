@@ -158,6 +158,8 @@ void SpeedHackDetector::UpdateBaseline() {
     frame_counter_ = 0;
     
     // Calibrate RDTSC frequency (measure over ~100ms)
+    // Note: This introduces a 100ms delay during initialization, but is necessary
+    // for accurate RDTSC-based time validation. The calibration is done once.
     uint64_t calibration_start_tsc = GetRDTSC();
     uint64_t calibration_start_time = GetSystemTime();
     
@@ -177,8 +179,9 @@ void SpeedHackDetector::UpdateBaseline() {
         // Calculate TSC frequency in MHz (cycles per microsecond)
         rdtsc_frequency_mhz_ = (double)elapsed_tsc / ((double)elapsed_ms * 1000.0);
     } else {
-        // Fallback to typical CPU frequency if calibration failed
-        rdtsc_frequency_mhz_ = 2400.0;  // Assume 2.4 GHz
+        // Fallback: 2.4 GHz is a conservative estimate for modern CPUs
+        // RDTSC validation will be less accurate but still functional
+        rdtsc_frequency_mhz_ = FALLBACK_CPU_FREQUENCY_MHZ;
     }
     
     rdtsc_calibration_time_ = GetSystemTime();
@@ -195,7 +198,7 @@ bool SpeedHackDetector::ValidateSourceRatios() {
         currentPerfCounter < last_perf_counter_ ||
         currentRDTSC < last_rdtsc_) {
         // Time went backwards - clear manipulation
-        anomaly_count_ += 2;  // More severe than just deviation
+        anomaly_count_ += MONOTONICITY_VIOLATION_PENALTY;
         
         if (anomaly_count_ >= 3) {
             return false;  // Speed hack detected (time manipulation)

@@ -188,7 +188,10 @@ private:
     double rdtsc_frequency_mhz_ = 0.0;
     uint64_t rdtsc_calibration_time_ = 0;
     
+    // Detection thresholds and constants
     static constexpr float MAX_TIME_SCALE_DEVIATION = 0.25f;  // 25% tolerance
+    static constexpr int MONOTONICITY_VIOLATION_PENALTY = 2;  // Extra anomaly points for time going backwards
+    static constexpr double FALLBACK_CPU_FREQUENCY_MHZ = 2400.0;  // Conservative fallback if calibration fails
 };
 
 /**
