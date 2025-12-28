@@ -48,9 +48,24 @@ namespace {
     DWORD g_syscall_NtQueryInformationProcess = 0;
     bool g_syscall_initialized = false;
     
+    // Status codes
+    const NTSTATUS STATUS_NOT_IMPLEMENTED = 0xC0000002;
+    const NTSTATUS STATUS_PORT_NOT_SET = 0xC0000353;
+    
     // Extract syscall number from ntdll function
     DWORD ExtractSyscallNumber(void* funcAddress) {
         if (!funcAddress) return 0;
+        
+        // Validate memory is readable before accessing
+        MEMORY_BASIC_INFORMATION mbi;
+        if (VirtualQuery(funcAddress, &mbi, sizeof(mbi)) == 0) {
+            return 0;
+        }
+        
+        // Ensure we have at least 8 bytes readable
+        if (mbi.RegionSize < 8 || !(mbi.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE))) {
+            return 0;
+        }
         
         // On x64 Windows, syscall stub looks like:
         // mov r10, rcx
@@ -92,9 +107,11 @@ namespace {
     }
     
     // Direct syscall wrapper for NtQueryInformationProcess
-    // Note: Direct syscall implementation requires platform-specific assembly
-    // This is a simplified version that uses dynamic resolution as a fallback
-    // In production, this would use inline assembly or a separate .asm file
+    // Note: This function attempts to extract and use syscall numbers for direct invocation.
+    // However, the actual direct syscall implementation (inline assembly) is deferred
+    // to avoid cross-platform compilation issues. For now, it falls back to dynamic
+    // resolution via GetProcAddress, which still avoids IAT hooks.
+    // Full syscall implementation would require platform-specific .asm files.
     NTSTATUS DirectSyscallNtQueryInformationProcess(
         HANDLE ProcessHandle,
         DWORD ProcessInformationClass,
@@ -104,10 +121,11 @@ namespace {
     ) {
         InitializeSyscalls();
         
-        // For now, fall back to dynamic resolution
-        // Direct syscall implementation would go here using inline assembly
-        // Example: mov r10, rcx; mov eax, <syscall_number>; syscall; ret
+        // TODO: Implement actual direct syscall using inline assembly
+        // This would use g_syscall_NtQueryInformationProcess extracted above
+        // Example: mov r10, rcx; mov eax, g_syscall_NtQueryInformationProcess; syscall; ret
         
+        // For now, fall back to dynamic resolution (still bypasses IAT hooks)
         HMODULE ntdll = GetModuleHandleA("ntdll.dll");
         if (ntdll) {
             auto NtQueryInformationProcess = reinterpret_cast<NtQueryInformationProcessPtr>(
@@ -124,7 +142,7 @@ namespace {
             }
         }
         
-        return 0xC0000002; // STATUS_NOT_IMPLEMENTED
+        return STATUS_NOT_IMPLEMENTED;
     }
 }
 
@@ -439,7 +457,7 @@ bool AntiDebugDetector::CheckRemoteDebugger() {
     }
     
     // Fallback: Use dynamic resolution if syscall failed
-    if (status == 0xC0000002) { // STATUS_NOT_IMPLEMENTED
+    if (status == STATUS_NOT_IMPLEMENTED) {
         HMODULE ntdll = GetModuleHandleA("ntdll.dll");
         if (ntdll) {
             auto NtQueryInformationProcess = reinterpret_cast<NtQueryInformationProcessPtr>(
@@ -486,7 +504,7 @@ bool AntiDebugDetector::CheckDebugPort() {
     }
     
     // Fallback: Use dynamic resolution via GetProcAddress if syscall failed
-    if (status == 0xC0000002) { // STATUS_NOT_IMPLEMENTED
+    if (status == STATUS_NOT_IMPLEMENTED) {
         HMODULE ntdll = GetModuleHandleA("ntdll.dll");
         if (!ntdll) {
             return false;
@@ -531,16 +549,13 @@ bool AntiDebugDetector::CheckDebugObject() {
         nullptr
     );
     
-    // STATUS_PORT_NOT_SET = 0xC0000353
-    const NTSTATUS STATUS_PORT_NOT_SET = 0xC0000353;
-    
     // If status is success and handle exists, debugger is attached
     if (status == 0 && debugObject != nullptr) {
         return true;
     }
     
     // Fallback: Use dynamic resolution via GetProcAddress if syscall failed
-    if (status == 0xC0000002) { // STATUS_NOT_IMPLEMENTED
+    if (status == STATUS_NOT_IMPLEMENTED) {
         HMODULE ntdll = GetModuleHandleA("ntdll.dll");
         if (!ntdll) {
             return false;
@@ -568,9 +583,8 @@ bool AntiDebugDetector::CheckDebugObject() {
         }
     }
     
-    // If status is not STATUS_PORT_NOT_SET and not success, 
-    // might still indicate debugging in some edge cases
-    // but we'll be conservative and only report true positives
+    // Note: STATUS_PORT_NOT_SET indicates no debug object exists
+    // We return false (no debugger) in all other cases for conservative detection
 #endif
     
     return false;
