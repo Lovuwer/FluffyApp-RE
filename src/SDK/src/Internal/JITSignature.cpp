@@ -332,30 +332,49 @@ void JITSignatureValidator::AddSignature(const JITSignature& signature) {
 }
 
 void JITSignatureValidator::AddBuiltInSignatures() {
-    // NOTE: These are placeholder hashes. In a production system, you would:
-    // 1. Extract hashes from actual JIT DLLs on your target systems
-    // 2. Maintain a database of hashes for different versions
-    // 3. Update the database as new runtime versions are released
-    
-    // For now, we'll leave this empty and the validator will reject all JIT regions
-    // until proper hashes are added. This is the secure default behavior.
+    // NOTE: This function is intentionally left mostly empty as a secure default.
+    // JIT signatures must be extracted from actual DLL files using the hash extraction utility.
+    // See docs/JIT_SIGNATURE_DATABASE.md for detailed instructions.
+    //
+    // To add signatures:
+    // 1. Run: python3 scripts/extract_jit_hashes.py <path_to_jit_dll> --version "<version>" --engine-type <type>
+    // 2. Copy the generated code into this function
+    // 3. Test thoroughly to ensure no false positives
+    //
+    // For now, we use a secure-by-default approach:
+    // - All JIT regions are considered suspicious unless explicitly whitelisted
+    // - This prevents attacks until proper signatures are added
+    // - Users can still use the manual whitelist as a fallback
     
     // Example of how to add a signature (when you have real hashes):
     /*
-    JITSignature net6_clrjit;
-    net6_clrjit.module_name = L"clrjit.dll";
-    net6_clrjit.engine_type = JITEngineType::DotNetCLR;
-    net6_clrjit.version = L".NET 6.0";
-    // Hash would be obtained from actual clrjit.dll .text section
-    net6_clrjit.text_hash = { 0x12, 0x34, ... }; // 32 bytes
-    AddSignature(net6_clrjit);
+    JITSignature net8_clrjit;
+    net8_clrjit.module_name = L"clrjit.dll";
+    net8_clrjit.engine_type = JITEngineType::DotNetCLR;
+    net8_clrjit.version = L".NET 8.0";
+    // Hash obtained from: C:\Program Files\dotnet\shared\Microsoft.NETCore.App\8.0.0\clrjit.dll
+    // Generated with: scripts/extract_jit_hashes.py
+    net8_clrjit.text_hash = {
+        0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
+        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+        0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11,
+        0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99
+    };
+    AddSignature(net8_clrjit);
     */
 
-    // TODO: Add signatures for:
+    // TODO: Populate with signatures for production deployment:
+    // Required JIT engines (extract hashes using scripts/extract_jit_hashes.py):
     // - .NET 6.0, 7.0, 8.0 CLR JIT (clrjit.dll, coreclr.dll)
-    // - V8 JavaScript engine versions (v8.dll, libv8.dll)
-    // - LuaJIT versions (luajit.dll, lua51.dll, lua52.dll, lua53.dll)
-    // - Unity IL2CPP (gameassembly.dll)
+    // - V8 JavaScript engine versions (v8.dll, libv8.dll) - for Electron apps
+    // - LuaJIT versions (luajit.dll, lua51.dll, lua52.dll, lua53.dll) - for game engines
+    // - Unity IL2CPP (gameassembly.dll) - for Unity games
+    //
+    // Maintenance:
+    // - Update when new runtime versions are released
+    // - Keep signatures for at least 3 major versions
+    // - Test thoroughly after adding new signatures
+    // - Document version numbers in comments
 }
 
 } // namespace SDK
