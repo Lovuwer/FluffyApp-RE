@@ -111,6 +111,11 @@ private:
     std::vector<ViolationEvent> ScanCriticalAPIs();
     std::vector<ViolationEvent> CheckHoneypots();
     
+    // Probabilistic scanning helpers
+    void SelectFunctionsToScan(std::vector<size_t>& indices_out, size_t max_count);
+    void ApplyScanCycleJitter();
+    uint64_t GetCurrentTimeMs() const;
+    
 #ifdef _WIN32
     static void CALLBACK DllNotificationCallback(
         ULONG notification_reason,
@@ -119,11 +124,18 @@ private:
     void SetupDllNotification();
     void CleanupDllNotification();
     void* dll_notification_cookie_ = nullptr;
+    void* scan_timer_handle_ = nullptr;  // High-resolution waitable timer
 #endif
     
     std::vector<FunctionProtection> registered_functions_;
     std::vector<FunctionProtection> honeypot_functions_;
     std::mutex functions_mutex_;
+    
+    // Scan state tracking for budget enforcement
+    uint64_t current_scan_start_time_ms_ = 0;
+    static constexpr uint64_t SCAN_BUDGET_MS = 5;  // 5ms max per scan cycle
+    static constexpr uint64_t FULL_COVERAGE_WINDOW_MS = 500;  // 500ms coverage guarantee
+    static constexpr float PROBABILISTIC_SCAN_RATIO = 0.15f;  // 15% of functions per cycle (10-20% range)
 };
 
 /**
