@@ -855,15 +855,9 @@ bool AntiDebugDetector::CheckAllThreadsHardwareBP() {
     DWORD currentPid = GetCurrentProcessId();
     
     // Task 11: Thread enumeration caching - refresh every 5 seconds
-    bool should_refresh_cache = false;
     if (last_thread_cache_time_ == 0 || 
         (current_time - last_thread_cache_time_) >= THREAD_CACHE_REFRESH_MS) {
-        should_refresh_cache = true;
         last_thread_cache_time_ = current_time;
-    }
-    
-    // Refresh thread cache if needed
-    if (should_refresh_cache) {
         cached_thread_ids_.clear();
         
         HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
@@ -893,17 +887,14 @@ bool AntiDebugDetector::CheckAllThreadsHardwareBP() {
             if (GetThreadContext(thread, &ctx)) {
                 if (IsHardwareBreakpointSet(ctx)) {
                     detected = true;
+                    CloseHandle(thread);
+                    break;  // Early exit on detection
                 }
             }
             // Note: GetThreadContext may fail for system threads or threads
             // in different protection contexts. This is expected and not treated
             // as a detection (graceful handling as specified in requirements)
             CloseHandle(thread);
-            
-            // Early exit if breakpoint detected
-            if (detected) {
-                break;
-            }
         }
         // Note: OpenThread may fail for protected system threads.
         // We handle this gracefully by continuing to the next thread
