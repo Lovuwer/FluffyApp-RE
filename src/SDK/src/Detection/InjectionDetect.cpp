@@ -14,6 +14,7 @@
 #include "Internal/Detection.hpp"
 #include "Internal/SafeMemory.hpp"
 #include "Internal/SignatureVerify.hpp"
+#include "Internal/JITSignature.hpp"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -44,6 +45,9 @@ static std::string ToHex(uintptr_t value) {
 }
 
 void InjectionDetector::Initialize() {
+    // Initialize JIT signature validator
+    jit_validator_.Initialize();
+    
     // Snapshot current modules as baseline
     EnumerateKnownModules();
     // Capture baseline memory regions (RWX regions at startup)
@@ -169,59 +173,24 @@ bool InjectionDetector::IsSuspiciousRegion(const MEMORY_BASIC_INFORMATION& mbi) 
 }
 
 bool InjectionDetector::IsKnownJITRegion(uintptr_t address) {
-    // Check if address is in a JIT compiler memory region
-    // Query the memory information for this address
-    MEMORY_BASIC_INFORMATION mbi;
-    if (VirtualQuery((LPCVOID)address, &mbi, sizeof(mbi)) == 0) {
-        return false;
+    // Task 1: Use hash-based validation instead of name-based checks
+    // This prevents module hollowing/spoofing attacks where attackers
+    // create fake modules with legitimate names
+    
+    // First, try the new hash-based JIT signature validation
+    if (jit_validator_.ValidateJITRegion(address)) {
+        // Successfully validated using code signature hash
+        return true;
     }
     
-    // Get module at this allocation base (if any)
-    wchar_t modulePath[MAX_PATH] = {0};
-    if (mbi.AllocationBase && 
-        GetModuleFileNameW((HMODULE)mbi.AllocationBase, modulePath, MAX_PATH) > 0) {
-        
-        // Extract module name from path
-        const wchar_t* moduleName = wcsrchr(modulePath, L'\\');
-        if (moduleName) {
-            moduleName++; // Skip the backslash
-        } else {
-            moduleName = modulePath;
-        }
-        
-        // Use case-insensitive comparison for known JIT modules
-        // Check for .NET CLR JIT
-        if (_wcsicmp(moduleName, L"clrjit.dll") == 0 ||
-            _wcsicmp(moduleName, L"clr.dll") == 0 ||
-            _wcsicmp(moduleName, L"coreclr.dll") == 0) {
-            return true;
-        }
-        
-        // Check for V8 JavaScript engine
-        if (_wcsicmp(moduleName, L"v8.dll") == 0 ||
-            _wcsicmp(moduleName, L"libv8.dll") == 0) {
-            return true;
-        }
-        
-        // Check for Unity IL2CPP
-        if (_wcsicmp(moduleName, L"gameassembly.dll") == 0) {
-            return true;
-        }
-        
-        // Check for LuaJIT
-        if (_wcsicmp(moduleName, L"luajit.dll") == 0 ||
-            _wcsicmp(moduleName, L"lua51.dll") == 0 ||
-            _wcsicmp(moduleName, L"lua52.dll") == 0 ||
-            _wcsicmp(moduleName, L"lua53.dll") == 0) {
-            return true;
-        }
-    }
-    
-    // Check against whitelist for thread origins (also covers JIT regions)
+    // Fallback: Check against whitelist for thread origins
+    // This provides an additional layer for user-configured whitelists
     if (g_whitelist && g_whitelist->IsThreadOriginWhitelisted(address)) {
         return true;
     }
     
+    // All validation methods failed - not a known JIT region
+    // This is the secure default: unknown = suspicious
     return false;
 }
 
