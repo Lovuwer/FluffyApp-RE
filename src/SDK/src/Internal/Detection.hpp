@@ -13,6 +13,7 @@
 #include <vector>
 #include <cstdint>
 #include <mutex>
+#include <string>
 
 namespace Sentinel {
 namespace SDK {
@@ -248,6 +249,19 @@ public:
     void Initialize();
     void Shutdown();
     
+    /**
+     * Set key derivation parameters (must be called before first use)
+     * @param hardware_id Hardware fingerprint
+     * @param session_token Session authentication token
+     * @param server_nonce Server-provided random nonce (32 bytes)
+     * @param server_salt Server-provided random salt (32 bytes)
+     */
+    void SetKeyDerivationParams(
+        const char* hardware_id,
+        const char* session_token,
+        const uint8_t* server_nonce,
+        const uint8_t* server_salt);
+    
     ErrorCode Encrypt(const void* data, size_t size, void* out_buffer, size_t* out_size);
     ErrorCode Decrypt(const void* data, size_t size, void* out_buffer, size_t* out_size);
     
@@ -256,11 +270,35 @@ public:
     
 private:
     void DeriveSessionKey();
+    void RotateKeyIfNeeded();
+    bool ValidateTimestamp(uint64_t timestamp);
+    ErrorCode ComputeHMAC(const void* data, size_t size, uint8_t* hmac_out);
+    ErrorCode VerifyHMAC(const void* data, size_t size, const uint8_t* expected_hmac);
     
     uint8_t session_key_[32];
+    uint8_t hmac_key_[32];
     uint32_t current_sequence_ = 0;
     uint32_t expected_sequence_ = 0;
-    static constexpr uint32_t SEQUENCE_WINDOW = 100;
+    
+    // Key rotation
+    uint32_t packets_since_rotation_ = 0;
+    static constexpr uint32_t KEY_ROTATION_INTERVAL = 10000;
+    
+    // Replay detection with sliding window
+    static constexpr uint32_t SEQUENCE_WINDOW = 1000;
+    uint32_t window_base_ = 0;
+    uint8_t window_bitmap_[125];  // 1000 bits / 8 = 125 bytes
+    
+    // Timestamp validation
+    uint64_t session_start_time_ = 0;
+    static constexpr uint64_t TIMESTAMP_TOLERANCE_MS = 30000;  // 30 seconds
+    
+    // Key derivation parameters
+    std::string hardware_id_;
+    std::string session_token_;
+    uint8_t server_nonce_[32];
+    uint8_t server_salt_[32];
+    bool params_set_ = false;
 };
 
 /**

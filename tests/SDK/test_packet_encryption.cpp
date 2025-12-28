@@ -3,13 +3,21 @@
  * 
  * Copyright (c) 2025 Sentinel Security. All rights reserved.
  * 
- * Comprehensive test suite for AES-256-GCM packet encryption.
+ * Comprehensive test suite for AES-256-GCM packet encryption with:
+ * - HKDF key derivation
+ * - Key rotation every 10000 packets
+ * - Replay detection with 1000-packet window
+ * - Timestamp validation (30-second window)
+ * - HMAC authentication
+ * 
  * Tests cover:
  * - Round-trip encryption/decryption
  * - Tampering detection (bit flip)
  * - Replay attack detection
  * - Buffer size validation
- * - Sequence exhaustion
+ * - Key rotation
+ * - Timestamp validation
+ * - HMAC verification
  */
 
 #include <gtest/gtest.h>
@@ -24,6 +32,20 @@ class PacketEncryptionTest : public ::testing::Test {
 protected:
     void SetUp() override {
         encryption.Initialize();
+        
+        // Set up key derivation parameters for enhanced security
+        const char* hw_id = "test-hardware-id-12345";
+        const char* session = "test-session-token-67890";
+        
+        // Generate test nonce and salt
+        uint8_t nonce[32] = {0};
+        uint8_t salt[32] = {0};
+        for (int i = 0; i < 32; ++i) {
+            nonce[i] = static_cast<uint8_t>(i);
+            salt[i] = static_cast<uint8_t>(i * 2);
+        }
+        
+        encryption.SetKeyDerivationParams(hw_id, session, nonce, salt);
     }
     
     void TearDown() override {
@@ -31,6 +53,12 @@ protected:
     }
     
     PacketEncryption encryption;
+    
+    // New packet format size calculation helper
+    size_t GetEncryptedSize(size_t plaintext_size) {
+        // Format: 4 (seq) + 8 (timestamp) + 12 (IV) + 32 (HMAC) + plaintext + 16 (tag)
+        return 4 + 8 + 12 + 32 + plaintext_size + 16;
+    }
 };
 
 // ============================================================================
@@ -56,9 +84,9 @@ TEST_F(PacketEncryptionTest, RoundTrip_BasicData) {
     
     ASSERT_EQ(result, ErrorCode::Success) << "Encryption failed";
     
-    // Verify encrypted size is larger than plaintext (includes IV, tag, sequence)
-    // Expected: 4 (seq) + 12 (IV) + plaintext_size + 16 (tag)
-    size_t expected_size = 4 + 12 + plaintext_size + 16;
+    // Verify encrypted size matches new format
+    // Expected: 4 (seq) + 8 (timestamp) + 12 (IV) + 32 (HMAC) + plaintext_size + 16 (tag)
+    size_t expected_size = GetEncryptedSize(plaintext_size);
     EXPECT_EQ(encrypted_size, expected_size);
     
     // Decrypt
@@ -96,8 +124,8 @@ TEST_F(PacketEncryptionTest, RoundTrip_EmptyPacket) {
     // Note: Depending on implementation, this might return InvalidArgument
     // or succeed. Let's test the expected behavior.
     if (result == ErrorCode::Success) {
-        // Expected: 4 (seq) + 12 (IV) + 0 (plaintext) + 16 (tag) = 32
-        EXPECT_EQ(encrypted_size, 32);
+        // Expected: 4 (seq) + 8 (timestamp) + 12 (IV) + 32 (HMAC) + 0 (plaintext) + 16 (tag)
+        EXPECT_EQ(encrypted_size, GetEncryptedSize(0));
         
         // Decrypt
         size_t decrypted_size = 1024;
@@ -365,7 +393,7 @@ TEST_F(PacketEncryptionTest, BufferSize_TooSmall) {
     EXPECT_EQ(result, ErrorCode::BufferTooSmall);
     
     // encrypted_size should now contain required size
-    size_t expected_size = 4 + 12 + plaintext_size + 16;
+    size_t expected_size = GetEncryptedSize(plaintext_size);
     EXPECT_EQ(encrypted_size, expected_size)
         << "Required size not returned correctly";
     
@@ -546,12 +574,12 @@ TEST_F(PacketEncryptionTest, IVUniqueness) {
     }
     
     // Verify that at least the IV portions are different
-    // IV is at offset 4 (after sequence number), length 12
+    // IV is at offset 4 (seq) + 8 (timestamp) = 12, length 12
     for (size_t i = 0; i < num_encryptions; ++i) {
         for (size_t j = i + 1; j < num_encryptions; ++j) {
             // Extract IVs
-            const uint8_t* iv1 = encrypted_packets[i].data() + 4;
-            const uint8_t* iv2 = encrypted_packets[j].data() + 4;
+            const uint8_t* iv1 = encrypted_packets[i].data() + 4 + 8;
+            const uint8_t* iv2 = encrypted_packets[j].data() + 4 + 8;
             
             // IVs should be different (at least the random part)
             bool ivs_different = (memcmp(iv1, iv2, 12) != 0);
@@ -559,4 +587,234 @@ TEST_F(PacketEncryptionTest, IVUniqueness) {
                 << "IVs should be unique for packets " << i << " and " << j;
         }
     }
+}
+
+// ============================================================================
+// Unit Test 8: Key Rotation
+// ============================================================================
+
+TEST_F(PacketEncryptionTest, KeyRotation_After10000Packets) {
+    // Test that key rotation occurs every 10000 packets
+    const char* plaintext = "Test packet for rotation";
+    size_t plaintext_size = strlen(plaintext);
+    
+    // Encrypt exactly 10000 packets to trigger rotation
+    for (int i = 0; i < 10000; ++i) {
+        size_t encrypted_size = 1024;
+        std::vector<uint8_t> encrypted_buffer(encrypted_size);
+        
+        ErrorCode result = encryption.Encrypt(
+            plaintext, 
+            plaintext_size, 
+            encrypted_buffer.data(), 
+            &encrypted_size
+        );
+        
+        ASSERT_EQ(result, ErrorCode::Success) 
+            << "Encryption failed at packet " << i;
+    }
+    
+    // Next packet should use rotated key
+    size_t encrypted_size = 1024;
+    std::vector<uint8_t> encrypted_buffer(encrypted_size);
+    
+    ErrorCode result = encryption.Encrypt(
+        plaintext, 
+        plaintext_size, 
+        encrypted_buffer.data(), 
+        &encrypted_size
+    );
+    
+    ASSERT_EQ(result, ErrorCode::Success) 
+        << "Encryption after rotation failed";
+    
+    // Decrypt should still work
+    size_t decrypted_size = 1024;
+    std::vector<uint8_t> decrypted_buffer(decrypted_size);
+    
+    result = encryption.Decrypt(
+        encrypted_buffer.data(),
+        encrypted_size,
+        decrypted_buffer.data(),
+        &decrypted_size
+    );
+    
+    EXPECT_EQ(result, ErrorCode::Success)
+        << "Decryption after key rotation failed";
+}
+
+// ============================================================================
+// Unit Test 9: HKDF Key Derivation
+// ============================================================================
+
+TEST_F(PacketEncryptionTest, HKDFKeyDerivation_DifferentParams) {
+    // Test that different parameters produce different keys
+    const char* plaintext = "Test data";
+    size_t plaintext_size = strlen(plaintext);
+    
+    // Create two separate encryption instances
+    PacketEncryption enc1, enc2;
+    enc1.Initialize();
+    enc2.Initialize();
+    
+    uint8_t nonce1[32], nonce2[32];
+    uint8_t salt[32];
+    for (int i = 0; i < 32; ++i) {
+        nonce1[i] = static_cast<uint8_t>(i);
+        nonce2[i] = static_cast<uint8_t>(i + 1); // Different nonce
+        salt[i] = static_cast<uint8_t>(i * 2);
+    }
+    
+    // Use same hardware ID and session but different nonce
+    // This should produce different derived keys
+    enc1.SetKeyDerivationParams("hw1", "session1", nonce1, salt);
+    enc2.SetKeyDerivationParams("hw1", "session1", nonce2, salt);
+    
+    // Encrypt with first instance
+    size_t encrypted_size1 = 1024;
+    std::vector<uint8_t> encrypted_buffer1(encrypted_size1);
+    
+    ErrorCode result = enc1.Encrypt(
+        plaintext, 
+        plaintext_size, 
+        encrypted_buffer1.data(), 
+        &encrypted_size1
+    );
+    
+    ASSERT_EQ(result, ErrorCode::Success);
+    
+    // Encrypt same data with second instance
+    size_t encrypted_size2 = 1024;
+    std::vector<uint8_t> encrypted_buffer2(encrypted_size2);
+    
+    result = enc2.Encrypt(
+        plaintext, 
+        plaintext_size, 
+        encrypted_buffer2.data(), 
+        &encrypted_size2
+    );
+    
+    ASSERT_EQ(result, ErrorCode::Success);
+    
+    // The ciphertext should be different (due to different keys and IVs)
+    // Compare just the ciphertext portion (skip header fields that might vary)
+    bool ciphertexts_different = false;
+    if (encrypted_size1 == encrypted_size2) {
+        // Compare last 32 bytes of each packet (part of ciphertext/tag)
+        size_t compare_offset = encrypted_size1 - 32;
+        if (memcmp(encrypted_buffer1.data() + compare_offset,
+                   encrypted_buffer2.data() + compare_offset, 32) != 0) {
+            ciphertexts_different = true;
+        }
+    }
+    
+    EXPECT_TRUE(ciphertexts_different)
+        << "Different keys should produce different ciphertexts";
+    
+    enc1.Shutdown();
+    enc2.Shutdown();
+}
+
+// ============================================================================
+// Unit Test 10: Sliding Window Replay Detection
+// ============================================================================
+
+TEST_F(PacketEncryptionTest, ReplayDetection_SlidingWindow) {
+    // Test that replay detection handles out-of-order packets within window
+    const char* plaintext = "Packet";
+    size_t plaintext_size = strlen(plaintext);
+    
+    // Create multiple packets
+    std::vector<std::vector<uint8_t>> packets;
+    
+    for (int i = 0; i < 10; ++i) {
+        size_t encrypted_size = 1024;
+        std::vector<uint8_t> encrypted_buffer(encrypted_size);
+        
+        ErrorCode result = encryption.Encrypt(
+            plaintext, 
+            plaintext_size, 
+            encrypted_buffer.data(), 
+            &encrypted_size
+        );
+        
+        ASSERT_EQ(result, ErrorCode::Success);
+        encrypted_buffer.resize(encrypted_size);
+        packets.push_back(encrypted_buffer);
+    }
+    
+    // Decrypt in order
+    for (size_t i = 0; i < packets.size(); ++i) {
+        size_t decrypted_size = 1024;
+        std::vector<uint8_t> decrypted_buffer(decrypted_size);
+        
+        ErrorCode result = encryption.Decrypt(
+            packets[i].data(),
+            packets[i].size(),
+            decrypted_buffer.data(),
+            &decrypted_size
+        );
+        
+        EXPECT_EQ(result, ErrorCode::Success)
+            << "Decryption failed for packet " << i;
+    }
+    
+    // Try to replay an old packet
+    size_t decrypted_size = 1024;
+    std::vector<uint8_t> decrypted_buffer(decrypted_size);
+    
+    ErrorCode result = encryption.Decrypt(
+        packets[0].data(),
+        packets[0].size(),
+        decrypted_buffer.data(),
+        &decrypted_size
+    );
+    
+    // Should detect replay
+    EXPECT_EQ(result, ErrorCode::ReplayDetected)
+        << "Replay of old packet should be detected";
+}
+
+// ============================================================================
+// Unit Test 11: HMAC Authentication
+// ============================================================================
+
+TEST_F(PacketEncryptionTest, HMACAuthentication_Tampering) {
+    // Test that HMAC detects tampering before decryption
+    const char* plaintext = "Critical data";
+    size_t plaintext_size = strlen(plaintext);
+    
+    size_t encrypted_size = 1024;
+    std::vector<uint8_t> encrypted_buffer(encrypted_size);
+    
+    ErrorCode result = encryption.Encrypt(
+        plaintext, 
+        plaintext_size, 
+        encrypted_buffer.data(), 
+        &encrypted_size
+    );
+    
+    ASSERT_EQ(result, ErrorCode::Success);
+    
+    // Tamper with ciphertext (after HMAC position)
+    // Format: seq(4) + timestamp(8) + IV(12) + HMAC(32) + ciphertext + tag(16)
+    size_t tamper_position = 4 + 8 + 12 + 32 + 5; // Middle of ciphertext
+    if (tamper_position < encrypted_size) {
+        encrypted_buffer[tamper_position] ^= 0xFF;
+    }
+    
+    // Decrypt should fail on HMAC check before attempting decryption
+    size_t decrypted_size = 1024;
+    std::vector<uint8_t> decrypted_buffer(decrypted_size);
+    
+    result = encryption.Decrypt(
+        encrypted_buffer.data(),
+        encrypted_size,
+        decrypted_buffer.data(),
+        &decrypted_size
+    );
+    
+    // Should detect tampering via HMAC
+    EXPECT_EQ(result, ErrorCode::AuthenticationFailed)
+        << "HMAC should detect tampering";
 }
