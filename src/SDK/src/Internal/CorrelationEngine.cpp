@@ -47,6 +47,9 @@ CorrelationEngine::CorrelationEngine()
     state_.score = 0.0;
     state_.unique_categories = 0;
     state_.last_update = std::chrono::steady_clock::now();
+    state_.current_scan_cycle = 0;
+    state_.last_scan_time = std::chrono::steady_clock::now();
+    state_.has_correlated_anomaly = false;
 }
 
 CorrelationEngine::~CorrelationEngine() {
@@ -64,6 +67,9 @@ void CorrelationEngine::Initialize() {
     state_.unique_categories = 0;
     state_.signals.clear();
     state_.last_update = std::chrono::steady_clock::now();
+    state_.current_scan_cycle = 0;
+    state_.last_scan_time = std::chrono::steady_clock::now();
+    state_.has_correlated_anomaly = false;
 }
 
 void CorrelationEngine::Shutdown() {
@@ -81,6 +87,14 @@ bool CorrelationEngine::ProcessViolation(
     // Apply time decay before processing new signal
     ApplyTimeDecay();
     
+    // Update scan cycle if enough time has passed
+    auto now = std::chrono::steady_clock::now();
+    double time_since_last_scan = std::chrono::duration<double>(now - state_.last_scan_time).count();
+    if (time_since_last_scan >= MIN_SCAN_CYCLE_INTERVAL) {
+        state_.current_scan_cycle++;
+        state_.last_scan_time = now;
+    }
+    
     // Check if this violation should be whitelisted
     if (ShouldWhitelist(event)) {
         out_correlated_severity = Severity::Info;
@@ -93,24 +107,59 @@ bool CorrelationEngine::ProcessViolation(
     signal.type = event.type;
     signal.category = MapToCategory(event.type);
     signal.original_severity = event.severity;
-    signal.timestamp = std::chrono::steady_clock::now();
+    signal.timestamp = now;
     signal.details = event.details ? event.details : "";
     signal.address = event.address;
     signal.module_name = event.module_name;
+    signal.scan_cycle = state_.current_scan_cycle;
+    signal.persistence_count = 1;  // Initial persistence
     
-    // Update correlation state
-    UpdateCorrelation(signal);
+    // Check if we already have this signal type - update persistence instead of adding duplicate
+    bool signal_updated = false;
+    for (auto& existing_signal : state_.signals) {
+        if (existing_signal.type == signal.type && 
+            existing_signal.category == signal.category) {
+            // Update the existing signal with new timestamp and increment persistence
+            existing_signal.timestamp = now;
+            existing_signal.scan_cycle = state_.current_scan_cycle;
+            existing_signal.persistence_count++;
+            signal_updated = true;
+            
+            // Add weight again for this re-detection
+            double weight = GetCategoryWeight(signal.category);
+            state_.score += weight;
+            break;
+        }
+    }
+    
+    // If this is a new signal type, add it
+    if (!signal_updated) {
+        // Update correlation state
+        UpdateCorrelation(signal);
+    }
+    
+    // Check for correlated timing + memory anomaly
+    if (DetectCorrelatedAnomaly()) {
+        state_.has_correlated_anomaly = true;
+    }
+    
+    // Check for known false positive patterns
+    if (IsFalsePositivePattern()) {
+        out_correlated_severity = Severity::Info;
+        out_should_report = true;  // Report as telemetry with FP flag
+        return false;  // Suppressed for enforcement
+    }
     
     // Determine correlated severity
     out_correlated_severity = DegradeSeverity(event.severity);
     
     // Determine if should report to cloud
-    // Cloud reporting requires 2+ signals minimum
+    // Always emit telemetry for sub-threshold detections
     uint32_t signal_count = static_cast<uint32_t>(state_.signals.size());
     
     if (signal_count < 2) {
-        // Single signal: never report to cloud, only log locally
-        out_should_report = false;
+        // Single signal: telemetry only, no enforcement
+        out_should_report = true;  // Emit telemetry
     } else if (out_correlated_severity == Severity::Critical) {
         // Critical requires 2+ signals
         out_should_report = (signal_count >= MIN_SIGNALS_FOR_CRITICAL);
@@ -132,15 +181,38 @@ bool CorrelationEngine::ShouldAllowAction(ResponseAction action) const {
     bool is_kick = (action_bits & static_cast<uint32_t>(ResponseAction::Kick)) != 0;
     
     if (is_ban || is_terminate) {
-        // Ban and Terminate require explicit multi-signal confirmation
-        uint32_t unique_count = popcount(state_.unique_categories);
-        return (unique_count >= MIN_UNIQUE_SIGNALS) && 
-               (state_.score >= MIN_CORRELATION_THRESHOLD);
+        // Count only persistent signals (3+ scan cycles)
+        uint32_t persistent_signals = 0;
+        uint32_t persistent_categories = 0;
+        
+        for (const auto& signal : state_.signals) {
+            if (HasPersistedLongEnough(signal)) {
+                persistent_signals++;
+                persistent_categories |= (1u << static_cast<uint8_t>(signal.category));
+            }
+        }
+        
+        uint32_t unique_persistent_count = popcount(persistent_categories);
+        
+        // Apply environmental penalty to score
+        double adjusted_score = ApplyEnvironmentalPenalty(state_.score);
+        
+        // Ban and Terminate require:
+        // - 3+ unique persistent signal categories
+        // - Score >= 2.0 (after environmental penalty)
+        return (unique_persistent_count >= MIN_UNIQUE_SIGNALS) && 
+               (adjusted_score >= MIN_CORRELATION_THRESHOLD);
     }
     
     if (is_kick) {
-        // Kick requires at least 2 signals
-        return state_.signals.size() >= 2;
+        // Kick requires at least 2 persistent signals
+        uint32_t persistent_signals = 0;
+        for (const auto& signal : state_.signals) {
+            if (HasPersistedLongEnough(signal)) {
+                persistent_signals++;
+            }
+        }
+        return persistent_signals >= 2;
     }
     
     // Other actions (Log, Report, Notify, Warn) are allowed
@@ -163,6 +235,9 @@ void CorrelationEngine::Reset() {
     state_.unique_categories = 0;
     state_.signals.clear();
     state_.last_update = std::chrono::steady_clock::now();
+    state_.current_scan_cycle = 0;
+    state_.last_scan_time = std::chrono::steady_clock::now();
+    state_.has_correlated_anomaly = false;
 }
 
 DetectionCategory CorrelationEngine::MapToCategory(ViolationType type) const {
@@ -176,10 +251,13 @@ DetectionCategory CorrelationEngine::MapToCategory(ViolationType type) const {
         case ViolationType::SpeedHack:
             return DetectionCategory::Timing;
         
-        // Memory-related
+        // Memory-related (RWX specifically)
+        case ViolationType::MemoryExecute:
+            return DetectionCategory::MemoryRWX;  // RWX memory
+        
+        // Memory-related (general)
         case ViolationType::MemoryRead:
         case ViolationType::MemoryWrite:
-        case ViolationType::MemoryExecute:
         case ViolationType::CodeInjection:
         case ViolationType::InjectedCode:
         case ViolationType::ModuleModified:
@@ -204,7 +282,9 @@ double CorrelationEngine::GetCategoryWeight(DetectionCategory category) const {
         case DetectionCategory::Debugger: return WEIGHT_DEBUGGER;
         case DetectionCategory::Timing: return WEIGHT_TIMING;
         case DetectionCategory::Memory: return WEIGHT_MEMORY;
+        case DetectionCategory::MemoryRWX: return WEIGHT_MEMORY_RWX;
         case DetectionCategory::Hooks: return WEIGHT_HOOKS;
+        case DetectionCategory::CorrelatedAnomaly: return WEIGHT_CORRELATED_ANOMALY;
         default: return 0.1;
     }
 }
@@ -252,10 +332,8 @@ void CorrelationEngine::UpdateCorrelation(const DetectionSignal& signal) {
     double weight = GetCategoryWeight(signal.category);
     state_.score += weight;
     
-    // Cap score at 1.0
-    if (state_.score > 1.0) {
-        state_.score = 1.0;
-    }
+    // Don't cap score - we need scores up to 2.0+ for enforcement threshold
+    // Score naturally accumulates from multiple high-confidence signals
 }
 
 Severity CorrelationEngine::DegradeSeverity(Severity original) const {
@@ -430,6 +508,74 @@ bool CorrelationEngine::DetectCloudGaming() {
     
     // Additional heuristics could be added here
     return false;
+}
+
+bool CorrelationEngine::IsFalsePositivePattern() const {
+    // Check for known false positive pattern: Discord + RWX + overlay process
+    bool has_discord_overlay = environment_.has_discord_overlay;
+    bool has_rwx_detection = false;
+    bool has_overlay_hook = false;
+    
+    for (const auto& signal : state_.signals) {
+        if (signal.category == DetectionCategory::MemoryRWX) {
+            has_rwx_detection = true;
+        }
+        if (signal.category == DetectionCategory::Hooks && signal.module_name) {
+            std::string module(signal.module_name);
+            std::transform(module.begin(), module.end(), module.begin(), ::tolower);
+            if (module.find("overlay") != std::string::npos ||
+                module.find("discord") != std::string::npos) {
+                has_overlay_hook = true;
+            }
+        }
+    }
+    
+    // Known false positive: Discord overlay + RWX memory + overlay hook
+    if (has_discord_overlay && has_rwx_detection && has_overlay_hook) {
+        return true;
+    }
+    
+    return false;
+}
+
+double CorrelationEngine::ApplyEnvironmentalPenalty(double base_score) const {
+    // Apply 30% penalty (multiply by 0.7) when VM or cloud gaming detected
+    if (environment_.is_vm_environment || environment_.is_cloud_gaming) {
+        return base_score * ENVIRONMENTAL_PENALTY_FACTOR;
+    }
+    return base_score;
+}
+
+bool CorrelationEngine::HasPersistedLongEnough(const DetectionSignal& signal) const {
+    // Signal must have persisted for at least MIN_PERSISTENCE_CYCLES scan cycles
+    return signal.persistence_count >= MIN_PERSISTENCE_CYCLES;
+}
+
+bool CorrelationEngine::DetectCorrelatedAnomaly() const {
+    // Detect if we have both timing and memory anomalies within recent signals
+    bool has_timing = false;
+    bool has_memory = false;
+    
+    auto now = std::chrono::steady_clock::now();
+    
+    for (const auto& signal : state_.signals) {
+        // Only consider signals from recent scan cycles (within last 60 seconds)
+        double age = std::chrono::duration<double>(now - signal.timestamp).count();
+        if (age > 60.0) {
+            continue;
+        }
+        
+        if (signal.category == DetectionCategory::Timing) {
+            has_timing = true;
+        }
+        if (signal.category == DetectionCategory::Memory || 
+            signal.category == DetectionCategory::MemoryRWX) {
+            has_memory = true;
+        }
+    }
+    
+    // Correlated anomaly detected if both timing and memory signals present
+    return has_timing && has_memory;
 }
 
 } // namespace SDK

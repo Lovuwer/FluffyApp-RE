@@ -23,10 +23,12 @@ namespace SDK {
  * Detection signal categories for weighting
  */
 enum class DetectionCategory : uint8_t {
-    Debugger = 0,   // Weight: 0.4
-    Timing = 1,     // Weight: 0.2
-    Memory = 2,     // Weight: 0.3
-    Hooks = 3       // Weight: 0.1
+    Debugger = 0,        // Weight: 0.3 (reduced - easily spoofed)
+    Timing = 1,          // Weight: 0.2
+    Memory = 2,          // Weight: 0.3 (general memory)
+    MemoryRWX = 3,       // Weight: 0.5 (RWX without signature)
+    Hooks = 4,           // Weight: 0.7 (increased - critical functions)
+    CorrelatedAnomaly = 5 // Weight: 0.9 (timing + memory correlated)
 };
 
 /**
@@ -40,16 +42,21 @@ struct DetectionSignal {
     std::string details;
     uint64_t address;
     const char* module_name;
+    uint32_t scan_cycle;  // Track which scan cycle detected this
+    uint32_t persistence_count;  // How many consecutive scans this signal persisted
 };
 
 /**
  * Accumulated correlation state
  */
 struct CorrelationState {
-    double score;  // Current correlation score (0.0 - 1.0+)
+    double score;  // Current correlation score (0.0 - 2.0+)
     std::vector<DetectionSignal> signals;  // Recent signals
     std::chrono::steady_clock::time_point last_update;
     uint32_t unique_categories;  // Bitmask of detected categories
+    uint32_t current_scan_cycle;  // Current scan cycle counter
+    std::chrono::steady_clock::time_point last_scan_time;  // Last scan timestamp
+    bool has_correlated_anomaly;  // Track if timing + memory correlation detected
 };
 
 /**
@@ -175,6 +182,26 @@ private:
     bool ShouldWhitelist(const ViolationEvent& event) const;
     
     /**
+     * Check if signal combination is a known false positive pattern
+     */
+    bool IsFalsePositivePattern() const;
+    
+    /**
+     * Apply environmental penalty to score (30% reduction for VM/cloud)
+     */
+    double ApplyEnvironmentalPenalty(double base_score) const;
+    
+    /**
+     * Check if signal has persisted long enough (3 scan cycles minimum)
+     */
+    bool HasPersistedLongEnough(const DetectionSignal& signal) const;
+    
+    /**
+     * Detect correlated timing + memory anomaly
+     */
+    bool DetectCorrelatedAnomaly() const;
+    
+    /**
      * Check for known overlay DLLs
      */
     bool DetectOverlayDLLs();
@@ -200,15 +227,20 @@ private:
     
     // Configuration
     static constexpr double HALF_LIFE_SECONDS = 30.0;
-    static constexpr double MIN_CORRELATION_THRESHOLD = 0.6;  // Requires ~3 signals
+    static constexpr double MIN_CORRELATION_THRESHOLD = 2.0;  // Requires multiple high-confidence signals
     static constexpr uint32_t MIN_UNIQUE_SIGNALS = 3;
     static constexpr uint32_t MIN_SIGNALS_FOR_CRITICAL = 2;
+    static constexpr uint32_t MIN_PERSISTENCE_CYCLES = 3;  // Signals must persist 3 scan cycles
+    static constexpr double MIN_SCAN_CYCLE_INTERVAL = 10.0;  // Minimum 10 seconds between scans
+    static constexpr double ENVIRONMENTAL_PENALTY_FACTOR = 0.7;  // 30% reduction (multiply by 0.7)
     
-    // Category weights
-    static constexpr double WEIGHT_DEBUGGER = 0.4;
+    // Category weights (updated per requirements)
+    static constexpr double WEIGHT_DEBUGGER = 0.3;  // Reduced - easily spoofed
     static constexpr double WEIGHT_TIMING = 0.2;
-    static constexpr double WEIGHT_MEMORY = 0.3;
-    static constexpr double WEIGHT_HOOKS = 0.1;
+    static constexpr double WEIGHT_MEMORY = 0.3;  // General memory violations
+    static constexpr double WEIGHT_MEMORY_RWX = 0.5;  // RWX memory without signature
+    static constexpr double WEIGHT_HOOKS = 0.7;  // Increased - critical function hooks
+    static constexpr double WEIGHT_CORRELATED_ANOMALY = 0.9;  // Timing + memory correlation
 };
 
 } // namespace SDK

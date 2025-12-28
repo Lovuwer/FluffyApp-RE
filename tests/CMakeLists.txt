@@ -54,6 +54,7 @@ add_executable(SDKTests
     SDK/test_packet_encryption.cpp
     SDK/test_correlation_engine.cpp
     SDK/test_correlation_integration.cpp
+    SDK/test_correlation_enhancements.cpp
     SDK/test_safe_memory.cpp
     SDK/test_protected_value.cpp
 )
