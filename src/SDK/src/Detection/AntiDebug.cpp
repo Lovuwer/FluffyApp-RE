@@ -329,8 +329,10 @@ std::vector<ViolationEvent> AntiDebugDetector::Check() {
     }
     
     // Task 14: Check for PEB patching by cross-referencing heap flags
-    // This must be done BEFORE the separate NtGlobalFlag and HeapFlags checks
-    // to provide specific "PEB patched" detection
+    // This detects anti-anti-debug tools that patch NtGlobalFlag but can't patch heap flags.
+    // Checked before individual NtGlobalFlag/HeapFlags checks to provide specific "PEB patched" violation.
+    // If this check triggers, the subsequent NtGlobalFlag check will NOT trigger (NtGlobalFlag=0),
+    // but the HeapFlags check may still trigger, which is expected and provides additional context.
     if (CheckHeapFlagsVsNtGlobalFlag()) {
         ViolationEvent ev;
         ev.type = ViolationType::DebuggerAttached;
@@ -996,8 +998,11 @@ bool AntiDebugDetector::CheckHeapFlagsVsNtGlobalFlag() {
         return false;
     }
     
-    // Check if memory region is readable
-    if (!(mbi.Protect & (PAGE_READONLY | PAGE_READWRITE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE))) {
+    // Check if memory region is readable (any readable protection flag)
+    const DWORD READABLE_PROTECTIONS = PAGE_READONLY | PAGE_READWRITE | 
+                                       PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | 
+                                       PAGE_WRITECOPY | PAGE_EXECUTE_WRITECOPY;
+    if (!(mbi.Protect & READABLE_PROTECTIONS)) {
         // Memory not readable, use only HeapQueryInformation result
         return false;
     }
@@ -1018,7 +1023,11 @@ bool AntiDebugDetector::CheckHeapFlagsVsNtGlobalFlag() {
         return false;
     }
     
-    bool heapFlagsIndicateDebug = (flags & HEAP_DEBUG_FLAGS) != 0 || forceFlags != 0;
+    // ForceFlags in debug mode: HEAP_TAIL_CHECKING_ENABLED (0x20) | HEAP_FREE_CHECKING_ENABLED (0x40)
+    // Non-zero ForceFlags typically indicates debug heap, but check for specific debug bits
+    const DWORD FORCE_FLAGS_DEBUG_MASK = 0x60;  // HEAP_TAIL_CHECKING_ENABLED | HEAP_FREE_CHECKING_ENABLED
+    bool heapFlagsIndicateDebug = (flags & HEAP_DEBUG_FLAGS) != 0 || 
+                                  (forceFlags & FORCE_FLAGS_DEBUG_MASK) != 0;
     
     // Combine both methods for reliable detection
     heapIndicatesDebug = heapIndicatesDebug || heapFlagsIndicateDebug;
@@ -1101,6 +1110,11 @@ bool AntiDebugDetector::CheckParentProcessDebugger() {
     _wcslwr_s(parentName, _countof(parentName));
     
     // Known debugger process names
+    // NOTE: This is an intentionally hardcoded list of common debuggers and reverse engineering tools.
+    // False positives in legitimate development environments are acceptable and expected behavior
+    // for anti-debugging protection. This check is meant to detect when the application is launched
+    // directly from a debugger, which is a strong indicator of reverse engineering activity.
+    // The list should be periodically reviewed and updated as new tools emerge.
     const wchar_t* debuggers[] = {
         L"x64dbg.exe",
         L"x32dbg.exe",
