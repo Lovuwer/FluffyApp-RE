@@ -83,6 +83,10 @@ public:
     void UnregisterFunction(uintptr_t address);
     void UnregisterFunctionsInModule(uintptr_t module_base);
     
+    // Honeypot function registration
+    void RegisterHoneypot(const FunctionProtection& func);
+    void UnregisterHoneypot(uintptr_t address);
+    
     bool CheckFunction(uintptr_t address);
     bool IsIATHooked(const char* module_name, const char* function_name);
     bool IsDelayLoadIATHooked(const char* module_name, const char* function_name);
@@ -93,6 +97,7 @@ private:
     bool IsInlineHooked(const FunctionProtection& func);
     bool HasSuspiciousJump(const void* address);
     std::vector<ViolationEvent> ScanCriticalAPIs();
+    std::vector<ViolationEvent> CheckHoneypots();
     
 #ifdef _WIN32
     static void CALLBACK DllNotificationCallback(
@@ -105,6 +110,7 @@ private:
 #endif
     
     std::vector<FunctionProtection> registered_functions_;
+    std::vector<FunctionProtection> honeypot_functions_;
     std::mutex functions_mutex_;
 };
 
