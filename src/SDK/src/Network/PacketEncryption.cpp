@@ -289,12 +289,15 @@ public:
             std::memset(window_bitmap_ + sizeof(window_bitmap_) - byte_shift, 0, byte_shift);
         } else {
             // Complex bit shift
-            for (size_t i = 0; i < sizeof(window_bitmap_) - byte_shift - 1; ++i) {
+            size_t max_i = sizeof(window_bitmap_) - byte_shift - 1;
+            for (size_t i = 0; i < max_i; ++i) {
                 window_bitmap_[i] = (window_bitmap_[i + byte_shift] << bit_shift) |
                                    (window_bitmap_[i + byte_shift + 1] >> (8 - bit_shift));
             }
-            window_bitmap_[sizeof(window_bitmap_) - byte_shift - 1] =
-                window_bitmap_[sizeof(window_bitmap_) - 1] << bit_shift;
+            // Handle last byte separately to avoid out-of-bounds access
+            if (max_i < sizeof(window_bitmap_)) {
+                window_bitmap_[max_i] = window_bitmap_[max_i + byte_shift] << bit_shift;
+            }
             std::memset(window_bitmap_ + sizeof(window_bitmap_) - byte_shift, 0, byte_shift);
         }
     }
@@ -479,17 +482,36 @@ ErrorCode PacketEncryption::Encrypt(
     
     // Compute HMAC over entire packet (excluding HMAC field itself)
     // HMAC covers: sequence + timestamp + IV + ciphertext + tag
+    // Use stack-allocated buffer to avoid heap allocation
     uint8_t* packet_start = static_cast<uint8_t*>(out_buffer);
-    size_t hmac_data_size = required_size - HMAC_SIZE;
     
-    // Temporarily copy data after HMAC to compute HMAC over full packet
-    std::vector<uint8_t> hmac_data(hmac_data_size);
-    memcpy(hmac_data.data(), packet_start, sizeof(uint32_t) + TIMESTAMP_SIZE + IV_SIZE);
-    memcpy(hmac_data.data() + sizeof(uint32_t) + TIMESTAMP_SIZE + IV_SIZE,
-           packet_start + sizeof(uint32_t) + TIMESTAMP_SIZE + IV_SIZE + HMAC_SIZE,
-           size + TAG_SIZE);
+    // For HMAC computation, we need to combine header + data_after_hmac
+    // We can use iovec or just compute on the full buffer excluding HMAC
+    // Since the HMAC field is in the middle, we use a temporary approach
+    size_t header_size = sizeof(uint32_t) + TIMESTAMP_SIZE + IV_SIZE;
+    size_t data_after_hmac_size = size + TAG_SIZE;
     
-    ErrorCode hmac_result = g_impl.ComputeHMAC(hmac_data.data(), hmac_data_size, hmac_position);
+    // Small optimization: use stack buffer for small packets, heap for large
+    uint8_t stack_buffer[2048];
+    uint8_t* hmac_input;
+    bool use_heap = (header_size + data_after_hmac_size) > sizeof(stack_buffer);
+    
+    if (use_heap) {
+        hmac_input = new uint8_t[header_size + data_after_hmac_size];
+    } else {
+        hmac_input = stack_buffer;
+    }
+    
+    // Copy header and data after HMAC to contiguous buffer
+    memcpy(hmac_input, packet_start, header_size);
+    memcpy(hmac_input + header_size, packet_start + header_size + HMAC_SIZE, data_after_hmac_size);
+    
+    ErrorCode hmac_result = g_impl.ComputeHMAC(hmac_input, header_size + data_after_hmac_size, hmac_position);
+    
+    if (use_heap) {
+        delete[] hmac_input;
+    }
+    
     if (hmac_result != ErrorCode::Success) {
         return hmac_result;
     }
@@ -540,16 +562,42 @@ ErrorCode PacketEncryption::Decrypt(
     
     // Verify HMAC before attempting decryption
     // HMAC covers: sequence + timestamp + IV + ciphertext + tag
-    size_t hmac_data_size = size - HMAC_SIZE;
-    std::vector<uint8_t> hmac_data(hmac_data_size);
-    memcpy(hmac_data.data(), data, sizeof(uint32_t) + TIMESTAMP_SIZE + IV_SIZE);
-    memcpy(hmac_data.data() + sizeof(uint32_t) + TIMESTAMP_SIZE + IV_SIZE,
-           static_cast<const uint8_t*>(data) + sizeof(uint32_t) + TIMESTAMP_SIZE + IV_SIZE + HMAC_SIZE,
-           size - sizeof(uint32_t) - TIMESTAMP_SIZE - IV_SIZE - HMAC_SIZE);
+    size_t header_size = sizeof(uint32_t) + TIMESTAMP_SIZE + IV_SIZE;
+    size_t data_after_hmac_size = size - header_size - HMAC_SIZE;
     
-    ErrorCode hmac_result = g_impl.VerifyHMAC(hmac_data.data(), hmac_data_size, received_hmac);
+    // Use stack-allocated buffer for small packets, heap for large
+    uint8_t stack_buffer[2048];
+    uint8_t* hmac_input;
+    bool use_heap = (header_size + data_after_hmac_size) > sizeof(stack_buffer);
+    
+    if (use_heap) {
+        hmac_input = new uint8_t[header_size + data_after_hmac_size];
+    } else {
+        hmac_input = stack_buffer;
+    }
+    
+    // Copy header and data after HMAC to contiguous buffer
+    memcpy(hmac_input, data, header_size);
+    memcpy(hmac_input + header_size,
+           static_cast<const uint8_t*>(data) + header_size + HMAC_SIZE,
+           data_after_hmac_size);
+    
+    uint8_t computed_hmac[HMAC_SIZE];
+    ErrorCode hmac_result = g_impl.ComputeHMAC(hmac_input, header_size + data_after_hmac_size, computed_hmac);
+    
+    if (use_heap) {
+        delete[] hmac_input;
+    }
+    
     if (hmac_result != ErrorCode::Success) {
-        return hmac_result;  // HMAC verification failed
+        return hmac_result;
+    }
+    
+    // Constant-time comparison
+    if (!Crypto::constantTimeCompare(
+            {computed_hmac, HMAC_SIZE},
+            {received_hmac, HMAC_SIZE})) {
+        return ErrorCode::AuthenticationFailed;
     }
     
     // Validate timestamp (anti-replay via time window)
