@@ -6,10 +6,14 @@
  * Task 13: Memory Region Anomaly Detection
  * Detects manually mapped code and suspicious memory regions by scanning
  * for executable private memory and suspicious thread start addresses.
+ * 
+ * Task 12: Module Signature Verification
+ * Verifies Authenticode signatures, module hashes, and detects DLL proxying.
  */
 
 #include "Internal/Detection.hpp"
 #include "Internal/SafeMemory.hpp"
+#include "Internal/SignatureVerify.hpp"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -708,6 +712,123 @@ bool InjectionDetector::IsModuleSuspicious(const wchar_t* module_path) {
     return false;
 }
 
+std::vector<ViolationEvent> InjectionDetector::ScanModuleSignatures() {
+    std::vector<ViolationEvent> violations;
+
+#ifdef _WIN32
+    SignatureVerifier verifier;
+    
+    // Enumerate all loaded modules
+    HMODULE hMods[1024];
+    DWORD cbNeeded;
+    
+    if (!EnumProcessModules(GetCurrentProcess(), hMods, sizeof(hMods), &cbNeeded)) {
+        return violations;
+    }
+    
+    DWORD count = cbNeeded / sizeof(HMODULE);
+    for (DWORD i = 0; i < count; i++) {
+        wchar_t modPath[MAX_PATH];
+        if (!GetModuleFileNameExW(GetCurrentProcess(), hMods[i], modPath, MAX_PATH)) {
+            continue;
+        }
+        
+        // Verify the module
+        ModuleVerificationResult result = verifier.VerifyModule(modPath);
+        
+        // Check for DLL proxy (system DLL loaded from wrong path)
+        if (result.is_proxy_dll && !result.path_valid) {
+            ViolationEvent ev;
+            ev.type = ViolationType::CodeInjection;
+            ev.severity = Severity::Critical;  // Proxy DLLs are high risk
+            ev.address = reinterpret_cast<uintptr_t>(hMods[i]);
+            static const char* proxy_msg = "System DLL loaded from game directory (possible DLL proxy)";
+            ev.details = proxy_msg;
+            ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            
+            // Store module path in a static buffer (simplified - in production, use proper memory management)
+            static thread_local char module_name_buffer[256];
+            WideCharToMultiByte(CP_UTF8, 0, modPath, -1, module_name_buffer, sizeof(module_name_buffer), NULL, NULL);
+            ev.module_name = module_name_buffer;
+            ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
+            violations.push_back(ev);
+            continue;
+        }
+        
+        // Check for unsigned DLL in game directory (exclude Windows system DLLs)
+        if (result.signature_status == SignatureStatus::Unsigned && !result.is_proxy_dll) {
+            // Check if the DLL is in the game directory (not System32)
+            std::wstring path_lower = modPath;
+            std::transform(path_lower.begin(), path_lower.end(), path_lower.begin(),
+                [](wchar_t c) { return std::towlower(c); });
+            
+            wchar_t system_dir[MAX_PATH];
+            GetSystemDirectoryW(system_dir, MAX_PATH);
+            std::wstring system_dir_lower = system_dir;
+            std::transform(system_dir_lower.begin(), system_dir_lower.end(), system_dir_lower.begin(),
+                [](wchar_t c) { return std::towlower(c); });
+            
+            // If not in System32, flag as suspicious
+            if (path_lower.find(system_dir_lower) != 0) {
+                ViolationEvent ev;
+                ev.type = ViolationType::SignatureInvalid;
+                ev.severity = Severity::High;  // Unsigned DLLs are suspicious but not necessarily malicious
+                ev.address = reinterpret_cast<uintptr_t>(hMods[i]);
+                static const char* unsigned_msg = "Unsigned DLL loaded in game process";
+                ev.details = unsigned_msg;
+                ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count();
+                
+                static thread_local char module_name_buffer2[256];
+                WideCharToMultiByte(CP_UTF8, 0, modPath, -1, module_name_buffer2, sizeof(module_name_buffer2), NULL, NULL);
+                ev.module_name = module_name_buffer2;
+                ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
+                violations.push_back(ev);
+            }
+        }
+        
+        // Check for hash mismatch (modified game DLLs)
+        if (!result.hash_match) {
+            ViolationEvent ev;
+            ev.type = ViolationType::ModuleModified;
+            ev.severity = Severity::Critical;  // Hash mismatch is definitive proof of tampering
+            ev.address = reinterpret_cast<uintptr_t>(hMods[i]);
+            static const char* hash_msg = "Module hash mismatch - file has been modified";
+            ev.details = hash_msg;
+            ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            
+            static thread_local char module_name_buffer3[256];
+            WideCharToMultiByte(CP_UTF8, 0, modPath, -1, module_name_buffer3, sizeof(module_name_buffer3), NULL, NULL);
+            ev.module_name = module_name_buffer3;
+            ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
+            violations.push_back(ev);
+        }
+        
+        // Check for invalid signature (tampered signed DLL)
+        if (result.signature_status == SignatureStatus::Invalid) {
+            ViolationEvent ev;
+            ev.type = ViolationType::SignatureInvalid;
+            ev.severity = Severity::High;  // Invalid signature indicates tampering
+            ev.address = reinterpret_cast<uintptr_t>(hMods[i]);
+            static const char* invalid_sig_msg = "Invalid or tampered digital signature";
+            ev.details = invalid_sig_msg;
+            ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            
+            static thread_local char module_name_buffer4[256];
+            WideCharToMultiByte(CP_UTF8, 0, modPath, -1, module_name_buffer4, sizeof(module_name_buffer4), NULL, NULL);
+            ev.module_name = module_name_buffer4;
+            ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
+            violations.push_back(ev);
+        }
+    }
+#endif
+
+    return violations;
+}
+
 #else // Non-Windows platforms
 
 void InjectionDetector::Initialize() {
@@ -727,6 +848,10 @@ std::vector<ViolationEvent> InjectionDetector::ScanLoadedModules() {
 }
 
 std::vector<ViolationEvent> InjectionDetector::ScanThreads() {
+    return {};  // Not implemented for non-Windows platforms
+}
+
+std::vector<ViolationEvent> InjectionDetector::ScanModuleSignatures() {
     return {};  // Not implemented for non-Windows platforms
 }
 
