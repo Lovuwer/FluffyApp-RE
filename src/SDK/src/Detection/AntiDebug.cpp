@@ -210,6 +210,10 @@ void AntiDebugDetector::Shutdown() {
     last_check_time_ = 0;
     last_successful_check_time_ = 0;
     last_anomaly_detection_time_ = 0;
+    
+    // Task 11: Clear thread cache
+    last_thread_cache_time_ = 0;
+    cached_thread_ids_.clear();
 }
 
 // Helper: Detect hypervisor using CPUID
@@ -357,6 +361,22 @@ std::vector<ViolationEvent> AntiDebugDetector::FullCheck() {
         ev.type = ViolationType::DebuggerAttached;
         ev.severity = Severity::Critical;
         ev.details = "Hardware breakpoints detected in debug registers";
+        ev.timestamp = 0;
+        ev.address = 0;
+        ev.module_name = nullptr;
+        ev.detection_id = 0;
+        violations.push_back(ev);
+    }
+    
+    // Task 11: Check all threads for hardware breakpoints
+    // This provides comprehensive coverage beyond just the current thread
+    if (CheckAllThreadsHardwareBP()) {
+        ViolationEvent ev;
+        ev.type = ViolationType::DebuggerAttached;
+        // High severity for non-main thread breakpoints (could be legitimate crash debugging)
+        // Correlation with other signals required for Critical severity
+        ev.severity = Severity::High;
+        ev.details = "Hardware breakpoints detected in non-current thread";
         ev.timestamp = 0;
         ev.address = 0;
         ev.module_name = nullptr;
@@ -825,37 +845,68 @@ bool AntiDebugDetector::CheckHeapFlags() {
 }
 
 // Helper function: Check all threads for hardware breakpoints
-// Note: Currently not used in production code, but available for comprehensive scanning
-[[maybe_unused]] static bool CheckAllThreadsHardwareBP() {
+// Task 11: Comprehensive hardware breakpoint detection across all process threads
+// This method scans all threads in the current process for hardware breakpoints
+// Returns true if any thread has breakpoints set, with graceful handling of access failures
+// Implements thread enumeration caching with 5-second refresh for performance
+bool AntiDebugDetector::CheckAllThreadsHardwareBP() {
 #ifdef _WIN32
+    uint64_t current_time = GetTickCount64();
     DWORD currentPid = GetCurrentProcessId();
-    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-    if (snapshot == INVALID_HANDLE_VALUE) return false;
     
-    THREADENTRY32 te;
-    te.dwSize = sizeof(te);
-    
-    bool detected = false;
-    
-    if (Thread32First(snapshot, &te)) {
-        do {
-            if (te.th32OwnerProcessID == currentPid) {
-                HANDLE thread = OpenThread(THREAD_GET_CONTEXT, FALSE, te.th32ThreadID);
-                if (thread) {
-                    CONTEXT ctx;
-                    ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
-                    if (GetThreadContext(thread, &ctx)) {
-                        if (IsHardwareBreakpointSet(ctx)) {
-                            detected = true;
-                        }
-                    }
-                    CloseHandle(thread);
-                }
-            }
-        } while (Thread32Next(snapshot, &te) && !detected);
+    // Task 11: Thread enumeration caching - refresh every 5 seconds
+    bool should_refresh_cache = false;
+    if (last_thread_cache_time_ == 0 || 
+        (current_time - last_thread_cache_time_) >= THREAD_CACHE_REFRESH_MS) {
+        should_refresh_cache = true;
+        last_thread_cache_time_ = current_time;
     }
     
-    CloseHandle(snapshot);
+    // Refresh thread cache if needed
+    if (should_refresh_cache) {
+        cached_thread_ids_.clear();
+        
+        HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+        if (snapshot != INVALID_HANDLE_VALUE) {
+            THREADENTRY32 te;
+            te.dwSize = sizeof(te);
+            
+            if (Thread32First(snapshot, &te)) {
+                do {
+                    if (te.th32OwnerProcessID == currentPid) {
+                        cached_thread_ids_.push_back(te.th32ThreadID);
+                    }
+                } while (Thread32Next(snapshot, &te));
+            }
+            
+            CloseHandle(snapshot);
+        }
+    }
+    
+    // Scan cached thread list for hardware breakpoints
+    bool detected = false;
+    for (uint32_t thread_id : cached_thread_ids_) {
+        HANDLE thread = OpenThread(THREAD_GET_CONTEXT, FALSE, thread_id);
+        if (thread) {
+            CONTEXT ctx;
+            ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+            if (GetThreadContext(thread, &ctx)) {
+                if (IsHardwareBreakpointSet(ctx)) {
+                    detected = true;
+                    CloseHandle(thread);
+                    break;
+                }
+            }
+            // Note: GetThreadContext may fail for system threads or threads
+            // in different protection contexts. This is expected and not treated
+            // as a detection (graceful handling as specified in requirements)
+            CloseHandle(thread);
+        }
+        // Note: OpenThread may fail for protected system threads.
+        // We handle this gracefully by continuing to the next thread
+        // rather than treating it as a detection.
+    }
+    
     return detected;
 #else
     return false;

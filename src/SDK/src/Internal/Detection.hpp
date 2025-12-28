@@ -47,6 +47,7 @@ private:
     void CalibrateTimingBaseline();
     bool DetectHypervisor();
     bool CheckTimingStatistical();
+    bool CheckAllThreadsHardwareBP();
     
     // Rate limiting
     uint64_t last_check_time_ = 0;
@@ -69,6 +70,11 @@ private:
     // Telemetry
     uint64_t timing_check_count_ = 0;
     uint64_t timing_anomaly_count_ = 0;
+    
+    // Thread enumeration caching
+    uint64_t last_thread_cache_time_ = 0;
+    std::vector<uint32_t> cached_thread_ids_;
+    static constexpr uint64_t THREAD_CACHE_REFRESH_MS = 5000;  // 5 seconds
 };
 
 /**

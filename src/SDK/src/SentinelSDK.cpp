@@ -83,6 +83,9 @@ static std::unique_ptr<SDKContext> g_context;
 
 namespace {
 
+// Forward declaration
+void ReportViolation(const ViolationEvent& event);
+
 void SetLastError(const std::string& error) {
     if (g_context) {
         g_context->last_error = error;
@@ -94,6 +97,8 @@ uint64_t GenerateHandle() {
 }
 
 void HeartbeatThreadFunc() {
+    int heartbeat_counter = 0;  // Task 11: Counter for periodic all-thread scanning
+    
     while (g_context && !g_context->shutdown_requested.load()) {
         if (g_context->active.load()) {
             // Perform background integrity checks
@@ -103,13 +108,33 @@ void HeartbeatThreadFunc() {
             
             // Check for debuggers
             if (g_context->anti_debug) {
-                g_context->anti_debug->Check();
+                // Task 11: Perform comprehensive all-thread scan every 10 heartbeats
+                // This balances thoroughness with performance impact
+                if (heartbeat_counter % 10 == 0) {
+                    // FullCheck includes CheckAllThreadsHardwareBP
+                    auto violations = g_context->anti_debug->FullCheck();
+                    
+                    // Report any violations found
+                    for (const auto& violation : violations) {
+                        ReportViolation(violation);
+                    }
+                } else {
+                    // Regular quick check on other heartbeats
+                    auto violations = g_context->anti_debug->Check();
+                    
+                    // Report any violations found
+                    for (const auto& violation : violations) {
+                        ReportViolation(violation);
+                    }
+                }
             }
             
             // Update timing
             if (g_context->speed_hack) {
                 g_context->speed_hack->UpdateBaseline();
             }
+            
+            heartbeat_counter++;
         }
         
         std::this_thread::sleep_for(
