@@ -136,7 +136,7 @@ std::vector<ViolationEvent> IntegrityChecker::QuickCheck() {
         ev.severity = Severity::Critical;
         ev.address = code_section_base_;
         ev.details = "Code section hash mismatch";
-        ev.module_name = nullptr;
+        ev.module_name = "";
         ev.timestamp = 0;
         ev.detection_id = 0;
         violations.push_back(ev);
@@ -152,10 +152,8 @@ std::vector<ViolationEvent> IntegrityChecker::QuickCheck() {
                 ev.type = ViolationType::MemoryWrite;
                 ev.severity = Severity::High;
                 ev.address = registered_regions_[i].address;
-                // Store a static string to avoid dangling pointer
-                static const char* detail_msg = "Protected region modified";
-                ev.details = detail_msg;
-                ev.module_name = nullptr;
+                ev.details = "Protected region modified";
+                ev.module_name = "";
                 ev.timestamp = 0;
                 ev.detection_id = 0;
                 violations.push_back(ev);
@@ -175,7 +173,7 @@ std::vector<ViolationEvent> IntegrityChecker::FullScan() {
         ev.severity = Severity::Critical;
         ev.address = code_section_base_;
         ev.details = "Code section hash mismatch";
-        ev.module_name = nullptr;
+        ev.module_name = "";
         ev.timestamp = 0;
         ev.detection_id = 0;
         violations.push_back(ev);
@@ -190,10 +188,8 @@ std::vector<ViolationEvent> IntegrityChecker::FullScan() {
                 ev.type = ViolationType::MemoryWrite;
                 ev.severity = Severity::High;
                 ev.address = region.address;
-                // Store a static string to avoid dangling pointer
-                static const char* detail_msg = "Protected region modified";
-                ev.details = detail_msg;
-                ev.module_name = nullptr;
+                ev.details = "Protected region modified";
+                ev.module_name = "";
                 ev.timestamp = 0;
                 ev.detection_id = 0;
                 violations.push_back(ev);

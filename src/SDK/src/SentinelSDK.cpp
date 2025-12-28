@@ -807,4 +807,43 @@ SENTINEL_API const char* SENTINEL_CALL SentinelGetVersion() {
     return Sentinel::SDK::GetVersion();
 }
 
+}  // extern "C"
+
+// ==================== DLL Entry Point ====================
+
+#ifdef _WIN32
+// DLL entry point for handling process attach/detach
+// This is crucial for preventing use-after-free vulnerabilities when the DLL is unloaded
+BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
+    (void)hinstDLL;  // Unused
+    (void)lpvReserved;  // Unused
+    
+    switch (fdwReason) {
+        case DLL_PROCESS_ATTACH:
+            // DLL is being loaded - no action needed
+            break;
+            
+        case DLL_PROCESS_DETACH:
+            // DLL is being unloaded - flush pending events to prevent resource leaks
+            if (Sentinel::SDK::g_context && Sentinel::SDK::g_context->reporter) {
+                // Flush all pending events before DLL teardown
+                // ViolationEvent now uses std::string (owned copies), but we still flush
+                // to ensure proper cleanup and prevent queued events from being lost
+                Sentinel::SDK::g_context->reporter->Flush();
+            }
+            
+            // Note: We don't call Shutdown() here because:
+            // 1. It may have already been called
+            // 2. DllMain has restrictions on what functions can be called
+            // 3. The flush above is sufficient to prevent use-after-free
+            break;
+            
+        case DLL_THREAD_ATTACH:
+        case DLL_THREAD_DETACH:
+            // Thread attach/detach - no action needed
+            break;
+    }
+    
+    return TRUE;
 }
+#endif

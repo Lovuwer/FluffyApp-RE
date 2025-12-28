@@ -1023,9 +1023,8 @@ std::vector<ViolationEvent> AntiHookDetector::QuickCheck() {
                 ev.type = ViolationType::InlineHook;
                 ev.severity = Severity::Critical;
                 ev.address = func.address;
-                static const char* detail_msg = "Inline hook detected";
-                ev.details = detail_msg;
-                ev.module_name = nullptr;
+                ev.details = "Inline hook detected";
+                ev.module_name = "";
                 ev.timestamp = GetCurrentTimeMs();
                 ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
                 violations.push_back(ev);
@@ -1077,8 +1076,7 @@ std::vector<ViolationEvent> AntiHookDetector::ScanCriticalAPIs() {
             ev.type = ViolationType::IATHook;
             ev.severity = Severity::High;  // Reduced from Critical - IAT hooks are primitive
             ev.address = 0;
-            static const char* detail_msg = "IAT hook detected";
-            ev.details = detail_msg;
+            ev.details = "IAT hook detected";
             ev.module_name = api.module;
             ev.timestamp = current_time;
             // Include API index to prevent ID collisions
@@ -1104,9 +1102,8 @@ std::vector<ViolationEvent> AntiHookDetector::CheckHoneypots() {
             ev.type = ViolationType::InlineHook;
             ev.severity = Severity::Critical;  // Honeypot modification = guaranteed cheat
             ev.address = honeypot.address;
-            static const char* detail_msg = "Honeypot function modified - cheat detected";
-            ev.details = detail_msg;
-            ev.module_name = nullptr;
+            ev.details = "Honeypot function modified - cheat detected";
+            ev.module_name = "";
             ev.timestamp = current_time;
             ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp ^ 0xDEADBEEF);
             violations.push_back(ev);
@@ -1188,9 +1185,8 @@ std::vector<ViolationEvent> AntiHookDetector::FullScan() {
                     ev.type = ViolationType::InlineHook;
                     ev.severity = Severity::Critical;
                     ev.address = func.address;
-                    static const char* detail_msg = "Inline hook detected";
-                    ev.details = detail_msg;
-                    ev.module_name = nullptr;
+                    ev.details = "Inline hook detected";
+                    ev.module_name = "";
                     ev.timestamp = GetCurrentTimeMs();
                     ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
                     violations.push_back(ev);

@@ -85,6 +85,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <string>
 
 namespace Sentinel {
 namespace SDK {
@@ -189,14 +190,17 @@ enum class Severity : uint8_t {
 
 /**
  * Security violation event data
+ * 
+ * NOTE: Uses std::string for module_name and details to prevent use-after-free
+ * vulnerabilities when the SDK DLL is unloaded. All strings are owned copies.
  */
 struct ViolationEvent {
     ViolationType type;         ///< Type of violation
     Severity severity;          ///< Severity level
     uint64_t timestamp;         ///< Event timestamp (ms since init)
     uint64_t address;           ///< Related memory address (if applicable)
-    const char* module_name;    ///< Related module name
-    const char* details;        ///< Additional details
+    std::string module_name;    ///< Related module name (owned copy)
+    std::string details;        ///< Additional details (owned copy)
     uint32_t detection_id;      ///< Unique detection identifier
 };
 

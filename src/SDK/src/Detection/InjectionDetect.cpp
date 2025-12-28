@@ -109,11 +109,10 @@ std::vector<ViolationEvent> InjectionDetector::ScanLoadedModules() {
             ev.type = ViolationType::InjectedCode;
             ev.severity = Severity::Critical;
             ev.address = address;
-            static const char* attack_msg = "Memory scan aborted - exception limit exceeded (active attack)";
-            ev.details = attack_msg;
+            ev.details = "Memory scan aborted - exception limit exceeded (active attack)";
             ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count();
-            ev.module_name = nullptr;
+            ev.module_name = "";
             ev.detection_id = static_cast<uint32_t>(0xDEADC0DE ^ ev.timestamp);
             violations.push_back(ev);
             break;
@@ -130,11 +129,10 @@ std::vector<ViolationEvent> InjectionDetector::ScanLoadedModules() {
                 ev.type = ViolationType::InjectedCode;
                 ev.severity = Severity::Critical;
                 ev.address = 0;
-                static const char* veh_msg = "VEH tampering detected during memory scan";
-                ev.details = veh_msg;
+                ev.details = "VEH tampering detected during memory scan";
                 ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::steady_clock::now().time_since_epoch()).count();
-                ev.module_name = nullptr;
+                ev.module_name = "";
                 ev.detection_id = static_cast<uint32_t>(0xBADCA9A7 ^ ev.timestamp);
                 violations.push_back(ev);
                 break;
@@ -171,12 +169,10 @@ std::vector<ViolationEvent> InjectionDetector::ScanLoadedModules() {
                 ev.type = ViolationType::InjectedCode;
                 ev.severity = GetSeverityFromScore(score);
                 ev.address = (uintptr_t)mbi.BaseAddress;
-                // Use a static string literal to avoid use-after-free
-                static const char* detail_msg = "Executable private memory detected";
-                ev.details = detail_msg;
+                ev.details = "Executable private memory detected";
                 ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::steady_clock::now().time_since_epoch()).count();
-                ev.module_name = nullptr;
+                ev.module_name = "";
                 ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
                 violations.push_back(ev);
             }
@@ -312,13 +308,11 @@ std::vector<ViolationEvent> InjectionDetector::ScanThreads() {
                     ViolationEvent ev;
                     ev.type = ViolationType::SuspiciousThread;
                     ev.severity = Severity::High;
-                    // Use a static string literal to avoid use-after-free
-                    static const char* detail_msg = "Thread with suspicious start address detected";
-                    ev.details = detail_msg;
+                    ev.details = "Thread with suspicious start address detected";
                     ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::steady_clock::now().time_since_epoch()).count();
                     ev.address = te.th32ThreadID;  // Store thread ID in address field
-                    ev.module_name = nullptr;
+                    ev.module_name = "";
                     ev.detection_id = static_cast<uint32_t>(te.th32ThreadID ^ ev.timestamp);
                     violations.push_back(ev);
                 }
@@ -785,8 +779,7 @@ std::vector<ViolationEvent> InjectionDetector::ScanModuleSignatures() {
             ev.type = ViolationType::CodeInjection;
             ev.severity = Severity::Critical;  // Proxy DLLs are high risk
             ev.address = reinterpret_cast<uintptr_t>(hMods[i]);
-            static const char* proxy_msg = "System DLL loaded from game directory (possible DLL proxy)";
-            ev.details = proxy_msg;
+            ev.details = "System DLL loaded from game directory (possible DLL proxy)";
             ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count();
             
@@ -794,10 +787,7 @@ std::vector<ViolationEvent> InjectionDetector::ScanModuleSignatures() {
             char module_name_utf8[256];
             WideCharToMultiByte(CP_UTF8, 0, modPath, -1, module_name_utf8, sizeof(module_name_utf8), NULL, NULL);
             
-            // Store in a dynamically allocated string to avoid lifetime issues
-            static std::vector<std::string> module_name_storage;
-            module_name_storage.push_back(module_name_utf8);
-            ev.module_name = module_name_storage.back().c_str();
+            ev.module_name = module_name_utf8;
             ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
             violations.push_back(ev);
             continue;
@@ -822,17 +812,14 @@ std::vector<ViolationEvent> InjectionDetector::ScanModuleSignatures() {
                 ev.type = ViolationType::SignatureInvalid;
                 ev.severity = Severity::High;  // Unsigned DLLs are suspicious but not necessarily malicious
                 ev.address = reinterpret_cast<uintptr_t>(hMods[i]);
-                static const char* unsigned_msg = "Unsigned DLL loaded in game process";
-                ev.details = unsigned_msg;
+                ev.details = "Unsigned DLL loaded in game process";
                 ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::steady_clock::now().time_since_epoch()).count();
                 
                 char module_name_utf8[256];
                 WideCharToMultiByte(CP_UTF8, 0, modPath, -1, module_name_utf8, sizeof(module_name_utf8), NULL, NULL);
                 
-                static std::vector<std::string> module_name_storage;
-                module_name_storage.push_back(module_name_utf8);
-                ev.module_name = module_name_storage.back().c_str();
+                ev.module_name = module_name_utf8;
                 ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
                 violations.push_back(ev);
             }
@@ -844,17 +831,14 @@ std::vector<ViolationEvent> InjectionDetector::ScanModuleSignatures() {
             ev.type = ViolationType::ModuleModified;
             ev.severity = Severity::Critical;  // Hash mismatch is definitive proof of tampering
             ev.address = reinterpret_cast<uintptr_t>(hMods[i]);
-            static const char* hash_msg = "Module hash mismatch - file has been modified";
-            ev.details = hash_msg;
+            ev.details = "Module hash mismatch - file has been modified";
             ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count();
             
             char module_name_utf8[256];
             WideCharToMultiByte(CP_UTF8, 0, modPath, -1, module_name_utf8, sizeof(module_name_utf8), NULL, NULL);
             
-            static std::vector<std::string> module_name_storage;
-            module_name_storage.push_back(module_name_utf8);
-            ev.module_name = module_name_storage.back().c_str();
+            ev.module_name = module_name_utf8;
             ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
             violations.push_back(ev);
         }
@@ -865,17 +849,14 @@ std::vector<ViolationEvent> InjectionDetector::ScanModuleSignatures() {
             ev.type = ViolationType::SignatureInvalid;
             ev.severity = Severity::High;  // Invalid signature indicates tampering
             ev.address = reinterpret_cast<uintptr_t>(hMods[i]);
-            static const char* invalid_sig_msg = "Invalid or tampered digital signature";
-            ev.details = invalid_sig_msg;
+            ev.details = "Invalid or tampered digital signature";
             ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count();
             
             char module_name_utf8[256];
             WideCharToMultiByte(CP_UTF8, 0, modPath, -1, module_name_utf8, sizeof(module_name_utf8), NULL, NULL);
             
-            static std::vector<std::string> module_name_storage;
-            module_name_storage.push_back(module_name_utf8);
-            ev.module_name = module_name_storage.back().c_str();
+            ev.module_name = module_name_utf8;
             ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
             violations.push_back(ev);
         }
