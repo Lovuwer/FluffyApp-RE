@@ -747,10 +747,14 @@ std::vector<ViolationEvent> InjectionDetector::ScanModuleSignatures() {
             ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count();
             
-            // Store module path in a static buffer (simplified - in production, use proper memory management)
-            static thread_local char module_name_buffer[256];
-            WideCharToMultiByte(CP_UTF8, 0, modPath, -1, module_name_buffer, sizeof(module_name_buffer), NULL, NULL);
-            ev.module_name = module_name_buffer;
+            // Convert module path to UTF-8
+            char module_name_utf8[256];
+            WideCharToMultiByte(CP_UTF8, 0, modPath, -1, module_name_utf8, sizeof(module_name_utf8), NULL, NULL);
+            
+            // Store in a dynamically allocated string to avoid lifetime issues
+            static std::vector<std::string> module_name_storage;
+            module_name_storage.push_back(module_name_utf8);
+            ev.module_name = module_name_storage.back().c_str();
             ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
             violations.push_back(ev);
             continue;
@@ -780,9 +784,12 @@ std::vector<ViolationEvent> InjectionDetector::ScanModuleSignatures() {
                 ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::steady_clock::now().time_since_epoch()).count();
                 
-                static thread_local char module_name_buffer2[256];
-                WideCharToMultiByte(CP_UTF8, 0, modPath, -1, module_name_buffer2, sizeof(module_name_buffer2), NULL, NULL);
-                ev.module_name = module_name_buffer2;
+                char module_name_utf8[256];
+                WideCharToMultiByte(CP_UTF8, 0, modPath, -1, module_name_utf8, sizeof(module_name_utf8), NULL, NULL);
+                
+                static std::vector<std::string> module_name_storage;
+                module_name_storage.push_back(module_name_utf8);
+                ev.module_name = module_name_storage.back().c_str();
                 ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
                 violations.push_back(ev);
             }
@@ -799,9 +806,12 @@ std::vector<ViolationEvent> InjectionDetector::ScanModuleSignatures() {
             ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count();
             
-            static thread_local char module_name_buffer3[256];
-            WideCharToMultiByte(CP_UTF8, 0, modPath, -1, module_name_buffer3, sizeof(module_name_buffer3), NULL, NULL);
-            ev.module_name = module_name_buffer3;
+            char module_name_utf8[256];
+            WideCharToMultiByte(CP_UTF8, 0, modPath, -1, module_name_utf8, sizeof(module_name_utf8), NULL, NULL);
+            
+            static std::vector<std::string> module_name_storage;
+            module_name_storage.push_back(module_name_utf8);
+            ev.module_name = module_name_storage.back().c_str();
             ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
             violations.push_back(ev);
         }
@@ -817,9 +827,12 @@ std::vector<ViolationEvent> InjectionDetector::ScanModuleSignatures() {
             ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count();
             
-            static thread_local char module_name_buffer4[256];
-            WideCharToMultiByte(CP_UTF8, 0, modPath, -1, module_name_buffer4, sizeof(module_name_buffer4), NULL, NULL);
-            ev.module_name = module_name_buffer4;
+            char module_name_utf8[256];
+            WideCharToMultiByte(CP_UTF8, 0, modPath, -1, module_name_utf8, sizeof(module_name_utf8), NULL, NULL);
+            
+            static std::vector<std::string> module_name_storage;
+            module_name_storage.push_back(module_name_utf8);
+            ev.module_name = module_name_storage.back().c_str();
             ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
             violations.push_back(ev);
         }

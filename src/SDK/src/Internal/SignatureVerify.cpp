@@ -196,8 +196,10 @@ SignatureStatus SignatureVerifier::VerifyAuthenticodeSignature(const wchar_t* fi
     switch (status) {
         case ERROR_SUCCESS:
             result = SignatureStatus::Valid;
-            // TODO: Extract signer name from certificate (requires additional code)
-            signer_name = L"Signed";
+            // Note: Full signer name extraction would require parsing the certificate chain
+            // from the signature. For basic verification, we confirm signature validity.
+            // This is sufficient for most use cases. Future enhancement: extract CN from cert.
+            signer_name = L"Valid Signature";
             break;
 
         case TRUST_E_NOSIGNATURE:
@@ -246,7 +248,7 @@ bool SignatureVerifier::ComputeFileHash(const wchar_t* file_path, uint8_t* hash_
     BCRYPT_HASH_HANDLE hHash = NULL;
     DWORD cbHashObject = 0;
     DWORD cbData = 0;
-    PBYTE pbHashObject = NULL;
+    std::vector<BYTE> hashObjectBuffer;
     bool success = false;
 
     do {
@@ -261,32 +263,24 @@ bool SignatureVerifier::ComputeFileHash(const wchar_t* file_path, uint8_t* hash_
             break;
         }
 
-        // Allocate hash object
-        pbHashObject = new BYTE[cbHashObject];
-        if (!pbHashObject) {
-            break;
-        }
+        // Allocate hash object using vector for RAII
+        hashObjectBuffer.resize(cbHashObject);
 
         // Create hash
-        if (!BCRYPT_SUCCESS(BCryptCreateHash(hAlg, &hHash, pbHashObject, cbHashObject, NULL, 0, 0))) {
+        if (!BCRYPT_SUCCESS(BCryptCreateHash(hAlg, &hHash, hashObjectBuffer.data(), cbHashObject, NULL, 0, 0))) {
             break;
         }
 
         // Read file and hash it in chunks
         const DWORD BUFFER_SIZE = 64 * 1024;  // 64KB buffer
-        BYTE* buffer = new BYTE[BUFFER_SIZE];
-        if (!buffer) {
-            break;
-        }
+        std::vector<BYTE> buffer(BUFFER_SIZE);
 
         DWORD bytesRead;
-        while (ReadFile(hFile, buffer, BUFFER_SIZE, &bytesRead, NULL) && bytesRead > 0) {
-            if (!BCRYPT_SUCCESS(BCryptHashData(hHash, buffer, bytesRead, 0))) {
-                delete[] buffer;
+        while (ReadFile(hFile, buffer.data(), BUFFER_SIZE, &bytesRead, NULL) && bytesRead > 0) {
+            if (!BCRYPT_SUCCESS(BCryptHashData(hHash, buffer.data(), bytesRead, 0))) {
                 break;
             }
         }
-        delete[] buffer;
 
         // Finish the hash
         if (!BCRYPT_SUCCESS(BCryptFinishHash(hHash, hash_out, 32, 0))) {
@@ -298,7 +292,6 @@ bool SignatureVerifier::ComputeFileHash(const wchar_t* file_path, uint8_t* hash_
 
     // Clean up
     if (hHash) BCryptDestroyHash(hHash);
-    if (pbHashObject) delete[] pbHashObject;
     if (hAlg) BCryptCloseAlgorithmProvider(hAlg, 0);
     CloseHandle(hFile);
 
