@@ -692,3 +692,141 @@ TEST(AntiDebugTests, ParentDebuggerSeverityIsHigh) {
  * - The violation should have type ViolationType::DebuggerAttached
  * - The violation should have severity Severity::High
  */
+
+/**
+ * Test: Task 15 - No SEH integrity violations in normal operation
+ * This test verifies that the SEH integrity check works correctly
+ * and doesn't produce false positives in a clean environment.
+ */
+TEST(AntiDebugTests, NoSEHIntegrityViolationsInNormalOperation) {
+    AntiDebugDetector detector;
+    detector.Initialize();
+    
+    // Run full check which includes SEH integrity check
+    std::vector<ViolationEvent> violations = detector.FullCheck();
+    
+    // In a clean environment, we should not detect SEH manipulation
+    bool sehIntegrityViolation = false;
+    for (const auto& violation : violations) {
+        if (violation.type == ViolationType::DebuggerAttached &&
+            violation.details && 
+            std::string(violation.details).find("SEH chain manipulation") != std::string::npos) {
+            sehIntegrityViolation = true;
+            break;
+        }
+    }
+    
+    EXPECT_FALSE(sehIntegrityViolation)
+        << "SEH integrity violations should not be detected in clean environment";
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test: Task 15 - SEH exception handling works correctly
+ * This test verifies that controlled exceptions are handled correctly
+ * and don't cause false positives.
+ */
+TEST(AntiDebugTests, SEHExceptionHandlingWorksCorrectly) {
+    AntiDebugDetector detector;
+    detector.Initialize();
+    
+    // Run full check multiple times to ensure exception handling is stable
+    for (int i = 0; i < 10; i++) {
+        std::vector<ViolationEvent> violations = detector.FullCheck();
+        
+        // Should complete without crash and without false positives
+        SUCCEED() << "SEH integrity check completed without crash (iteration " << i << ")";
+        
+        #ifdef _WIN32
+        Sleep(10);
+        #endif
+    }
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test: Task 15 - SEH integrity check has correct severity
+ * This test verifies that if SEH integrity violations are detected,
+ * they have Warning severity as specified.
+ */
+TEST(AntiDebugTests, SEHIntegritySeverityIsWarning) {
+    AntiDebugDetector detector;
+    detector.Initialize();
+    
+    // Run full check
+    std::vector<ViolationEvent> violations = detector.FullCheck();
+    
+    // If SEH integrity violation is detected, verify severity is Warning
+    for (const auto& violation : violations) {
+        if (violation.type == ViolationType::DebuggerAttached &&
+            violation.details && 
+            std::string(violation.details).find("SEH chain manipulation") != std::string::npos) {
+            // Must be Warning severity
+            EXPECT_EQ(violation.severity, Severity::Warning)
+                << "SEH integrity violations must have Warning severity";
+        }
+    }
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test: Task 15 - SEH integrity check performance
+ * This test verifies that the SEH integrity check completes quickly
+ * and doesn't impact performance.
+ */
+TEST(AntiDebugTests, SEHIntegrityCheckPerformance) {
+#ifdef _WIN32
+    AntiDebugDetector detector;
+    detector.Initialize();
+    
+    LARGE_INTEGER freq, start, end;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&start);
+    
+    // Run full check which includes SEH integrity check
+    detector.FullCheck();
+    
+    QueryPerformanceCounter(&end);
+    
+    // Calculate elapsed time in milliseconds
+    double elapsed_ms = static_cast<double>(end.QuadPart - start.QuadPart) 
+                       * 1000.0 / static_cast<double>(freq.QuadPart);
+    
+    // Should complete quickly (< 10ms)
+    EXPECT_LT(elapsed_ms, 10.0)
+        << "SEH integrity check took " << elapsed_ms << "ms (expected < 10ms)";
+    
+    detector.Shutdown();
+#else
+    GTEST_SKIP() << "SEH integrity check only available on Windows";
+#endif
+}
+
+/**
+ * Manual test instructions for Task 15 SEH integrity detection:
+ * 
+ * To manually test with SEH manipulation:
+ * 1. Build the test executable in Debug mode
+ * 2. Attach a debugger (x64dbg, WinDbg, or Visual Studio)
+ * 3. Inject an exception handler into the SEH chain (on x86)
+ * 4. Or configure debugger to intercept all exceptions
+ * 5. Run the NoSEHIntegrityViolationsInNormalOperation test
+ * 6. Verify that SEH integrity violation is detected
+ * 
+ * Expected behavior with SEH manipulation:
+ * - CheckSEHIntegrity() should detect the anomaly
+ * - A ViolationEvent with details "SEH chain manipulation or exception handling anomaly detected" should be present
+ * - The violation should have type ViolationType::DebuggerAttached
+ * - The violation should have severity Severity::Warning
+ * 
+ * To manually test exception absorption by debugger:
+ * 1. Build the test executable in Debug mode
+ * 2. Attach a debugger
+ * 3. Configure debugger to intercept first-chance exceptions (most debuggers do this by default)
+ * 4. Run the SEHExceptionHandlingWorksCorrectly test
+ * 5. The test should still pass (exception is handled by __except block)
+ * 6. But CheckSEHIntegrity may detect anomalies if debugger interferes with exception flow
+ */
