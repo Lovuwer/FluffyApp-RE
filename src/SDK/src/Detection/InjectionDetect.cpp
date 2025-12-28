@@ -84,6 +84,9 @@ void InjectionDetector::EnumerateKnownModules() {
 std::vector<ViolationEvent> InjectionDetector::ScanLoadedModules() {
     std::vector<ViolationEvent> violations;
     
+    // Task 5: Reset exception statistics at start of scan cycle
+    SafeMemory::ResetExceptionStats();
+    
     // Scan entire address space
     SYSTEM_INFO sysInfo;
     GetSystemInfo(&sysInfo);
@@ -91,7 +94,54 @@ std::vector<ViolationEvent> InjectionDetector::ScanLoadedModules() {
     uintptr_t address = (uintptr_t)sysInfo.lpMinimumApplicationAddress;
     uintptr_t maxAddress = (uintptr_t)sysInfo.lpMaximumApplicationAddress;
     
+    // Task 5: Track scan iterations for canary validation
+    int scan_iteration = 0;
+    const int CANARY_CHECK_INTERVAL = 100;  // Validate canary every 100 regions
+    
     while (address < maxAddress) {
+        // Task 5: Check exception limit - abort if exceeded
+        if (SafeMemory::IsExceptionLimitExceeded(10)) {
+            #ifdef _DEBUG
+            fprintf(stderr, "[InjectionDetect] Exception limit exceeded - aborting scan (active attack detected)\n");
+            #endif
+            
+            ViolationEvent ev;
+            ev.type = ViolationType::InjectedCode;
+            ev.severity = Severity::Critical;
+            ev.address = address;
+            static const char* attack_msg = "Memory scan aborted - exception limit exceeded (active attack)";
+            ev.details = attack_msg;
+            ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            ev.module_name = nullptr;
+            ev.detection_id = static_cast<uint32_t>(0xDEADC0DE ^ ev.timestamp);
+            violations.push_back(ev);
+            break;
+        }
+        
+        // Task 5: Periodically validate scan canary to detect VEH tampering
+        if ((scan_iteration % CANARY_CHECK_INTERVAL) == 0) {
+            if (!SafeMemory::ValidateScanCanary()) {
+                #ifdef _DEBUG
+                fprintf(stderr, "[InjectionDetect] Scan canary validation failed - VEH tampering detected\n");
+                #endif
+                
+                ViolationEvent ev;
+                ev.type = ViolationType::InjectedCode;
+                ev.severity = Severity::Critical;
+                ev.address = 0;
+                static const char* veh_msg = "VEH tampering detected during memory scan";
+                ev.details = veh_msg;
+                ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count();
+                ev.module_name = nullptr;
+                ev.detection_id = static_cast<uint32_t>(0xBADCA9A7 ^ ev.timestamp);
+                violations.push_back(ev);
+                break;
+            }
+        }
+        scan_iteration++;
+        
         MEMORY_BASIC_INFORMATION mbi;
         
         // Safely query memory - check if address is accessible first
@@ -134,6 +184,20 @@ std::vector<ViolationEvent> InjectionDetector::ScanLoadedModules() {
         
         address = (uintptr_t)mbi.BaseAddress + mbi.RegionSize;
     }
+    
+    // Task 5: Log exception statistics for this scan cycle
+    #ifdef _DEBUG
+    auto& stats = SafeMemory::GetExceptionStats();
+    if (stats.GetTotalExceptions() > 0) {
+        fprintf(stderr, "[InjectionDetect] Scan completed with %u exceptions: "
+                "AV=%u, Guard=%u, StackOv=%u, Other=%u\n",
+                stats.GetTotalExceptions(),
+                stats.access_violations,
+                stats.guard_page_hits,
+                stats.stack_overflows,
+                stats.other_exceptions);
+    }
+    #endif
     
     return violations;
 }

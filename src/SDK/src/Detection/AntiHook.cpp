@@ -966,6 +966,9 @@ std::vector<ViolationEvent> AntiHookDetector::QuickCheck() {
     std::vector<ViolationEvent> violations;
     std::lock_guard<std::mutex> lock(functions_mutex_);
     
+    // Task 5: Reset exception statistics at start of scan cycle
+    SafeMemory::ResetExceptionStats();
+    
     // Apply jitter at scan-cycle boundary (before starting scan)
     ApplyScanCycleJitter();
     
@@ -982,8 +985,30 @@ std::vector<ViolationEvent> AntiHookDetector::QuickCheck() {
     std::vector<size_t> indices_to_scan;
     SelectFunctionsToScan(indices_to_scan, scan_count);
     
+    // Task 5: Track scan iterations for canary validation
+    int scan_iteration = 0;
+    
     // Scan selected functions with budget enforcement
     for (size_t idx : indices_to_scan) {
+        // Task 5: Check exception limit - abort if exceeded
+        if (SafeMemory::IsExceptionLimitExceeded(10)) {
+            #ifdef _DEBUG
+            fprintf(stderr, "[AntiHook] Exception limit exceeded - aborting scan (active attack detected)\n");
+            #endif
+            break;
+        }
+        
+        // Task 5: Validate scan canary every 10 functions
+        if ((scan_iteration % 10) == 0) {
+            if (!SafeMemory::ValidateScanCanary()) {
+                #ifdef _DEBUG
+                fprintf(stderr, "[AntiHook] Scan canary validation failed - VEH tampering detected\n");
+                #endif
+                break;
+            }
+        }
+        scan_iteration++;
+        
         // Check scan budget - abort if we've exceeded 5ms
         uint64_t elapsed = GetCurrentTimeMs() - current_scan_start_time_ms_;
         if (elapsed >= SCAN_BUDGET_MS) {
@@ -1097,11 +1122,17 @@ std::vector<ViolationEvent> AntiHookDetector::CheckHoneypots() {
 std::vector<ViolationEvent> AntiHookDetector::FullScan() {
     std::vector<ViolationEvent> violations;
     
+    // Task 5: Reset exception statistics at start of scan cycle
+    SafeMemory::ResetExceptionStats();
+    
     // Apply jitter at scan-cycle boundary (before starting scan)
     ApplyScanCycleJitter();
     
     // Start scan budget timer
     current_scan_start_time_ms_ = GetCurrentTimeMs();
+    
+    // Task 5: Track scan iterations for canary validation
+    int scan_iteration = 0;
     
     // Inline hook checks with probabilistic scanning and budget enforcement
     {
@@ -1124,6 +1155,25 @@ std::vector<ViolationEvent> AntiHookDetector::FullScan() {
         SelectFunctionsToScan(indices_to_scan, scan_count);
         
         for (size_t idx : indices_to_scan) {
+            // Task 5: Check exception limit - abort if exceeded
+            if (SafeMemory::IsExceptionLimitExceeded(10)) {
+                #ifdef _DEBUG
+                fprintf(stderr, "[AntiHook] Exception limit exceeded in FullScan - aborting\n");
+                #endif
+                break;
+            }
+            
+            // Task 5: Validate scan canary every 10 functions
+            if ((scan_iteration % 10) == 0) {
+                if (!SafeMemory::ValidateScanCanary()) {
+                    #ifdef _DEBUG
+                    fprintf(stderr, "[AntiHook] Scan canary validation failed in FullScan\n");
+                    #endif
+                    break;
+                }
+            }
+            scan_iteration++;
+            
             // Check scan budget - abort if we've exceeded budget
             uint64_t elapsed = GetCurrentTimeMs() - current_scan_start_time_ms_;
             if (elapsed >= SCAN_BUDGET_MS) {
