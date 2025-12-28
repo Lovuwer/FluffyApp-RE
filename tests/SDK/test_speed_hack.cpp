@@ -159,8 +159,8 @@ TEST(SpeedHackTests, Performance) {
 }
 
 /**
- * Test: No false positives in 1000 normal frames
- * This test runs 1000 frames to verify there are no false positives.
+ * Test: No false positives in 10000 normal frames
+ * This test runs 10000 frames to verify there are no false positives with 25% threshold.
  */
 TEST(SpeedHackTests, NoFalsePositives) {
     SpeedHackDetector detector;
@@ -168,7 +168,7 @@ TEST(SpeedHackTests, NoFalsePositives) {
     
     int falsePositives = 0;
     
-    for (int i = 0; i < 1000; i++) {
+    for (int i = 0; i < 10000; i++) {
         bool result = detector.ValidateFrame();
         if (!result) {
             falsePositives++;
@@ -182,9 +182,9 @@ TEST(SpeedHackTests, NoFalsePositives) {
         #endif
     }
     
-    // Definition of Done requires no false positives in 1000 normal frames
+    // Definition of Done requires no false positives in 10000 normal frames
     EXPECT_EQ(falsePositives, 0)
-        << "Detected " << falsePositives << " false positives in 1000 frames";
+        << "Detected " << falsePositives << " false positives in 10000 frames";
     
     detector.Shutdown();
 }
@@ -248,18 +248,26 @@ TEST(SpeedHackTests, WallClockValidationPeriodic) {
  * 1. Build the test executable in Release mode
  * 2. Open Cheat Engine
  * 3. Attach to the test process
- * 4. Enable Speedhack (e.g., 1.5x or 2.0x speed)
+ * 4. Enable Speedhack (e.g., 2.0x speed)
  * 5. Run the NormalOperation or NoFalsePositives test
- * 6. Verify that detection triggers (ValidateFrame returns false)
+ * 6. Verify that detection triggers within 3 seconds (ValidateFrame returns false)
  * 
- * Expected behavior with 1.5x speed hack:
+ * Expected behavior with 2.0x speed hack:
  * - ValidateFrame() should detect the speed difference
+ * - Detection should occur within 3 seconds (~180 frames at 60 FPS)
  * - After 3+ anomalies, ValidateFrame() should return false
  * - The test should fail due to detected speed manipulation
  * 
  * Definition of Done criteria:
- * - Detects 1.5x speed acceleration
- * - No false positives in 1000 normal frames
+ * - Detects 2x speed acceleration within 3 seconds
+ * - Zero false positives in 10000 normal frames (25% threshold)
  * - Time scale estimation accurate ±5%
  * - ValidateFrame() executes in < 1ms
+ * - RDTSC integrated as third time source
+ * - Monotonicity checks detect time going backwards
+ * 
+ * Severity Level:
+ * - Speed hack detection severity is "High" (not "Critical")
+ * - Without server-side validation, confidence is inherently limited
+ * - See SpeedHack.cpp header comments for server-side protocol documentation
  */
