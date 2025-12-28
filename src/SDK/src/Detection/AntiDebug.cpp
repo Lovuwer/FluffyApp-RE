@@ -1081,7 +1081,7 @@ bool AntiDebugDetector::CheckParentProcessDebugger() {
     if (Process32FirstW(snapshot, &pe)) {
         do {
             if (pe.th32ProcessID == parentPid) {
-                wcsncpy_s(parentName, MAX_PATH, pe.szExeFile, _TRUNCATE);
+                wcsncpy_s(parentName, _countof(parentName), pe.szExeFile, _TRUNCATE);
                 gotParentName = true;
                 break;
             }
@@ -1098,7 +1098,7 @@ bool AntiDebugDetector::CheckParentProcessDebugger() {
     
     // Convert to lowercase for case-insensitive comparison
     // Using _wcslwr_s for safer string manipulation
-    _wcslwr_s(parentName, MAX_PATH);
+    _wcslwr_s(parentName, _countof(parentName));
     
     // Known debugger process names
     const wchar_t* debuggers[] = {
