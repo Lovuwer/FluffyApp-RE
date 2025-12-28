@@ -373,7 +373,8 @@ std::vector<ViolationEvent> AntiDebugDetector::FullCheck() {
     if (CheckAllThreadsHardwareBP()) {
         ViolationEvent ev;
         ev.type = ViolationType::DebuggerAttached;
-        // High severity for non-main thread breakpoints (could be legitimate crash debugging)
+        // High severity for breakpoints on threads other than current thread
+        // (could be legitimate crash debugging or render thread debugging)
         // Correlation with other signals required for Critical severity
         ev.severity = Severity::High;
         ev.details = "Hardware breakpoints detected in non-current thread";
