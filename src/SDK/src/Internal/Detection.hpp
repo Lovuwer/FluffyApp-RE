@@ -172,6 +172,9 @@ private:
     uint64_t GetRDTSC();
     bool ValidateSourceRatios();
     bool ValidateAgainstWallClock();
+    void RecalibrateRDTSC();
+    bool DetectHypervisor();
+    bool IsFrequencyPlausible(double frequency_mhz);
     
     // Multiple time sources for cross-validation
     uint64_t baseline_system_time_ = 0;
@@ -193,11 +196,19 @@ private:
     // RDTSC calibration
     double rdtsc_frequency_mhz_ = 0.0;
     uint64_t rdtsc_calibration_time_ = 0;
+    static constexpr int CALIBRATION_HISTORY_SIZE = 10;
+    double calibration_history_[CALIBRATION_HISTORY_SIZE] = {0};
+    int calibration_history_index_ = 0;
+    bool hypervisor_detected_ = false;
     
     // Detection thresholds and constants
     static constexpr float MAX_TIME_SCALE_DEVIATION = 0.25f;  // 25% tolerance
     static constexpr int MONOTONICITY_VIOLATION_PENALTY = 2;  // Extra anomaly points for time going backwards
     static constexpr double FALLBACK_CPU_FREQUENCY_MHZ = 2400.0;  // Conservative fallback if calibration fails
+    static constexpr double MIN_CPU_FREQUENCY_MHZ = 500.0;  // Minimum plausible CPU frequency
+    static constexpr double MAX_CPU_FREQUENCY_MHZ = 6000.0;  // Maximum plausible CPU frequency
+    static constexpr double MAX_FREQUENCY_JUMP_PERCENT = 0.10;  // 10% max jump between calibrations
+    static constexpr uint64_t RECALIBRATION_INTERVAL_MS = 60000;  // 60 seconds
 };
 
 /**

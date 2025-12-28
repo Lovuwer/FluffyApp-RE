@@ -79,6 +79,8 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <intrin.h>
+#else
+#include <emmintrin.h>  // For _mm_pause on GCC/Clang
 #endif
 
 #include <chrono>
@@ -88,7 +90,26 @@
 namespace Sentinel {
 namespace SDK {
 
+bool SpeedHackDetector::DetectHypervisor() {
+#ifdef _WIN32
+    // Check CPUID leaf 0x40000000 for hypervisor presence
+    int cpuInfo[4] = {0};
+    __cpuid(cpuInfo, 0x40000000);
+    // If hypervisor is present, EAX (cpuInfo[0]) should be >= 0x40000000
+    return cpuInfo[0] >= 0x40000000;
+#else
+    // On Linux, check /proc/cpuinfo or similar
+    // For now, return false as a conservative approach
+    return false;
+#endif
+}
+
+bool SpeedHackDetector::IsFrequencyPlausible(double frequency_mhz) {
+    return frequency_mhz >= MIN_CPU_FREQUENCY_MHZ && frequency_mhz <= MAX_CPU_FREQUENCY_MHZ;
+}
+
 void SpeedHackDetector::Initialize() {
+    hypervisor_detected_ = DetectHypervisor();
     UpdateBaseline();
 }
 
@@ -140,6 +161,78 @@ uint64_t SpeedHackDetector::GetRDTSC() {
 #endif
 }
 
+void SpeedHackDetector::RecalibrateRDTSC() {
+    // Use busy-wait with QueryPerformanceCounter to avoid Sleep() hooking
+    uint64_t calibration_start_tsc = GetRDTSC();
+    uint64_t calibration_start_qpc = GetPerformanceCounter();
+    
+#ifdef _WIN32
+    LARGE_INTEGER freq;
+    QueryPerformanceFrequency(&freq);
+    
+    // Busy-wait for 100ms using QPC
+    uint64_t target_qpc = calibration_start_qpc + (freq.QuadPart / 10);  // 100ms
+    while (GetPerformanceCounter() < target_qpc) {
+        // Busy wait - prevents Sleep() hook from poisoning calibration
+        // Use a pause instruction to reduce power consumption
+        _mm_pause();
+    }
+#else
+    // Linux: busy-wait for 100ms
+    auto start = std::chrono::high_resolution_clock::now();
+    while (true) {
+        auto now = std::chrono::high_resolution_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
+        if (elapsed >= 100) break;
+        // Pause to reduce power consumption
+        _mm_pause();
+    }
+#endif
+    
+    uint64_t calibration_end_tsc = GetRDTSC();
+    uint64_t calibration_end_qpc = GetPerformanceCounter();
+    
+    uint64_t elapsed_tsc = calibration_end_tsc - calibration_start_tsc;
+    
+#ifdef _WIN32
+    uint64_t elapsed_qpc = calibration_end_qpc - calibration_start_qpc;
+    double elapsed_ms = (double)elapsed_qpc * 1000.0 / (double)freq.QuadPart;
+#else
+    // On Linux, QPC is in nanoseconds
+    uint64_t elapsed_qpc = calibration_end_qpc - calibration_start_qpc;
+    double elapsed_ms = (double)elapsed_qpc / 1000000.0;
+#endif
+    
+    if (elapsed_ms > 0) {
+        double new_frequency = (double)elapsed_tsc / (elapsed_ms * 1000.0);
+        
+        // Plausibility check: frequency must be in valid range
+        if (!IsFrequencyPlausible(new_frequency)) {
+            // Invalid frequency - possible manipulation, use fallback
+            return;
+        }
+        
+        // Check for sudden frequency jump (>10%)
+        if (rdtsc_frequency_mhz_ > 0.0) {
+            double frequency_change = std::abs(new_frequency - rdtsc_frequency_mhz_) / rdtsc_frequency_mhz_;
+            if (frequency_change > MAX_FREQUENCY_JUMP_PERCENT) {
+                // Sudden frequency jump detected - possible tampering
+                // Mark as anomaly but still update frequency
+                anomaly_count_ += 2;
+            }
+        }
+        
+        // Store in calibration history
+        calibration_history_[calibration_history_index_] = new_frequency;
+        calibration_history_index_ = (calibration_history_index_ + 1) % CALIBRATION_HISTORY_SIZE;
+        
+        // Update frequency
+        rdtsc_frequency_mhz_ = new_frequency;
+    }
+    
+    rdtsc_calibration_time_ = GetSystemTime();
+}
+
 void SpeedHackDetector::UpdateBaseline() {
     baseline_system_time_ = GetSystemTime();
     baseline_perf_counter_ = GetPerformanceCounter();
@@ -157,39 +250,18 @@ void SpeedHackDetector::UpdateBaseline() {
     wall_clock_baseline_qpc_ = 0;
     frame_counter_ = 0;
     
-    // Calibrate RDTSC frequency (measure over ~100ms)
-    // Note: This introduces a 100ms delay during initialization, but is necessary
-    // for accurate RDTSC-based time validation. The calibration is done once.
-    uint64_t calibration_start_tsc = GetRDTSC();
-    uint64_t calibration_start_time = GetSystemTime();
-    
-#ifdef _WIN32
-    Sleep(100);
-#else
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-#endif
-    
-    uint64_t calibration_end_tsc = GetRDTSC();
-    uint64_t calibration_end_time = GetSystemTime();
-    
-    uint64_t elapsed_tsc = calibration_end_tsc - calibration_start_tsc;
-    uint64_t elapsed_ms = calibration_end_time - calibration_start_time;
-    
-    if (elapsed_ms > 0) {
-        // Calculate TSC frequency in MHz (cycles per microsecond)
-        rdtsc_frequency_mhz_ = (double)elapsed_tsc / ((double)elapsed_ms * 1000.0);
-    } else {
-        // Fallback: 2.4 GHz is a conservative estimate for modern CPUs
-        // RDTSC validation will be less accurate but still functional
-        rdtsc_frequency_mhz_ = FALLBACK_CPU_FREQUENCY_MHZ;
-    }
-    
-    rdtsc_calibration_time_ = GetSystemTime();
+    // Perform initial RDTSC calibration using busy-wait
+    RecalibrateRDTSC();
 }
 
 bool SpeedHackDetector::ValidateSourceRatios() {
-    // Get current values from all sources
+    // Periodic recalibration every 60 seconds
     uint64_t currentSystemTime = GetSystemTime();
+    if (currentSystemTime - rdtsc_calibration_time_ >= RECALIBRATION_INTERVAL_MS) {
+        RecalibrateRDTSC();
+    }
+    
+    // Get current values from all sources
     uint64_t currentPerfCounter = GetPerformanceCounter();
     uint64_t currentRDTSC = GetRDTSC();
     
@@ -228,6 +300,13 @@ bool SpeedHackDetector::ValidateSourceRatios() {
         elapsedRDTSCMs = (double)elapsedRDTSC / (rdtsc_frequency_mhz_ * 1000.0);
     }
     
+    // Adjust deviation threshold for hypervisors (VMs/cloud gaming)
+    float deviation_threshold = MAX_TIME_SCALE_DEVIATION;
+    if (hypervisor_detected_) {
+        // Increase tolerance for VMs to reduce false positives
+        deviation_threshold *= 1.5f;  // 37.5% tolerance for VMs
+    }
+    
     // Calculate ratios between time sources
     // Ideally these should be ~1.0
     if (elapsedSystem > 10) {  // Avoid division by very small numbers (10ms threshold)
@@ -239,12 +318,12 @@ bool SpeedHackDetector::ValidateSourceRatios() {
         current_time_scale_ = (current_time_scale_ * 0.9f) + (float)(avgRatio * 0.1f);
         
         // Check for significant deviation in QPC vs System time
-        bool qpcDeviation = std::abs(ratioQPCtoSystem - 1.0) > MAX_TIME_SCALE_DEVIATION;
+        bool qpcDeviation = std::abs(ratioQPCtoSystem - 1.0) > deviation_threshold;
         
         // Check for significant deviation in RDTSC vs System time
         bool rdtscDeviation = false;
         if (rdtsc_frequency_mhz_ > 0.0 && elapsedRDTSCMs > 0.0) {
-            rdtscDeviation = std::abs(ratioRDTSCtoSystem - 1.0) > MAX_TIME_SCALE_DEVIATION;
+            rdtscDeviation = std::abs(ratioRDTSCtoSystem - 1.0) > deviation_threshold;
         }
         
         // Require both sources to show deviation for higher confidence
