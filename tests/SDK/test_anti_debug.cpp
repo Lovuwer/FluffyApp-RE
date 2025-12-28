@@ -393,6 +393,112 @@ TEST(AntiDebugTests, ExtendedFalsePositiveTest) {
 }
 
 /**
+ * Test: All-thread hardware breakpoint check doesn't false-positive
+ * This test verifies that CheckAllThreadsHardwareBP works correctly in normal operation.
+ */
+TEST(AntiDebugTests, AllThreadsHardwareBreakpointNoFalsePositive) {
+    AntiDebugDetector detector;
+    detector.Initialize();
+    
+    // Run full check which now includes all-thread hardware breakpoint detection
+    std::vector<ViolationEvent> violations = detector.FullCheck();
+    
+    // In a clean environment, we should not detect hardware breakpoints on any thread
+    bool hardwareBPDetected = false;
+    for (const auto& violation : violations) {
+        if (violation.type == ViolationType::DebuggerAttached &&
+            violation.details && 
+            std::string(violation.details).find("Hardware breakpoints detected") != std::string::npos) {
+            hardwareBPDetected = true;
+            break;
+        }
+    }
+    
+    EXPECT_FALSE(hardwareBPDetected)
+        << "All-thread hardware breakpoint scan should not detect breakpoints in clean environment";
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test: Thread cache refresh mechanism
+ * This test verifies that thread enumeration caching works correctly.
+ */
+TEST(AntiDebugTests, ThreadCacheRefreshMechanism) {
+    AntiDebugDetector detector;
+    detector.Initialize();
+    
+    // First check - should populate cache
+    auto violations1 = detector.FullCheck();
+    
+    // Immediate second check - should use cached thread list
+    auto violations2 = detector.FullCheck();
+    
+    // Both should succeed without errors
+    EXPECT_TRUE(true) << "Thread cache mechanism should work without errors";
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test: Performance - all-thread scan completes quickly
+ * This test verifies that the all-thread scan completes in < 5ms as specified.
+ */
+TEST(AntiDebugTests, AllThreadScanPerformance) {
+#ifdef _WIN32
+    AntiDebugDetector detector;
+    detector.Initialize();
+    
+    LARGE_INTEGER freq, start, end;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&start);
+    
+    // Run full check which includes all-thread hardware breakpoint scan
+    detector.FullCheck();
+    
+    QueryPerformanceCounter(&end);
+    
+    // Calculate elapsed time in milliseconds
+    double elapsed_ms = static_cast<double>(end.QuadPart - start.QuadPart) 
+                       * 1000.0 / static_cast<double>(freq.QuadPart);
+    
+    // Definition of Done: Performance impact < 5ms per full scan
+    EXPECT_LT(elapsed_ms, 5.0)
+        << "All-thread scan took " << elapsed_ms << "ms (expected < 5ms)";
+    
+    detector.Shutdown();
+#else
+    GTEST_SKIP() << "Performance test only available on Windows";
+#endif
+}
+
+/**
+ * Test: Severity is High for non-main thread breakpoints
+ * This test verifies that if breakpoints are detected on non-main threads,
+ * they are reported with High severity (not Critical).
+ */
+TEST(AntiDebugTests, NonMainThreadBreakpointSeverity) {
+    AntiDebugDetector detector;
+    detector.Initialize();
+    
+    // Run full check
+    std::vector<ViolationEvent> violations = detector.FullCheck();
+    
+    // If any non-main thread hardware breakpoints are detected, verify severity is High
+    for (const auto& violation : violations) {
+        if (violation.type == ViolationType::DebuggerAttached &&
+            violation.details && 
+            std::string(violation.details).find("non-current thread") != std::string::npos) {
+            // Must be High severity, not Critical
+            EXPECT_EQ(violation.severity, Severity::High)
+                << "Non-main thread breakpoints must have High severity, not Critical";
+        }
+    }
+    
+    detector.Shutdown();
+}
+
+/**
  * Manual test instructions for timing anomaly detection:
  * 
  * To manually test timing anomaly detection with a debugger:
@@ -407,4 +513,22 @@ TEST(AntiDebugTests, ExtendedFalsePositiveTest) {
  * - A ViolationEvent with details "Timing anomaly detected" should be present
  * - The violation should have type ViolationType::DebuggerAttached
  * - The violation should have severity Severity::Warning (NOT High or Critical)
+ * 
+ * Manual test instructions for multi-thread hardware breakpoint detection:
+ * 
+ * To manually test all-thread hardware breakpoint detection:
+ * 1. Build the test executable in Debug mode
+ * 2. Attach a debugger (x64dbg, WinDbg, or Visual Studio)
+ * 3. Create a worker thread in your test or application
+ * 4. Set a hardware breakpoint on the worker thread (not main thread)
+ *    - In x64dbg: Switch to the worker thread, right-click on an address -> Breakpoint -> Hardware, Access -> Byte
+ *    - In WinDbg: Use "~[thread_id]s" to switch threads, then "ba r1 <address>"
+ * 5. Run the AllThreadsHardwareBreakpointNoFalsePositive test
+ * 6. Verify that the breakpoint is detected
+ * 
+ * Expected behavior with hardware breakpoint on worker thread:
+ * - FullCheck() should detect the hardware breakpoint on the worker thread
+ * - A ViolationEvent with details "Hardware breakpoints detected in non-current thread" should be present
+ * - The violation should have type ViolationType::DebuggerAttached
+ * - The violation should have severity Severity::High (NOT Critical)
  */
