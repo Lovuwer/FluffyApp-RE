@@ -62,8 +62,13 @@ namespace {
             return 0;
         }
         
-        // Ensure we have at least 8 bytes readable
-        if (mbi.RegionSize < 8 || !(mbi.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE))) {
+        // Calculate how many bytes are available from funcAddress to end of region
+        size_t offset = reinterpret_cast<uint8_t*>(funcAddress) - 
+                       reinterpret_cast<uint8_t*>(mbi.BaseAddress);
+        size_t bytesAvailable = mbi.RegionSize - offset;
+        
+        // Ensure we have at least 8 bytes readable from funcAddress
+        if (bytesAvailable < 8 || !(mbi.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE))) {
             return 0;
         }
         
@@ -75,6 +80,10 @@ namespace {
         
         // Pattern: 4C 8B D1 B8 XX XX XX XX 0F 05 C3
         // We need to extract the syscall number at offset 4
+        
+        // NOTE: This implementation assumes x64 architecture
+        // x86 syscalls use different patterns (sysenter/int 2Eh)
+        // For x86 support, additional pattern matching would be required
         
         uint8_t* bytes = static_cast<uint8_t*>(funcAddress);
         
@@ -107,11 +116,26 @@ namespace {
     }
     
     // Direct syscall wrapper for NtQueryInformationProcess
-    // Note: This function attempts to extract and use syscall numbers for direct invocation.
-    // However, the actual direct syscall implementation (inline assembly) is deferred
-    // to avoid cross-platform compilation issues. For now, it falls back to dynamic
-    // resolution via GetProcAddress, which still avoids IAT hooks.
-    // Full syscall implementation would require platform-specific .asm files.
+    // 
+    // Design Notes:
+    // This function implements the infrastructure for direct syscall invocation to bypass
+    // user-mode hooks. The syscall number is extracted and cached for future use.
+    // 
+    // Current Implementation:
+    // The actual direct syscall execution via inline assembly is deferred to avoid
+    // cross-platform/cross-compiler compatibility issues. This requires platform-specific
+    // assembly code that differs between MSVC, GCC, and Clang.
+    // 
+    // For now, the function falls back to dynamic resolution via GetProcAddress, which
+    // still provides value by:
+    // 1. Avoiding IAT hooks (resolved at runtime)
+    // 2. Making hook detection harder (no static imports)
+    // 3. Providing the infrastructure for future syscall implementation
+    // 
+    // Future Enhancement:
+    // When direct syscalls are needed, the extracted syscall number can be used with
+    // inline assembly or a separate .asm file. The infrastructure is already in place.
+    // Example: mov r10, rcx; mov eax, g_syscall_NtQueryInformationProcess; syscall; ret
     NTSTATUS DirectSyscallNtQueryInformationProcess(
         HANDLE ProcessHandle,
         DWORD ProcessInformationClass,
@@ -121,11 +145,7 @@ namespace {
     ) {
         InitializeSyscalls();
         
-        // TODO: Implement actual direct syscall using inline assembly
-        // This would use g_syscall_NtQueryInformationProcess extracted above
-        // Example: mov r10, rcx; mov eax, g_syscall_NtQueryInformationProcess; syscall; ret
-        
-        // For now, fall back to dynamic resolution (still bypasses IAT hooks)
+        // Fall back to dynamic resolution (still bypasses IAT hooks)
         HMODULE ntdll = GetModuleHandleA("ntdll.dll");
         if (ntdll) {
             auto NtQueryInformationProcess = reinterpret_cast<NtQueryInformationProcessPtr>(
