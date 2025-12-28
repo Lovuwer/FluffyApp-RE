@@ -179,6 +179,7 @@ public:
     bool ValidateFrame();
     
     float GetTimeScale() const { return current_time_scale_; }
+    const char* GetEnvironmentString() const;
     
 private:
     uint64_t GetSystemTime();
@@ -215,8 +216,17 @@ private:
     int calibration_history_index_ = 0;
     bool hypervisor_detected_ = false;
     
+    // Environment detection for adaptive thresholds
+    class EnvironmentDetector* env_detector_ = nullptr;
+    
+    // Cloud gaming timing anomaly tracking
+    uint64_t last_timing_anomaly_time_ = 0;
+    int timing_anomalies_in_window_ = 0;
+    static constexpr uint64_t CLOUD_ANOMALY_WINDOW_MS = 5000;  // 5 second window
+    static constexpr int MIN_CLOUD_ANOMALIES = 3;  // Require 3+ anomalies in 5s for cloud
+    
     // Detection thresholds and constants
-    static constexpr float MAX_TIME_SCALE_DEVIATION = 0.25f;  // 25% tolerance
+    static constexpr float MAX_TIME_SCALE_DEVIATION = 0.25f;  // 25% tolerance (default, overridden by environment)
     static constexpr int MONOTONICITY_VIOLATION_PENALTY = 2;  // Extra anomaly points for time going backwards
     static constexpr double FALLBACK_CPU_FREQUENCY_MHZ = 2400.0;  // Conservative fallback if calibration fails
     static constexpr double MIN_CPU_FREQUENCY_MHZ = 500.0;  // Minimum plausible CPU frequency

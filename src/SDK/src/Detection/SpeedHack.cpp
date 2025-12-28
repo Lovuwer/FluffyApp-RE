@@ -75,6 +75,7 @@
  */
 
 #include "Internal/Detection.hpp"
+#include "Internal/EnvironmentDetection.hpp"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -110,11 +111,21 @@ bool SpeedHackDetector::IsFrequencyPlausible(double frequency_mhz) {
 
 void SpeedHackDetector::Initialize() {
     hypervisor_detected_ = DetectHypervisor();
+    
+    // Initialize environment detector
+    env_detector_ = new EnvironmentDetector();
+    env_detector_->Initialize();
+    
     UpdateBaseline();
 }
 
 void SpeedHackDetector::Shutdown() {
-    // Nothing to clean up
+    // Clean up environment detector
+    if (env_detector_) {
+        env_detector_->Shutdown();
+        delete env_detector_;
+        env_detector_ = nullptr;
+    }
 }
 
 uint64_t SpeedHackDetector::GetSystemTime() {
@@ -300,10 +311,12 @@ bool SpeedHackDetector::ValidateSourceRatios() {
         elapsedRDTSCMs = (double)elapsedRDTSC / (rdtsc_frequency_mhz_ * 1000.0);
     }
     
-    // Adjust deviation threshold for hypervisors (VMs/cloud gaming)
+    // Get adaptive deviation threshold based on environment
     float deviation_threshold = MAX_TIME_SCALE_DEVIATION;
-    if (hypervisor_detected_) {
-        // Increase tolerance for VMs to reduce false positives
+    if (env_detector_) {
+        deviation_threshold = env_detector_->GetTimingVarianceThreshold();
+    } else if (hypervisor_detected_) {
+        // Fallback if env detector not initialized
         deviation_threshold *= 1.5f;  // 37.5% tolerance for VMs
     }
     
@@ -316,6 +329,12 @@ bool SpeedHackDetector::ValidateSourceRatios() {
         // Update running time scale estimate (weighted average of QPC and RDTSC)
         double avgRatio = (ratioQPCtoSystem + ratioRDTSCtoSystem) / 2.0;
         current_time_scale_ = (current_time_scale_ * 0.9f) + (float)(avgRatio * 0.1f);
+        
+        // Calculate variance and update environment detector
+        double variance = std::abs(avgRatio - 1.0);
+        if (env_detector_) {
+            env_detector_->UpdateTimingInstability(variance);
+        }
         
         // Check for significant deviation in QPC vs System time
         bool qpcDeviation = std::abs(ratioQPCtoSystem - 1.0) > deviation_threshold;
@@ -331,10 +350,28 @@ bool SpeedHackDetector::ValidateSourceRatios() {
         if (qpcDeviation && rdtscDeviation) {
             anomaly_count_++;
             
-            // Require multiple anomalies to avoid false positives
-            if (anomaly_count_ >= 3) {
-                // Speed hack detected
-                return false;
+            // For cloud gaming environments, require multiple anomalies within 5 seconds
+            if (env_detector_ && env_detector_->IsCloudGaming()) {
+                uint64_t now = currentSystemTime;
+                
+                // Check if this anomaly is within the 5-second window
+                if (now - last_timing_anomaly_time_ <= CLOUD_ANOMALY_WINDOW_MS) {
+                    timing_anomalies_in_window_++;
+                } else {
+                    // Outside window, reset counter
+                    timing_anomalies_in_window_ = 1;
+                    last_timing_anomaly_time_ = now;
+                }
+                
+                // Require MIN_CLOUD_ANOMALIES within window for cloud environments
+                if (timing_anomalies_in_window_ >= MIN_CLOUD_ANOMALIES) {
+                    return false;  // Speed hack detected even in cloud
+                }
+            } else {
+                // Non-cloud environments: use standard threshold
+                if (anomaly_count_ >= 3) {
+                    return false;  // Speed hack detected
+                }
             }
         } else if (qpcDeviation || rdtscDeviation) {
             // Only one source shows deviation - count as partial anomaly
@@ -348,6 +385,14 @@ bool SpeedHackDetector::ValidateSourceRatios() {
             // Reset anomaly counter on good frame
             if (anomaly_count_ > 0) {
                 anomaly_count_--;
+            }
+            
+            // Reset cloud anomaly tracking on good frame
+            if (env_detector_ && env_detector_->IsCloudGaming()) {
+                // Decay cloud anomaly counter slowly
+                if (currentSystemTime - last_timing_anomaly_time_ > CLOUD_ANOMALY_WINDOW_MS) {
+                    timing_anomalies_in_window_ = 0;
+                }
             }
         }
     }
@@ -423,6 +468,13 @@ bool SpeedHackDetector::ValidateFrame() {
     }
     
     return true;
+}
+
+const char* SpeedHackDetector::GetEnvironmentString() const {
+    if (env_detector_) {
+        return env_detector_->GetEnvironmentString();
+    }
+    return "unknown";
 }
 
 } // namespace SDK

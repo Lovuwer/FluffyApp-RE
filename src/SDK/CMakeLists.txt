@@ -41,6 +41,7 @@ set(SDK_SOURCES
     src/Detection/IntegrityCheck.cpp
     src/Detection/SpeedHack.cpp
     src/Detection/InjectionDetect.cpp
+    src/Detection/EnvironmentDetection.cpp
     src/Network/PacketEncryption.cpp
     src/Network/CloudReporter.cpp
     src/Util/SecureTime.cpp
@@ -58,6 +59,7 @@ set(SDK_HEADERS
     src/Internal/SafeMemory.hpp
     src/Internal/SignatureVerify.hpp
     src/Internal/JITSignature.hpp
+    src/Internal/EnvironmentDetection.hpp
 )
 
 # Header files for IDE organization only (not compiled)
