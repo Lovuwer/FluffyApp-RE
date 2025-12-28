@@ -206,6 +206,12 @@ public:
     std::vector<ViolationEvent> ScanLoadedModules();
     std::vector<ViolationEvent> ScanThreads();
     
+    /**
+     * Scan loaded modules with signature verification
+     * @return Vector of violations for unsigned, tampered, or proxy DLLs
+     */
+    std::vector<ViolationEvent> ScanModuleSignatures();
+    
 private:
     void EnumerateKnownModules();
     bool IsModuleSuspicious(const wchar_t* module_path);
