@@ -38,6 +38,7 @@ public:
         value_parts_.fill(0);
         decoy_values_.fill(0);
         checksum_ = 0;
+        stored_addr_hash_ = 0;
     }
 
     /**
@@ -49,16 +50,17 @@ public:
         ApplyTimingJitter();
         
         // Store the value with multi-layer obfuscation
-        uint64_t addr_hash = ComputeAddressHash();
+        // Capture address hash when setting value
+        stored_addr_hash_ = ComputeAddressHash();
         
         // Layer 1: XOR with session key
         uint64_t obfuscated = static_cast<uint64_t>(value) ^ session_key_;
         
         // Layer 2: Distribute across 3 parts with different XOR keys
         // This makes the same value at different addresses look different
-        value_parts_[0] = obfuscated ^ addr_hash ^ rotation_keys_[0];
-        value_parts_[1] = (obfuscated >> 21) ^ addr_hash ^ rotation_keys_[1];
-        value_parts_[2] = (obfuscated << 21) ^ addr_hash ^ rotation_keys_[2];
+        value_parts_[0] = obfuscated ^ stored_addr_hash_ ^ rotation_keys_[0];
+        value_parts_[1] = (obfuscated >> 21) ^ stored_addr_hash_ ^ rotation_keys_[1];
+        value_parts_[2] = (obfuscated << 21) ^ stored_addr_hash_ ^ rotation_keys_[2];
         
         // Layer 3: Compute and store checksum
         checksum_ = ComputeChecksum(value);
@@ -76,10 +78,10 @@ public:
         ApplyTimingJitter();
         
         // Reconstruct value from distributed parts
-        uint64_t addr_hash = ComputeAddressHash();
+        // Use the stored address hash from when value was set
         
         // Reverse Layer 2: Reconstruct from parts
-        uint64_t part0 = value_parts_[0] ^ addr_hash ^ rotation_keys_[0];
+        uint64_t part0 = value_parts_[0] ^ stored_addr_hash_ ^ rotation_keys_[0];
         
         // Use part0 as the primary obfuscated value
         uint64_t obfuscated = part0;
@@ -115,6 +117,9 @@ private:
     
     // Checksum for tampering detection
     uint32_t checksum_;
+    
+    // Stored address hash (captured when value is set)
+    uint64_t stored_addr_hash_;
     
     // Decoy values (5 decoys with related but wrong values)
     std::array<int64_t, 5> decoy_values_;
