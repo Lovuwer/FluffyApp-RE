@@ -57,6 +57,7 @@ add_executable(SDKTests
     SDK/test_correlation_enhancements.cpp
     SDK/test_safe_memory.cpp
     SDK/test_protected_value.cpp
+    SDK/test_violation_event_string_safety.cpp
 )
 
 target_include_directories(SDKTests
