@@ -3,8 +3,22 @@
  * 
  * Copyright (c) 2025 Sentinel Security. All rights reserved.
  * 
- * This is a stub implementation created as part of Phase 1: Foundation Setup
- * TODO: Implement actual functionality according to production readiness plan
+ * Task 8: Implement Missing Debug Port and Debug Object Checks
+ * 
+ * Implementation Details:
+ * - CheckDebugPort(): Uses NtQueryInformationProcess with ProcessDebugPort (class 7)
+ * - CheckDebugObject(): Uses NtQueryInformationProcess with ProcessDebugObjectHandle (class 30)
+ * - CheckRemoteDebugger(): Uses CheckRemoteDebuggerPresent + ProcessDebugFlags cross-check
+ * 
+ * Security Features:
+ * - Dynamic resolution via GetProcAddress to avoid IAT detection
+ * - Direct syscall infrastructure with version-specific syscall number extraction
+ * - Fallback mechanism if syscall extraction fails
+ * - Detects debuggers even when PEB.BeingDebugged is cleared
+ * - Bypasses common anti-anti-debug techniques (ScyllaHide, x64dbg plugins)
+ * 
+ * Severity Levels:
+ * - All new checks return Severity::High (not Critical) as they can be bypassed by kernel-mode tools
  */
 
 #include "Internal/Detection.hpp"
