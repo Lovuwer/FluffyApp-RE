@@ -53,7 +53,8 @@ TEST(CorrelationIntegrationTest, DiscordOverlayScenario) {
  * Integration Test: Multiple legitimate signals should still be handled
  * 
  * This tests that even with overlay whitelisting, genuine multi-signal
- * threats are still detected.
+ * threats are still detected after persistence is established.
+ * Updated: Requires signal persistence across scan cycles
  */
 TEST(CorrelationIntegrationTest, GenuineThreatDetection) {
     CorrelationEngine engine;
@@ -62,36 +63,56 @@ TEST(CorrelationIntegrationTest, GenuineThreatDetection) {
     Severity severity_out;
     bool should_report;
     
-    // Simulate genuine debugger detection
+    // Simulate genuine detections with high-confidence signals
     ViolationEvent debugger{};
     debugger.type = ViolationType::DebuggerAttached;
     debugger.severity = Severity::Critical;
     debugger.details = "Debugger detected via IsDebuggerPresent";
     
-    engine.ProcessViolation(debugger, severity_out, should_report);
-    
-    // Simulate memory modification (not from overlay)
     ViolationEvent memory{};
     memory.type = ViolationType::MemoryWrite;
     memory.severity = Severity::High;
     memory.module_name = "unknown.dll";
     memory.details = "Suspicious memory write detected";
     
+    ViolationEvent hook{};
+    hook.type = ViolationType::InlineHook;
+    hook.severity = Severity::High;
+    hook.details = "Hook on critical function";
+    
+    ViolationEvent rwx{};
+    rwx.type = ViolationType::MemoryExecute;
+    rwx.severity = Severity::High;
+    rwx.details = "RWX memory without signature";
+    
+    // First scan cycle
+    engine.ProcessViolation(debugger, severity_out, should_report);
     engine.ProcessViolation(memory, severity_out, should_report);
+    engine.ProcessViolation(hook, severity_out, should_report);
+    engine.ProcessViolation(rwx, severity_out, should_report);
     
-    // Simulate timing anomaly
-    ViolationEvent timing{};
-    timing.type = ViolationType::SpeedHack;
-    timing.severity = Severity::High;
-    timing.details = "Speed manipulation detected";
+    // Without persistence, enforcement should not be allowed yet
+    EXPECT_FALSE(engine.ShouldAllowAction(ResponseAction::Ban))
+        << "Ban should not be allowed without persistence";
     
-    engine.ProcessViolation(timing, severity_out, should_report);
+    // Simulate persistence across scan cycles
+    std::this_thread::sleep_for(std::chrono::seconds(11));
+    engine.ProcessViolation(debugger, severity_out, should_report);
+    engine.ProcessViolation(memory, severity_out, should_report);
+    engine.ProcessViolation(hook, severity_out, should_report);
+    engine.ProcessViolation(rwx, severity_out, should_report);
     
-    // With 3 independent signals, enforcement should be allowed
+    std::this_thread::sleep_for(std::chrono::seconds(11));
+    engine.ProcessViolation(debugger, severity_out, should_report);
+    engine.ProcessViolation(memory, severity_out, should_report);
+    engine.ProcessViolation(hook, severity_out, should_report);
+    engine.ProcessViolation(rwx, severity_out, should_report);
+    
+    // Now with persistent signals and score >= 2.0, enforcement should be allowed
     EXPECT_TRUE(engine.ShouldAllowAction(ResponseAction::Ban))
-        << "Multiple independent signals should allow Ban";
+        << "Multiple persistent signals should allow Ban";
     EXPECT_TRUE(engine.ShouldAllowAction(ResponseAction::Terminate))
-        << "Multiple independent signals should allow Terminate";
+        << "Multiple persistent signals should allow Terminate";
     EXPECT_GE(engine.GetUniqueSignalCount(), 3u)
         << "Should have 3+ unique signal categories";
     

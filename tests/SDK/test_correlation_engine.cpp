@@ -111,33 +111,64 @@ TEST_F(CorrelationEngineTest, SeverityDegradation) {
 
 /**
  * Test: Multi-signal correlation enables enforcement
+ * Updated: Now requires signals to persist across 3 scan cycles (30+ seconds)
+ * and score >= 2.0
  */
 TEST_F(CorrelationEngineTest, MultiSignalCorrelation) {
     Severity severity_out;
     bool should_report;
     
-    // Send signals from different categories
+    // Send signals from different categories to reach score >= 2.0
+    // Hook (0.7) + RWX (0.5) + Memory (0.3) + Debugger (0.3) + Timing (0.2) = 2.0
     auto event1 = CreateEvent(ViolationType::DebuggerAttached, Severity::High);
     auto event2 = CreateEvent(ViolationType::MemoryWrite, Severity::High);
     auto event3 = CreateEvent(ViolationType::InlineHook, Severity::High);
+    auto event4 = CreateEvent(ViolationType::MemoryExecute, Severity::High);  // RWX
     
+    // First scan cycle
     engine_->ProcessViolation(event1, severity_out, should_report);
-    EXPECT_FALSE(engine_->ShouldAllowAction(ResponseAction::Ban))
-        << "Ban should not be allowed after 1 signal";
-    
     engine_->ProcessViolation(event2, severity_out, should_report);
-    EXPECT_FALSE(engine_->ShouldAllowAction(ResponseAction::Ban))
-        << "Ban should not be allowed after 2 signals";
-    
     engine_->ProcessViolation(event3, severity_out, should_report);
+    engine_->ProcessViolation(event4, severity_out, should_report);
+    
+    // Even with 4 signals, ban should not be allowed without persistence
+    EXPECT_FALSE(engine_->ShouldAllowAction(ResponseAction::Ban))
+        << "Ban should not be allowed without signal persistence";
+    
+    // Simulate scan cycles by advancing time and re-detecting signals
+    std::this_thread::sleep_for(std::chrono::seconds(11));  // Past MIN_SCAN_CYCLE_INTERVAL
+    
+    // Second scan cycle - signals persist
+    engine_->ProcessViolation(event1, severity_out, should_report);
+    engine_->ProcessViolation(event2, severity_out, should_report);
+    engine_->ProcessViolation(event3, severity_out, should_report);
+    engine_->ProcessViolation(event4, severity_out, should_report);
+    
+    EXPECT_FALSE(engine_->ShouldAllowAction(ResponseAction::Ban))
+        << "Ban should not be allowed after only 2 scan cycles";
+    
+    std::this_thread::sleep_for(std::chrono::seconds(11));  // Past MIN_SCAN_CYCLE_INTERVAL
+    
+    // Third scan cycle - signals now have persistence_count >= 3
+    engine_->ProcessViolation(event1, severity_out, should_report);
+    engine_->ProcessViolation(event2, severity_out, should_report);
+    engine_->ProcessViolation(event3, severity_out, should_report);
+    engine_->ProcessViolation(event4, severity_out, should_report);
+    
+    // Check score is >= 2.0
+    double score = engine_->GetCorrelationScore();
+    EXPECT_GE(score, 2.0) << "Score should be >= 2.0, got " << score;
+    
+    // Now with 3+ persistent signals from unique categories and score >= 2.0, enforcement should be allowed
     EXPECT_TRUE(engine_->ShouldAllowAction(ResponseAction::Ban))
-        << "Ban should be allowed after 3+ signals from different categories";
+        << "Ban should be allowed after 3+ signals persisting across 3 scan cycles with score >= 2.0";
     EXPECT_TRUE(engine_->ShouldAllowAction(ResponseAction::Terminate))
-        << "Terminate should be allowed after 3+ signals";
+        << "Terminate should be allowed after 3+ persistent signals";
 }
 
 /**
  * Test: Score accumulation and thresholds
+ * Updated: New weights and threshold of 2.0 for enforcement
  */
 TEST_F(CorrelationEngineTest, ScoreAccumulation) {
     Severity severity_out;
@@ -146,25 +177,35 @@ TEST_F(CorrelationEngineTest, ScoreAccumulation) {
     // Initial score should be 0
     EXPECT_DOUBLE_EQ(engine_->GetCorrelationScore(), 0.0);
     
-    // Send debugger detection (weight = 0.4)
+    // Send debugger detection (weight = 0.3)
     auto event1 = CreateEvent(ViolationType::DebuggerAttached, Severity::Critical);
     engine_->ProcessViolation(event1, severity_out, should_report);
-    EXPECT_GE(engine_->GetCorrelationScore(), 0.3)
-        << "Score should increase after debugger detection";
+    EXPECT_NEAR(engine_->GetCorrelationScore(), 0.3, 0.01)
+        << "Score should be ~0.3 after debugger detection";
     
     // Send memory violation (weight = 0.3)
     auto event2 = CreateEvent(ViolationType::MemoryWrite, Severity::High);
     engine_->ProcessViolation(event2, severity_out, should_report);
-    EXPECT_GE(engine_->GetCorrelationScore(), 0.6)
-        << "Score should accumulate from multiple signals";
+    EXPECT_NEAR(engine_->GetCorrelationScore(), 0.6, 0.01)
+        << "Score should be ~0.6 after memory violation";
     
-    // Score should cap at 1.0
+    // Send hook detection (weight = 0.7)
     auto event3 = CreateEvent(ViolationType::InlineHook, Severity::High);
-    auto event4 = CreateEvent(ViolationType::TimingAnomaly, Severity::High);
     engine_->ProcessViolation(event3, severity_out, should_report);
+    EXPECT_NEAR(engine_->GetCorrelationScore(), 1.3, 0.01)
+        << "Score should be ~1.3 after hook detection";
+    
+    // Send RWX memory (weight = 0.5)
+    auto event4 = CreateEvent(ViolationType::MemoryExecute, Severity::High);
     engine_->ProcessViolation(event4, severity_out, should_report);
-    EXPECT_LE(engine_->GetCorrelationScore(), 1.0)
-        << "Score should be capped at 1.0";
+    EXPECT_NEAR(engine_->GetCorrelationScore(), 1.8, 0.01)
+        << "Score should be ~1.8 after RWX detection";
+    
+    // Score can exceed 2.0 with multiple high-confidence signals
+    auto event5 = CreateEvent(ViolationType::CodeInjection, Severity::High);
+    engine_->ProcessViolation(event5, severity_out, should_report);
+    EXPECT_GE(engine_->GetCorrelationScore(), 2.0)
+        << "Score should be >= 2.0 with many signals";
 }
 
 /**
@@ -199,19 +240,20 @@ TEST_F(CorrelationEngineTest, TimeDecay) {
 
 /**
  * Test: Critical reporting requires 2+ signals
+ * Updated: Now all detections emit telemetry
  */
 TEST_F(CorrelationEngineTest, CriticalReportingThreshold) {
     Severity severity_out;
     bool should_report;
     
-    // Single Critical signal should not be reported as Critical
+    // Single Critical signal should emit telemetry (changed behavior)
     auto event1 = CreateEvent(ViolationType::DebuggerAttached, Severity::Critical);
     engine_->ProcessViolation(event1, severity_out, should_report);
     
     EXPECT_NE(severity_out, Severity::Critical)
         << "Single signal should not produce Critical severity";
-    EXPECT_FALSE(should_report)
-        << "Single Critical signal should not be reported to cloud";
+    EXPECT_TRUE(should_report)
+        << "Single signal should emit telemetry (changed from previous behavior)";
     
     // Second signal from different category should enable Critical reporting
     auto event2 = CreateEvent(ViolationType::MemoryWrite, Severity::Critical);
@@ -295,38 +337,48 @@ TEST_F(CorrelationEngineTest, NonEnforcementActionsAllowed) {
 
 /**
  * Test: Category-based weighting
+ * Updated: New weight hierarchy - Hooks (0.7) > Memory/RWX (0.5/0.3) > Debugger (0.3)
  */
 TEST_F(CorrelationEngineTest, CategoryWeighting) {
     Severity severity_out;
     bool should_report;
     
-    // Debugger detection should have higher weight (0.4)
-    engine_->Reset();
-    auto debugger_event = CreateEvent(ViolationType::DebuggerAttached, Severity::High);
-    engine_->ProcessViolation(debugger_event, severity_out, should_report);
-    double debugger_score = engine_->GetCorrelationScore();
-    
-    // Memory violation should have medium weight (0.3)
-    engine_->Reset();
-    auto memory_event = CreateEvent(ViolationType::MemoryWrite, Severity::High);
-    engine_->ProcessViolation(memory_event, severity_out, should_report);
-    double memory_score = engine_->GetCorrelationScore();
-    
-    // Hook detection should have lower weight (0.1)
+    // Hook detection should have highest weight (0.7)
     engine_->Reset();
     auto hook_event = CreateEvent(ViolationType::InlineHook, Severity::High);
     engine_->ProcessViolation(hook_event, severity_out, should_report);
     double hook_score = engine_->GetCorrelationScore();
     
-    // Verify weighting hierarchy
-    EXPECT_GT(debugger_score, memory_score)
-        << "Debugger detection should have higher weight than memory";
-    EXPECT_GT(memory_score, hook_score)
-        << "Memory violation should have higher weight than hooks";
+    // RWX memory should have medium-high weight (0.5)
+    engine_->Reset();
+    auto rwx_event = CreateEvent(ViolationType::MemoryExecute, Severity::High);
+    engine_->ProcessViolation(rwx_event, severity_out, should_report);
+    double rwx_score = engine_->GetCorrelationScore();
+    
+    // Debugger detection should have medium weight (0.3)
+    engine_->Reset();
+    auto debugger_event = CreateEvent(ViolationType::DebuggerAttached, Severity::High);
+    engine_->ProcessViolation(debugger_event, severity_out, should_report);
+    double debugger_score = engine_->GetCorrelationScore();
+    
+    // General memory violation should have medium weight (0.3)
+    engine_->Reset();
+    auto memory_event = CreateEvent(ViolationType::MemoryWrite, Severity::High);
+    engine_->ProcessViolation(memory_event, severity_out, should_report);
+    double memory_score = engine_->GetCorrelationScore();
+    
+    // Verify new weighting hierarchy
+    EXPECT_GT(hook_score, rwx_score)
+        << "Hook detection (0.7) should have higher weight than RWX (0.5)";
+    EXPECT_GT(rwx_score, memory_score)
+        << "RWX memory (0.5) should have higher weight than general memory (0.3)";
+    EXPECT_NEAR(debugger_score, memory_score, 0.01)
+        << "Debugger (0.3) should have same weight as general memory (0.3)";
 }
 
 /**
- * Test: Kick action requires 2+ signals
+ * Test: Kick action requires 2+ persistent signals
+ * Updated: Now requires persistence
  */
 TEST_F(CorrelationEngineTest, KickRequiresTwoSignals) {
     Severity severity_out;
@@ -336,11 +388,24 @@ TEST_F(CorrelationEngineTest, KickRequiresTwoSignals) {
     auto event1 = CreateEvent(ViolationType::DebuggerAttached, Severity::High);
     engine_->ProcessViolation(event1, severity_out, should_report);
     EXPECT_FALSE(engine_->ShouldAllowAction(ResponseAction::Kick))
-        << "Kick should require at least 2 signals";
+        << "Kick should require at least 2 persistent signals";
     
-    // Two signals should allow Kick
+    // Two signals without persistence should not allow Kick
     auto event2 = CreateEvent(ViolationType::MemoryWrite, Severity::High);
     engine_->ProcessViolation(event2, severity_out, should_report);
+    EXPECT_FALSE(engine_->ShouldAllowAction(ResponseAction::Kick))
+        << "Kick should require signal persistence";
+    
+    // Simulate persistence across scan cycles
+    std::this_thread::sleep_for(std::chrono::seconds(11));
+    engine_->ProcessViolation(event1, severity_out, should_report);
+    engine_->ProcessViolation(event2, severity_out, should_report);
+    
+    std::this_thread::sleep_for(std::chrono::seconds(11));
+    engine_->ProcessViolation(event1, severity_out, should_report);
+    engine_->ProcessViolation(event2, severity_out, should_report);
+    
+    // Now with 2 persistent signals, Kick should be allowed
     EXPECT_TRUE(engine_->ShouldAllowAction(ResponseAction::Kick))
-        << "Kick should be allowed with 2+ signals";
+        << "Kick should be allowed with 2+ persistent signals";
 }
