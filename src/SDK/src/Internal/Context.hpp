@@ -11,6 +11,9 @@
 #include <chrono>
 #include <array>
 
+// Include the hardened ProtectedValue implementation
+#include "ProtectedValue.hpp"
+
 namespace Sentinel {
 namespace SDK {
 
@@ -33,55 +36,6 @@ struct FunctionProtection {
     std::string name;
     std::array<uint8_t, 32> original_prologue;
     size_t prologue_size;
-};
-
-/**
- * Obfuscated value storage
- * Uses XOR encryption with rotating key
- */
-class ProtectedValue {
-public:
-    void SetValue(int64_t value) {
-        // Rotate key
-        key_ = (key_ * 1103515245 + 12345) & 0x7FFFFFFF;
-        
-        // XOR with key and store
-        stored_value_ = value ^ static_cast<int64_t>(key_);
-        
-        // Store checksum
-        checksum_ = ComputeChecksum(value);
-    }
-    
-    int64_t GetValue() const {
-        int64_t value = stored_value_ ^ static_cast<int64_t>(key_);
-        
-        // Verify checksum
-        if (ComputeChecksum(value) != checksum_) {
-            // Tampering detected!
-            return 0;
-        }
-        
-        return value;
-    }
-    
-    bool Verify() const {
-        int64_t value = stored_value_ ^ static_cast<int64_t>(key_);
-        return ComputeChecksum(value) == checksum_;
-    }
-    
-private:
-    int64_t stored_value_ = 0;
-    uint32_t key_ = 0xDEADBEEF;
-    uint32_t checksum_ = 0;
-    
-    static uint32_t ComputeChecksum(int64_t value) {
-        uint32_t hash = 0x811c9dc5;
-        for (int i = 0; i < 8; i++) {
-            hash ^= (value >> (i * 8)) & 0xFF;
-            hash *= 0x01000193;
-        }
-        return hash;
-    }
 };
 
 /**
