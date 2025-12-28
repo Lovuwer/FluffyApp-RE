@@ -34,6 +34,13 @@
 #define ProcessDebugObjectHandle 30
 #define ProcessDebugFlags 31
 
+// Task 14: Debug flags constants for PEB patching detection
+// FLG_HEAP_ENABLE_TAIL_CHECK | FLG_HEAP_ENABLE_FREE_CHECK | FLG_HEAP_VALIDATE_PARAMETERS
+#define NtGlobalFlag_DEBUG_FLAGS 0x70
+
+// HEAP_TAIL_CHECKING_ENABLED | HEAP_FREE_CHECKING_ENABLED | HEAP_VALIDATE_PARAMETERS_ENABLED
+#define HEAP_DEBUG_FLAGS 0x40000060
+
 typedef NTSTATUS (NTAPI *NtQueryInformationProcessPtr)(
     HANDLE ProcessHandle,
     DWORD ProcessInformationClass,
@@ -834,11 +841,7 @@ bool AntiDebugDetector::CheckNtGlobalFlag() {
         DWORD ntGlobalFlag = *(DWORD*)((BYTE*)peb + 0x68);
     #endif
     
-    // FLG_HEAP_ENABLE_TAIL_CHECK | FLG_HEAP_ENABLE_FREE_CHECK | 
-    // FLG_HEAP_VALIDATE_PARAMETERS
-    const DWORD DEBUG_FLAGS = 0x70;
-    
-    return (ntGlobalFlag & DEBUG_FLAGS) != 0;
+    return (ntGlobalFlag & NtGlobalFlag_DEBUG_FLAGS) != 0;
 #else
     return false;
 #endif
@@ -952,8 +955,7 @@ bool AntiDebugDetector::CheckHeapFlagsVsNtGlobalFlag() {
         DWORD ntGlobalFlag = *(DWORD*)((BYTE*)peb + 0x68);
     #endif
     
-    const DWORD DEBUG_FLAGS = 0x70;  // FLG_HEAP_ENABLE_TAIL_CHECK | FLG_HEAP_ENABLE_FREE_CHECK | FLG_HEAP_VALIDATE_PARAMETERS
-    bool ntGlobalFlagIndicatesDebug = (ntGlobalFlag & DEBUG_FLAGS) != 0;
+    bool ntGlobalFlagIndicatesDebug = (ntGlobalFlag & NtGlobalFlag_DEBUG_FLAGS) != 0;
     
     // Check heap flags directly
     HANDLE heap = GetProcessHeap();
@@ -1016,9 +1018,6 @@ bool AntiDebugDetector::CheckHeapFlagsVsNtGlobalFlag() {
         return false;
     }
     
-    // Heap debug flags: HEAP_TAIL_CHECKING_ENABLED (0x20), HEAP_FREE_CHECKING_ENABLED (0x40), 
-    // HEAP_VALIDATE_PARAMETERS_ENABLED (0x40000000)
-    const DWORD HEAP_DEBUG_FLAGS = 0x40000060;
     bool heapFlagsIndicateDebug = (flags & HEAP_DEBUG_FLAGS) != 0 || forceFlags != 0;
     
     // Combine both methods for reliable detection
@@ -1098,9 +1097,8 @@ bool AntiDebugDetector::CheckParentProcessDebugger() {
     }
     
     // Convert to lowercase for case-insensitive comparison
-    for (int i = 0; parentName[i]; i++) {
-        parentName[i] = towlower(parentName[i]);
-    }
+    // Using _wcslwr_s for safer string manipulation
+    _wcslwr_s(parentName, MAX_PATH);
     
     // Known debugger process names
     const wchar_t* debuggers[] = {

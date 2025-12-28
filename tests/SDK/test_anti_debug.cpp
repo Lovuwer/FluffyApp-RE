@@ -596,7 +596,7 @@ TEST(AntiDebugTests, NoParentDebuggerInNormalOperation) {
  * This test verifies that the cross-check completes without crashing even if
  * heap structure offsets are unexpected.
  */
-TEST(AntiDebugTests, HeapCrossCheckNoAccesViolation) {
+TEST(AntiDebugTests, HeapCrossCheckNoAccessViolation) {
     AntiDebugDetector detector;
     detector.Initialize();
     
