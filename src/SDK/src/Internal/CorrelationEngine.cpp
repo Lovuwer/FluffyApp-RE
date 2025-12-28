@@ -108,9 +108,9 @@ bool CorrelationEngine::ProcessViolation(
     signal.category = MapToCategory(event.type);
     signal.original_severity = event.severity;
     signal.timestamp = now;
-    signal.details = event.details ? event.details : "";
+    signal.details = event.details;
     signal.address = event.address;
-    signal.module_name = event.module_name;
+    signal.module_name = event.module_name.c_str();
     signal.scan_cycle = state_.current_scan_cycle;
     signal.persistence_count = 1;  // Initial persistence
     
@@ -368,8 +368,8 @@ bool CorrelationEngine::ShouldWhitelist(const ViolationEvent& event) const {
             environment_.has_nvidia_overlay) {
             
             // Check if the module name matches known overlays
-            if (event.module_name) {
-                std::string module(event.module_name);
+            if (!event.module_name.empty()) {
+                std::string module = event.module_name;
                 std::transform(module.begin(), module.end(), module.begin(), ::tolower);
                 
                 if (module.find("discord") != std::string::npos ||

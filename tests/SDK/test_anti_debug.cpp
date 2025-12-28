@@ -117,7 +117,7 @@ TEST(AntiDebugTests, NoHardwareBreakpointsDetected) {
     for (const auto& violation : violations) {
         if (violation.type == ViolationType::DebuggerAttached &&
             violation.severity == Severity::Critical &&
-            violation.details && 
+            !violation.details.empty() && 
             std::string(violation.details).find("Hardware breakpoints") != std::string::npos) {
             hardwareBPDetected = true;
             break;
@@ -180,7 +180,7 @@ TEST(AntiDebugTests, NoTimingAnomalyInNormalOperation) {
     bool timingAnomalyDetected = false;
     for (const auto& violation : violations) {
         if (violation.type == ViolationType::DebuggerAttached &&
-            violation.details && 
+            !violation.details.empty() && 
             std::string(violation.details).find("Timing anomaly") != std::string::npos) {
             timingAnomalyDetected = true;
             break;
@@ -210,7 +210,7 @@ TEST(AntiDebugTests, ConsistentTimingResults) {
         // Check for timing anomaly violations
         for (const auto& violation : violations) {
             if (violation.type == ViolationType::DebuggerAttached &&
-                violation.details && 
+                !violation.details.empty() && 
                 std::string(violation.details).find("Timing anomaly") != std::string::npos) {
                 falsePositives++;
                 break;
@@ -334,7 +334,7 @@ TEST(AntiDebugTests, TimingAnomalySeverityIsWarning) {
         // Check for timing anomaly violations
         for (const auto& violation : violations) {
             if (violation.type == ViolationType::DebuggerAttached &&
-                violation.details && 
+                !violation.details.empty() && 
                 std::string(violation.details).find("Timing anomaly") != std::string::npos) {
                 // If a timing anomaly is detected, it must have Warning severity
                 EXPECT_EQ(violation.severity, Severity::Warning)
@@ -370,7 +370,7 @@ TEST(AntiDebugTests, ExtendedFalsePositiveTest) {
         // Check for timing anomaly violations
         for (const auto& violation : violations) {
             if (violation.type == ViolationType::DebuggerAttached &&
-                violation.details && 
+                !violation.details.empty() && 
                 std::string(violation.details).find("Timing anomaly") != std::string::npos) {
                 falsePositives++;
                 break;
@@ -407,7 +407,7 @@ TEST(AntiDebugTests, AllThreadsHardwareBreakpointNoFalsePositive) {
     bool hardwareBPDetected = false;
     for (const auto& violation : violations) {
         if (violation.type == ViolationType::DebuggerAttached &&
-            violation.details && 
+            !violation.details.empty() && 
             std::string(violation.details).find("Hardware breakpoints detected") != std::string::npos) {
             hardwareBPDetected = true;
             break;
@@ -487,7 +487,7 @@ TEST(AntiDebugTests, NonMainThreadBreakpointSeverity) {
     // If any non-main thread hardware breakpoints are detected, verify severity is High
     for (const auto& violation : violations) {
         if (violation.type == ViolationType::DebuggerAttached &&
-            violation.details && 
+            !violation.details.empty() && 
             std::string(violation.details).find("non-current thread") != std::string::npos) {
             // Must be High severity, not Critical
             EXPECT_EQ(violation.severity, Severity::High)
@@ -549,7 +549,7 @@ TEST(AntiDebugTests, NoPEBPatchingInNormalOperation) {
     bool pebPatchingDetected = false;
     for (const auto& violation : violations) {
         if (violation.type == ViolationType::DebuggerAttached &&
-            violation.details && 
+            !violation.details.empty() && 
             std::string(violation.details).find("PEB patched") != std::string::npos) {
             pebPatchingDetected = true;
             break;
@@ -578,7 +578,7 @@ TEST(AntiDebugTests, NoParentDebuggerInNormalOperation) {
     bool parentDebuggerDetected = false;
     for (const auto& violation : violations) {
         if (violation.type == ViolationType::DebuggerAttached &&
-            violation.details && 
+            !violation.details.empty() && 
             std::string(violation.details).find("Parent process is a known debugger") != std::string::npos) {
             parentDebuggerDetected = true;
             break;
@@ -626,7 +626,7 @@ TEST(AntiDebugTests, PEBPatchedSeverityIsHigh) {
     // If PEB patching is detected, verify severity is High
     for (const auto& violation : violations) {
         if (violation.type == ViolationType::DebuggerAttached &&
-            violation.details && 
+            !violation.details.empty() && 
             std::string(violation.details).find("PEB patched") != std::string::npos) {
             // Must be High severity
             EXPECT_EQ(violation.severity, Severity::High)
@@ -651,7 +651,7 @@ TEST(AntiDebugTests, ParentDebuggerSeverityIsHigh) {
     // If parent debugger is detected, verify severity is High
     for (const auto& violation : violations) {
         if (violation.type == ViolationType::DebuggerAttached &&
-            violation.details && 
+            !violation.details.empty() && 
             std::string(violation.details).find("Parent process is a known debugger") != std::string::npos) {
             // Must be High severity
             EXPECT_EQ(violation.severity, Severity::High)
@@ -709,7 +709,7 @@ TEST(AntiDebugTests, NoSEHIntegrityViolationsInNormalOperation) {
     bool sehIntegrityViolation = false;
     for (const auto& violation : violations) {
         if (violation.type == ViolationType::DebuggerAttached &&
-            violation.details && 
+            !violation.details.empty() && 
             std::string(violation.details).find("SEH chain manipulation") != std::string::npos) {
             sehIntegrityViolation = true;
             break;
@@ -761,7 +761,7 @@ TEST(AntiDebugTests, SEHIntegritySeverityIsWarning) {
     // If SEH integrity violation is detected, verify severity is Warning
     for (const auto& violation : violations) {
         if (violation.type == ViolationType::DebuggerAttached &&
-            violation.details && 
+            !violation.details.empty() && 
             std::string(violation.details).find("SEH chain manipulation") != std::string::npos) {
             // Must be Warning severity
             EXPECT_EQ(violation.severity, Severity::Warning)

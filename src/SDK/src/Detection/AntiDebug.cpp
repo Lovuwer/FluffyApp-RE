@@ -330,7 +330,7 @@ std::vector<ViolationEvent> AntiDebugDetector::Check() {
         ev.details = "IsDebuggerPresent check positive";
         ev.timestamp = 0;
         ev.address = 0;
-        ev.module_name = nullptr;
+        ev.module_name = "";
         ev.detection_id = 0;
         violations.push_back(ev);
     }
@@ -347,7 +347,7 @@ std::vector<ViolationEvent> AntiDebugDetector::Check() {
         ev.details = "PEB patched - NtGlobalFlag clean but heap has debug flags (ScyllaHide/TitanHide detected)";
         ev.timestamp = 0;
         ev.address = 0;
-        ev.module_name = nullptr;
+        ev.module_name = "";
         ev.detection_id = 0;
         violations.push_back(ev);
     }
@@ -359,7 +359,7 @@ std::vector<ViolationEvent> AntiDebugDetector::Check() {
         ev.details = "NtGlobalFlag debug flags detected";
         ev.timestamp = 0;
         ev.address = 0;
-        ev.module_name = nullptr;
+        ev.module_name = "";
         ev.detection_id = 0;
         violations.push_back(ev);
     }
@@ -371,7 +371,7 @@ std::vector<ViolationEvent> AntiDebugDetector::Check() {
         ev.details = "Debug heap configuration detected";
         ev.timestamp = 0;
         ev.address = 0;
-        ev.module_name = nullptr;
+        ev.module_name = "";
         ev.detection_id = 0;
         violations.push_back(ev);
     }
@@ -394,7 +394,7 @@ std::vector<ViolationEvent> AntiDebugDetector::FullCheck() {
         ev.details = "Hardware breakpoints detected in debug registers";
         ev.timestamp = 0;
         ev.address = 0;
-        ev.module_name = nullptr;
+        ev.module_name = "";
         ev.detection_id = 0;
         violations.push_back(ev);
     }
@@ -411,7 +411,7 @@ std::vector<ViolationEvent> AntiDebugDetector::FullCheck() {
         ev.details = "Hardware breakpoints detected in non-current thread";
         ev.timestamp = 0;
         ev.address = 0;
-        ev.module_name = nullptr;
+        ev.module_name = "";
         ev.detection_id = 0;
         violations.push_back(ev);
     }
@@ -424,7 +424,7 @@ std::vector<ViolationEvent> AntiDebugDetector::FullCheck() {
         ev.details = "Debug port detected";
         ev.timestamp = 0;
         ev.address = 0;
-        ev.module_name = nullptr;
+        ev.module_name = "";
         ev.detection_id = 0;
         violations.push_back(ev);
     }
@@ -437,7 +437,7 @@ std::vector<ViolationEvent> AntiDebugDetector::FullCheck() {
         ev.details = "Debug object handle detected";
         ev.timestamp = 0;
         ev.address = 0;
-        ev.module_name = nullptr;
+        ev.module_name = "";
         ev.detection_id = 0;
         violations.push_back(ev);
     }
@@ -450,7 +450,7 @@ std::vector<ViolationEvent> AntiDebugDetector::FullCheck() {
         ev.details = "Remote debugger detected";
         ev.timestamp = 0;
         ev.address = 0;
-        ev.module_name = nullptr;
+        ev.module_name = "";
         ev.detection_id = 0;
         violations.push_back(ev);
     }
@@ -464,7 +464,7 @@ std::vector<ViolationEvent> AntiDebugDetector::FullCheck() {
         ev.details = "Parent process is a known debugger (x64dbg, devenv, windbg, etc.)";
         ev.timestamp = 0;
         ev.address = 0;
-        ev.module_name = nullptr;
+        ev.module_name = "";
         ev.detection_id = 0;
         violations.push_back(ev);
     }
@@ -484,7 +484,7 @@ std::vector<ViolationEvent> AntiDebugDetector::FullCheck() {
         
         ev.timestamp = 0;
         ev.address = 0;
-        ev.module_name = nullptr;
+        ev.module_name = "";
         ev.detection_id = 0;
         violations.push_back(ev);
     }
@@ -498,7 +498,7 @@ std::vector<ViolationEvent> AntiDebugDetector::FullCheck() {
         ev.details = "SEH chain manipulation or exception handling anomaly detected";
         ev.timestamp = 0;
         ev.address = 0;
-        ev.module_name = nullptr;
+        ev.module_name = "";
         ev.detection_id = 0;
         violations.push_back(ev);
     }
