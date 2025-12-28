@@ -355,13 +355,13 @@ uint64_t AntiHookDetector::GetCurrentTimeMs() const {
 
 // Apply jitter at scan-cycle boundaries using high-resolution timer
 void AntiHookDetector::ApplyScanCycleJitter() {
-#ifdef _WIN32
-    // Use high-resolution waitable timer for jitter (0-10ms)
+    // Generate random jitter (0-10ms)
     std::uniform_int_distribution<int> jitter_dist(0, 10);
     int jitter_ms = jitter_dist(rng);
     
     if (jitter_ms > 0) {
-        // Use CreateWaitableTimerExW with high-resolution flag
+#ifdef _WIN32
+        // Use CreateWaitableTimerExW with high-resolution flag for precise timing
         HANDLE timer = CreateWaitableTimerExW(
             nullptr,
             nullptr,
@@ -379,18 +379,14 @@ void AntiHookDetector::ApplyScanCycleJitter() {
             
             CloseHandle(timer);
         } else {
-            // Fallback to Sleep if high-res timer not available
-            Sleep(jitter_ms);
+            // Fallback if high-res timer not available (use consistent cross-platform method)
+            std::this_thread::sleep_for(std::chrono::milliseconds(jitter_ms));
         }
-    }
 #else
-    // For non-Windows platforms, use standard sleep
-    std::uniform_int_distribution<int> jitter_dist(0, 10);
-    int jitter_ms = jitter_dist(rng);
-    if (jitter_ms > 0) {
+        // For non-Windows platforms, use standard sleep
         std::this_thread::sleep_for(std::chrono::milliseconds(jitter_ms));
-    }
 #endif
+    }
 }
 
 // Select functions to scan probabilistically, prioritizing least recently scanned
@@ -1115,8 +1111,13 @@ std::vector<ViolationEvent> AntiHookDetector::FullScan() {
         size_t total_functions = registered_functions_.size();
         size_t scan_count = static_cast<size_t>(total_functions * PROBABILISTIC_SCAN_RATIO);
         scan_count = std::max(scan_count, size_t(1));
-        // For FullScan, allow scanning more functions
-        scan_count = std::min(scan_count, std::min(total_functions, FULL_SCAN_MAX_FUNCTIONS));
+        // Cap at the lesser of total_functions or FULL_SCAN_MAX_FUNCTIONS
+        if (scan_count > total_functions) {
+            scan_count = total_functions;
+        }
+        if (scan_count > FULL_SCAN_MAX_FUNCTIONS) {
+            scan_count = FULL_SCAN_MAX_FUNCTIONS;
+        }
         
         // Select functions to scan (prioritizing least recently scanned)
         std::vector<size_t> indices_to_scan;
