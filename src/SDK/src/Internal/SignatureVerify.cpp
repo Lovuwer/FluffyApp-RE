@@ -73,11 +73,12 @@ ModuleVerificationResult SignatureVerifier::VerifyModule(const wchar_t* module_p
     result.hash_match = true;  // Default to true if no hash to check
     result.path_valid = true;   // Default to true
     result.is_proxy_dll = false;
-    result.actual_path = module_path;
 
     if (!module_path || module_path[0] == L'\0') {
         return result;
     }
+
+    result.actual_path = module_path;
 
     // Extract module name
     std::wstring module_name = ExtractModuleName(module_path);

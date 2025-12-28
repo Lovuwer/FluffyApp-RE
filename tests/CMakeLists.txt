@@ -49,6 +49,7 @@ add_executable(SDKTests
     SDK/test_integrity.cpp
     SDK/test_anti_hook.cpp
     SDK/test_injection_detect.cpp
+    SDK/test_signature_verify.cpp
     SDK/test_speed_hack.cpp
     SDK/test_packet_encryption.cpp
     SDK/test_correlation_engine.cpp
