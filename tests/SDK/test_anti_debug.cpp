@@ -532,3 +532,163 @@ TEST(AntiDebugTests, NonMainThreadBreakpointSeverity) {
  * - The violation should have type ViolationType::DebuggerAttached
  * - The violation should have severity Severity::High (NOT Critical)
  */
+
+/**
+ * Test: Task 14 - No PEB patching detected in normal operation
+ * This test verifies that the heap vs NtGlobalFlag cross-check works correctly
+ * and doesn't produce false positives in a clean environment.
+ */
+TEST(AntiDebugTests, NoPEBPatchingInNormalOperation) {
+    AntiDebugDetector detector;
+    detector.Initialize();
+    
+    // Run check which includes heap vs NtGlobalFlag cross-check
+    std::vector<ViolationEvent> violations = detector.Check();
+    
+    // In a clean environment, we should not detect PEB patching
+    bool pebPatchingDetected = false;
+    for (const auto& violation : violations) {
+        if (violation.type == ViolationType::DebuggerAttached &&
+            violation.details && 
+            std::string(violation.details).find("PEB patched") != std::string::npos) {
+            pebPatchingDetected = true;
+            break;
+        }
+    }
+    
+    EXPECT_FALSE(pebPatchingDetected)
+        << "PEB patching should not be detected in clean environment";
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test: Task 14 - Parent process debugger check doesn't false-positive
+ * This test verifies that the parent process debugger detection works correctly
+ * and doesn't produce false positives when not launched from a debugger.
+ */
+TEST(AntiDebugTests, NoParentDebuggerInNormalOperation) {
+    AntiDebugDetector detector;
+    detector.Initialize();
+    
+    // Run full check which includes parent process debugger detection
+    std::vector<ViolationEvent> violations = detector.FullCheck();
+    
+    // In a clean environment (CI), parent should NOT be a debugger
+    bool parentDebuggerDetected = false;
+    for (const auto& violation : violations) {
+        if (violation.type == ViolationType::DebuggerAttached &&
+            violation.details && 
+            std::string(violation.details).find("Parent process is a known debugger") != std::string::npos) {
+            parentDebuggerDetected = true;
+            break;
+        }
+    }
+    
+    EXPECT_FALSE(parentDebuggerDetected)
+        << "Parent process debugger should not be detected in CI environment";
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test: Task 14 - Heap flags vs NtGlobalFlag consistency check runs without crash
+ * This test verifies that the cross-check completes without crashing even if
+ * heap structure offsets are unexpected.
+ */
+TEST(AntiDebugTests, HeapCrossCheckNoAccesViolation) {
+    AntiDebugDetector detector;
+    detector.Initialize();
+    
+    // Run check multiple times to ensure stability
+    for (int i = 0; i < 10; i++) {
+        // This should not crash even if heap structure differs from expected
+        std::vector<ViolationEvent> violations = detector.Check();
+        
+        // We just verify it completes without crashing
+        SUCCEED() << "Heap cross-check completed without crash (iteration " << i << ")";
+    }
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test: Task 14 - PEB patched detection has correct severity
+ * This test verifies that if PEB patching is detected, it has High severity.
+ */
+TEST(AntiDebugTests, PEBPatchedSeverityIsHigh) {
+    AntiDebugDetector detector;
+    detector.Initialize();
+    
+    // Run check
+    std::vector<ViolationEvent> violations = detector.Check();
+    
+    // If PEB patching is detected, verify severity is High
+    for (const auto& violation : violations) {
+        if (violation.type == ViolationType::DebuggerAttached &&
+            violation.details && 
+            std::string(violation.details).find("PEB patched") != std::string::npos) {
+            // Must be High severity
+            EXPECT_EQ(violation.severity, Severity::High)
+                << "PEB patched detection must have High severity";
+        }
+    }
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test: Task 14 - Parent debugger detection has correct severity
+ * This test verifies that if parent debugger is detected, it has High severity.
+ */
+TEST(AntiDebugTests, ParentDebuggerSeverityIsHigh) {
+    AntiDebugDetector detector;
+    detector.Initialize();
+    
+    // Run full check
+    std::vector<ViolationEvent> violations = detector.FullCheck();
+    
+    // If parent debugger is detected, verify severity is High
+    for (const auto& violation : violations) {
+        if (violation.type == ViolationType::DebuggerAttached &&
+            violation.details && 
+            std::string(violation.details).find("Parent process is a known debugger") != std::string::npos) {
+            // Must be High severity
+            EXPECT_EQ(violation.severity, Severity::High)
+                << "Parent debugger detection must have High severity";
+        }
+    }
+    
+    detector.Shutdown();
+}
+
+/**
+ * Manual test instructions for Task 14 PEB patching detection:
+ * 
+ * To manually test with ScyllaHide or TitanHide:
+ * 1. Build the test executable in Debug mode
+ * 2. Install ScyllaHide plugin for x64dbg or use TitanHide
+ * 3. Enable "NtGlobalFlag" patching in ScyllaHide options
+ * 4. Launch the test executable under x64dbg with ScyllaHide active
+ * 5. Run the NoPEBPatchingInNormalOperation test
+ * 6. Verify that PEB patching is detected
+ * 
+ * Expected behavior with ScyllaHide/TitanHide:
+ * - CheckHeapFlagsVsNtGlobalFlag() should detect the inconsistency
+ * - A ViolationEvent with details "PEB patched - NtGlobalFlag clean but heap has debug flags" should be present
+ * - The violation should have type ViolationType::DebuggerAttached
+ * - The violation should have severity Severity::High
+ * 
+ * To manually test parent process debugger detection:
+ * 1. Build the test executable in Debug mode
+ * 2. Launch x64dbg, Visual Studio, or WinDbg
+ * 3. Open the test executable from within the debugger (File -> Open)
+ * 4. Run the NoParentDebuggerInNormalOperation test
+ * 5. Verify that parent debugger is detected
+ * 
+ * Expected behavior with debugger as parent:
+ * - CheckParentProcessDebugger() should detect the debugger
+ * - A ViolationEvent with details "Parent process is a known debugger" should be present
+ * - The violation should have type ViolationType::DebuggerAttached
+ * - The violation should have severity Severity::High
+ */

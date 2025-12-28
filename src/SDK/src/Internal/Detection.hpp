@@ -50,6 +50,10 @@ private:
     bool CheckTimingStatistical();
     bool CheckAllThreadsHardwareBP();
     
+    // Task 14: PEB patching detection helpers
+    bool CheckHeapFlagsVsNtGlobalFlag();
+    bool CheckParentProcessDebugger();
+    
     // Rate limiting
     uint64_t last_check_time_ = 0;
     int check_count_ = 0;
