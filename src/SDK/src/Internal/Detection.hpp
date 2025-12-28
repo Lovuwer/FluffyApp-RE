@@ -9,6 +9,7 @@
 #include "SentinelSDK.hpp"
 #include "Context.hpp"
 #include "Whitelist.hpp"
+#include "JITSignature.hpp"
 
 #include <vector>
 #include <cstdint>
@@ -249,6 +250,7 @@ private:
     
     std::vector<std::wstring> known_modules_;
     std::vector<MemoryBaseline> baseline_regions_;
+    JITSignatureValidator jit_validator_;
 };
 
 /**

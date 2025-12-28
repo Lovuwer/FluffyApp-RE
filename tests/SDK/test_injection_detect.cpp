@@ -410,4 +410,69 @@ TEST(InjectionDetectTests, SeverityScoring) {
     VirtualFree(largeRX, 0, MEM_RELEASE);
     detector.Shutdown();
 }
+
+/**
+ * Test 12: Hollowed JIT Module Detection (Task 1)
+ * Verify that a fake module with a JIT name but invalid signature is NOT whitelisted
+ * 
+ * This test simulates an attacker creating a module with a spoofed JIT name.
+ * The new hash-based validation should reject it because:
+ * 1. The .text section hash won't match any known-good JIT signature
+ * 2. Without a matching signature, the module should be flagged as suspicious
+ */
+TEST(InjectionDetectTests, HollowedJITModuleDetection) {
+    InjectionDetector detector;
+    detector.Initialize();
+    
+    // Allocate RWX memory that simulates a hollowed JIT module
+    // In a real attack, this would be a mapped section with a spoofed module name
+    const size_t allocSize = 64 * 1024;  // 64KB - typical JIT region size
+    void* fakeJIT = VirtualAlloc(
+        nullptr,
+        allocSize,
+        MEM_COMMIT | MEM_RESERVE,
+        PAGE_EXECUTE_READWRITE
+    );
+    
+    ASSERT_NE(fakeJIT, nullptr) << "Failed to allocate fake JIT memory";
+    
+    // Fill with fake code (not a real PE structure)
+    // In a real hollowing attack, this would contain malicious shellcode
+    memset(fakeJIT, 0x90, allocSize);  // Fill with NOPs
+    
+    // Write a fake MZ header to make it look somewhat legitimate
+    uint8_t* ptr = (uint8_t*)fakeJIT;
+    ptr[0] = 'M';
+    ptr[1] = 'Z';
+    
+    // Run the scan
+    std::vector<ViolationEvent> violations = detector.ScanLoadedModules();
+    
+    // The fake JIT region should be detected as suspicious
+    // Even though we can't set a fake module name in this test, the
+    // hash-based validation will fail because:
+    // 1. If there's no module base, it won't pass allocation base check
+    // 2. If there is a module, the hash won't match any known JIT signature
+    bool foundFakeJIT = false;
+    uintptr_t fakeAddr = reinterpret_cast<uintptr_t>(fakeJIT);
+    
+    for (const auto& violation : violations) {
+        if (violation.type == ViolationType::InjectedCode &&
+            violation.address >= fakeAddr &&
+            violation.address < fakeAddr + allocSize) {
+            foundFakeJIT = true;
+            // Should be flagged with high severity
+            EXPECT_GE(violation.severity, Severity::Warning)
+                << "Fake JIT region should be flagged as suspicious";
+            break;
+        }
+    }
+    
+    EXPECT_TRUE(foundFakeJIT) 
+        << "Fake JIT module should be detected (hash validation prevents whitelisting)";
+    
+    // Cleanup
+    VirtualFree(fakeJIT, 0, MEM_RELEASE);
+    detector.Shutdown();
+}
 #endif

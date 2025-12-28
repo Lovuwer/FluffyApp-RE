@@ -30,6 +30,7 @@ set(SDK_SOURCES
     src/Internal/CorrelationEngine.cpp
     src/Internal/SafeMemory.cpp
     src/Internal/SignatureVerify.cpp
+    src/Internal/JITSignature.cpp
     src/Core/Heartbeat.cpp
     src/Core/MemoryProtection.cpp
     src/Core/FunctionProtection.cpp
@@ -56,6 +57,7 @@ set(SDK_HEADERS
     src/Internal/CorrelationEngine.hpp
     src/Internal/SafeMemory.hpp
     src/Internal/SignatureVerify.hpp
+    src/Internal/JITSignature.hpp
 )
 
 # Header files for IDE organization only (not compiled)
