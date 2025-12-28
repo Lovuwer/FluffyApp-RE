@@ -14,6 +14,106 @@
 #include <winternl.h>
 #include <intrin.h>
 #include <tlhelp32.h>
+
+// Windows internal structures and constants for debug detection
+#define ProcessDebugPort 7
+#define ProcessDebugObjectHandle 30
+#define ProcessDebugFlags 31
+
+typedef NTSTATUS (NTAPI *NtQueryInformationProcessPtr)(
+    HANDLE ProcessHandle,
+    DWORD ProcessInformationClass,
+    PVOID ProcessInformation,
+    ULONG ProcessInformationLength,
+    PULONG ReturnLength
+);
+
+// Direct syscall support structures
+namespace {
+    // Syscall number cache (version-specific, extracted from ntdll.dll)
+    DWORD g_syscall_NtQueryInformationProcess = 0;
+    bool g_syscall_initialized = false;
+    
+    // Extract syscall number from ntdll function
+    DWORD ExtractSyscallNumber(void* funcAddress) {
+        if (!funcAddress) return 0;
+        
+        // On x64 Windows, syscall stub looks like:
+        // mov r10, rcx
+        // mov eax, <syscall_number>
+        // syscall
+        // ret
+        
+        // Pattern: 4C 8B D1 B8 XX XX XX XX 0F 05 C3
+        // We need to extract the syscall number at offset 4
+        
+        uint8_t* bytes = static_cast<uint8_t*>(funcAddress);
+        
+        // Basic validation: check for mov r10, rcx (4C 8B D1)
+        if (bytes[0] == 0x4C && bytes[1] == 0x8B && bytes[2] == 0xD1) {
+            // Next should be mov eax, imm32 (B8)
+            if (bytes[3] == 0xB8) {
+                // Extract little-endian 32-bit syscall number
+                DWORD syscallNumber = *reinterpret_cast<DWORD*>(&bytes[4]);
+                return syscallNumber;
+            }
+        }
+        
+        return 0;
+    }
+    
+    // Initialize syscall numbers
+    void InitializeSyscalls() {
+        if (g_syscall_initialized) return;
+        
+        HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+        if (ntdll) {
+            void* funcAddr = GetProcAddress(ntdll, "NtQueryInformationProcess");
+            if (funcAddr) {
+                g_syscall_NtQueryInformationProcess = ExtractSyscallNumber(funcAddr);
+            }
+        }
+        
+        g_syscall_initialized = true;
+    }
+    
+    // Direct syscall wrapper for NtQueryInformationProcess
+    // Note: Direct syscall implementation requires platform-specific assembly
+    // This is a simplified version that uses dynamic resolution as a fallback
+    // In production, this would use inline assembly or a separate .asm file
+    NTSTATUS DirectSyscallNtQueryInformationProcess(
+        HANDLE ProcessHandle,
+        DWORD ProcessInformationClass,
+        PVOID ProcessInformation,
+        ULONG ProcessInformationLength,
+        PULONG ReturnLength
+    ) {
+        InitializeSyscalls();
+        
+        // For now, fall back to dynamic resolution
+        // Direct syscall implementation would go here using inline assembly
+        // Example: mov r10, rcx; mov eax, <syscall_number>; syscall; ret
+        
+        HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+        if (ntdll) {
+            auto NtQueryInformationProcess = reinterpret_cast<NtQueryInformationProcessPtr>(
+                GetProcAddress(ntdll, "NtQueryInformationProcess")
+            );
+            if (NtQueryInformationProcess) {
+                return NtQueryInformationProcess(
+                    ProcessHandle,
+                    ProcessInformationClass,
+                    ProcessInformation,
+                    ProcessInformationLength,
+                    ReturnLength
+                );
+            }
+        }
+        
+        return 0xC0000002; // STATUS_NOT_IMPLEMENTED
+    }
+}
+
 #endif
 
 #include <vector>
@@ -216,8 +316,34 @@ std::vector<ViolationEvent> AntiDebugDetector::FullCheck() {
     if (CheckDebugPort()) {
         ViolationEvent ev;
         ev.type = ViolationType::DebuggerAttached;
-        ev.severity = Severity::Critical;
+        ev.severity = Severity::High;  // High severity as specified (not Critical)
         ev.details = "Debug port detected";
+        ev.timestamp = 0;
+        ev.address = 0;
+        ev.module_name = nullptr;
+        ev.detection_id = 0;
+        violations.push_back(ev);
+    }
+    
+    // Check debug object handle
+    if (CheckDebugObject()) {
+        ViolationEvent ev;
+        ev.type = ViolationType::DebuggerAttached;
+        ev.severity = Severity::High;  // High severity as specified (not Critical)
+        ev.details = "Debug object handle detected";
+        ev.timestamp = 0;
+        ev.address = 0;
+        ev.module_name = nullptr;
+        ev.detection_id = 0;
+        violations.push_back(ev);
+    }
+    
+    // Check remote debugger
+    if (CheckRemoteDebugger()) {
+        ViolationEvent ev;
+        ev.type = ViolationType::DebuggerAttached;
+        ev.severity = Severity::High;  // High severity as specified (not Critical)
+        ev.details = "Remote debugger detected";
         ev.timestamp = 0;
         ev.address = 0;
         ev.module_name = nullptr;
@@ -271,9 +397,170 @@ bool AntiDebugDetector::CheckIsDebuggerPresent() {
     return false;
 }
 
-bool AntiDebugDetector::CheckRemoteDebugger() { return false; }
-bool AntiDebugDetector::CheckDebugPort() { return false; }
-bool AntiDebugDetector::CheckDebugObject() { return false; }
+bool AntiDebugDetector::CheckRemoteDebugger() {
+#ifdef _WIN32
+    // Method 1: Use CheckRemoteDebuggerPresent API
+    BOOL debuggerPresent = FALSE;
+    if (CheckRemoteDebuggerPresent(GetCurrentProcess(), &debuggerPresent)) {
+        if (debuggerPresent) {
+            return true;
+        }
+    }
+    
+    // Method 2: Use NtQueryInformationProcess with ProcessDebugFlags
+    // Try direct syscall first to bypass user-mode hooks
+    DWORD debugFlags = 0;
+    NTSTATUS status = DirectSyscallNtQueryInformationProcess(
+        GetCurrentProcess(),
+        ProcessDebugFlags,
+        &debugFlags,
+        sizeof(debugFlags),
+        nullptr
+    );
+    
+    // If successful and debugFlags is 0, debugger is attached
+    // (Normal process has debug flags set to 1)
+    if (status == 0 && debugFlags == 0) {
+        return true;
+    }
+    
+    // Fallback: Use dynamic resolution if syscall failed
+    if (status == 0xC0000002) { // STATUS_NOT_IMPLEMENTED
+        HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+        if (ntdll) {
+            auto NtQueryInformationProcess = reinterpret_cast<NtQueryInformationProcessPtr>(
+                GetProcAddress(ntdll, "NtQueryInformationProcess")
+            );
+            
+            if (NtQueryInformationProcess) {
+                debugFlags = 0;
+                status = NtQueryInformationProcess(
+                    GetCurrentProcess(),
+                    ProcessDebugFlags,
+                    &debugFlags,
+                    sizeof(debugFlags),
+                    nullptr
+                );
+                
+                if (status == 0 && debugFlags == 0) {
+                    return true;
+                }
+            }
+        }
+    }
+#endif
+    
+    return false;
+}
+
+bool AntiDebugDetector::CheckDebugPort() {
+#ifdef _WIN32
+    // Use NtQueryInformationProcess with ProcessDebugPort (class 7)
+    // Try direct syscall first to bypass user-mode hooks
+    DWORD_PTR debugPort = 0;
+    NTSTATUS status = DirectSyscallNtQueryInformationProcess(
+        GetCurrentProcess(),
+        ProcessDebugPort,
+        &debugPort,
+        sizeof(debugPort),
+        nullptr
+    );
+    
+    // If successful and port != 0, debugger is attached
+    if (status == 0 && debugPort != 0) {
+        return true;
+    }
+    
+    // Fallback: Use dynamic resolution via GetProcAddress if syscall failed
+    if (status == 0xC0000002) { // STATUS_NOT_IMPLEMENTED
+        HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+        if (!ntdll) {
+            return false;
+        }
+        
+        auto NtQueryInformationProcess = reinterpret_cast<NtQueryInformationProcessPtr>(
+            GetProcAddress(ntdll, "NtQueryInformationProcess")
+        );
+        
+        if (!NtQueryInformationProcess) {
+            return false;
+        }
+        
+        debugPort = 0;
+        status = NtQueryInformationProcess(
+            GetCurrentProcess(),
+            ProcessDebugPort,
+            &debugPort,
+            sizeof(debugPort),
+            nullptr
+        );
+        
+        if (status == 0 && debugPort != 0) {
+            return true;
+        }
+    }
+#endif
+    
+    return false;
+}
+
+bool AntiDebugDetector::CheckDebugObject() {
+#ifdef _WIN32
+    // Use NtQueryInformationProcess with ProcessDebugObjectHandle (class 30)
+    // Try direct syscall first to bypass user-mode hooks
+    HANDLE debugObject = nullptr;
+    NTSTATUS status = DirectSyscallNtQueryInformationProcess(
+        GetCurrentProcess(),
+        ProcessDebugObjectHandle,
+        &debugObject,
+        sizeof(debugObject),
+        nullptr
+    );
+    
+    // STATUS_PORT_NOT_SET = 0xC0000353
+    const NTSTATUS STATUS_PORT_NOT_SET = 0xC0000353;
+    
+    // If status is success and handle exists, debugger is attached
+    if (status == 0 && debugObject != nullptr) {
+        return true;
+    }
+    
+    // Fallback: Use dynamic resolution via GetProcAddress if syscall failed
+    if (status == 0xC0000002) { // STATUS_NOT_IMPLEMENTED
+        HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+        if (!ntdll) {
+            return false;
+        }
+        
+        auto NtQueryInformationProcess = reinterpret_cast<NtQueryInformationProcessPtr>(
+            GetProcAddress(ntdll, "NtQueryInformationProcess")
+        );
+        
+        if (!NtQueryInformationProcess) {
+            return false;
+        }
+        
+        debugObject = nullptr;
+        status = NtQueryInformationProcess(
+            GetCurrentProcess(),
+            ProcessDebugObjectHandle,
+            &debugObject,
+            sizeof(debugObject),
+            nullptr
+        );
+        
+        if (status == 0 && debugObject != nullptr) {
+            return true;
+        }
+    }
+    
+    // If status is not STATUS_PORT_NOT_SET and not success, 
+    // might still indicate debugging in some edge cases
+    // but we'll be conservative and only report true positives
+#endif
+    
+    return false;
+}
 bool AntiDebugDetector::CheckHardwareBreakpoints() {
 #ifdef _WIN32
     CONTEXT ctx;
