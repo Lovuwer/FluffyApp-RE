@@ -185,7 +185,7 @@ void SpeedHackDetector::RecalibrateRDTSC() {
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
         if (elapsed >= 100) break;
         // Pause to reduce power consumption
-        __builtin_ia32_pause();
+        _mm_pause();
     }
 #endif
     
