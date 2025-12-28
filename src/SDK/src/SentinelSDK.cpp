@@ -824,10 +824,11 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
             break;
             
         case DLL_PROCESS_DETACH:
-            // DLL is being unloaded - flush pending events to prevent use-after-free
+            // DLL is being unloaded - flush pending events to prevent resource leaks
             if (Sentinel::SDK::g_context && Sentinel::SDK::g_context->reporter) {
-                // Flush all pending events with a short timeout
-                // This ensures no ViolationEvent objects with string pointers remain queued
+                // Flush all pending events before DLL teardown
+                // ViolationEvent now uses std::string (owned copies), but we still flush
+                // to ensure proper cleanup and prevent queued events from being lost
                 Sentinel::SDK::g_context->reporter->Flush();
             }
             
