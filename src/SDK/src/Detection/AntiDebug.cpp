@@ -893,14 +893,17 @@ bool AntiDebugDetector::CheckAllThreadsHardwareBP() {
             if (GetThreadContext(thread, &ctx)) {
                 if (IsHardwareBreakpointSet(ctx)) {
                     detected = true;
-                    CloseHandle(thread);
-                    break;
                 }
             }
             // Note: GetThreadContext may fail for system threads or threads
             // in different protection contexts. This is expected and not treated
             // as a detection (graceful handling as specified in requirements)
             CloseHandle(thread);
+            
+            // Early exit if breakpoint detected
+            if (detected) {
+                break;
+            }
         }
         // Note: OpenThread may fail for protected system threads.
         // We handle this gracefully by continuing to the next thread
