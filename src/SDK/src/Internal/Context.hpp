@@ -36,6 +36,7 @@ struct FunctionProtection {
     std::string name;
     std::array<uint8_t, 32> original_prologue;
     size_t prologue_size;
+    uint64_t last_scanned_timestamp = 0;  // Timestamp in milliseconds for probabilistic scanning
 };
 
 /**

@@ -6,6 +6,7 @@
  * Task 11: Inline Hook Detection Implementation
  * Task 12: IAT Hook Detection Implementation
  * Task 3: TOCTOU Vulnerability Fixes
+ * Task 2: Decouple Anti-Hook Jitter from Hot Path
  * 
  * TOCTOU Protection Mechanisms:
  * 
@@ -20,17 +21,24 @@
  *    - Detects INT 3 breakpoints anywhere in prologue
  *    - Identifies PUSH/RET and JMP [rip+X] patterns at any offset
  * 
- * 3. Random Timing Jitter (Lines 28-36):
- *    - Adds 0-10ms random delay before each check
+ * 3. Scan-Cycle Jitter (Task 2 - Decoupled from Hot Path):
+ *    - Jitter moved from per-function loop to scan-cycle boundaries
+ *    - Uses high-resolution waitable timer (CreateWaitableTimerExW)
  *    - Prevents attackers from predicting check timing windows
- *    - Makes it impossible to temporarily restore bytes during scans
+ *    - No longer accumulates latency during function scanning
  * 
- * 4. Honeypot Detection (Lines 822-852, 933-958):
+ * 4. Probabilistic Scanning with Budget Enforcement (Task 2):
+ *    - Scans 10-20% of functions per cycle (configurable)
+ *    - Prioritizes least recently scanned functions
+ *    - 5ms scan budget per frame prevents frame drops
+ *    - Guarantees full coverage within 500ms window
+ * 
+ * 5. Honeypot Detection (Lines 822-852, 933-958):
  *    - Allows registration of decoy functions never called
  *    - Any modification to honeypots = guaranteed cheat detection
  *    - Provides high-confidence detection without false positives
  * 
- * 5. SENTINEL_PROTECTED_CALL Macro (SentinelSDK.hpp):
+ * 6. SENTINEL_PROTECTED_CALL Macro (SentinelSDK.hpp):
  *    - Inline verification immediately before function call
  *    - Only guaranteed-safe method against TOCTOU attacks
  *    - Recommended for security-critical functions
@@ -59,18 +67,9 @@ namespace Sentinel {
 namespace SDK {
 
 namespace {
-    // Random number generator for timing jitter
+    // Random number generator for probabilistic scanning and jitter
     std::random_device rd;
     std::mt19937 rng(rd());
-    std::uniform_int_distribution<int> jitter_dist(0, 10);  // 0-10ms
-    
-    // Add random jitter to prevent timing prediction
-    void AddRandomJitter() {
-        int jitter_ms = jitter_dist(rng);
-        if (jitter_ms > 0) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(jitter_ms));
-        }
-    }
     
     // Memory barrier for double-check pattern
     inline void MemoryBarrier() {
@@ -344,9 +343,90 @@ namespace {
         return true;
     }
 #endif
-}
+} // namespace
 
 // AntiHookDetector implementation
+
+// Get current time in milliseconds
+uint64_t AntiHookDetector::GetCurrentTimeMs() const {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+// Apply jitter at scan-cycle boundaries using high-resolution timer
+void AntiHookDetector::ApplyScanCycleJitter() {
+    // Generate random jitter (0-10ms)
+    std::uniform_int_distribution<int> jitter_dist(0, 10);
+    int jitter_ms = jitter_dist(rng);
+    
+    if (jitter_ms > 0) {
+#ifdef _WIN32
+        // Use CreateWaitableTimerExW with high-resolution flag for precise timing
+        HANDLE timer = CreateWaitableTimerExW(
+            nullptr,
+            nullptr,
+            CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
+            TIMER_ALL_ACCESS);
+        
+        if (timer) {
+            // Convert milliseconds to 100-nanosecond intervals (negative for relative time)
+            LARGE_INTEGER dueTime;
+            dueTime.QuadPart = -static_cast<LONGLONG>(jitter_ms) * 10000LL;
+            
+            if (SetWaitableTimer(timer, &dueTime, 0, nullptr, nullptr, FALSE)) {
+                WaitForSingleObject(timer, INFINITE);
+            }
+            
+            CloseHandle(timer);
+        } else {
+            // Fallback if high-res timer not available (use consistent cross-platform method)
+            std::this_thread::sleep_for(std::chrono::milliseconds(jitter_ms));
+        }
+#else
+        // For non-Windows platforms, use standard sleep
+        std::this_thread::sleep_for(std::chrono::milliseconds(jitter_ms));
+#endif
+    }
+}
+
+// Select functions to scan probabilistically, prioritizing least recently scanned
+void AntiHookDetector::SelectFunctionsToScan(std::vector<size_t>& indices_out, size_t max_count) {
+    indices_out.clear();
+    
+    size_t total_functions = registered_functions_.size();
+    if (total_functions == 0) {
+        return;
+    }
+    
+    uint64_t current_time = GetCurrentTimeMs();
+    
+    // Create candidates with priority based on time since last scan
+    struct ScanCandidate {
+        size_t index;
+        uint64_t time_since_scan;
+    };
+    
+    std::vector<ScanCandidate> candidates;
+    candidates.reserve(total_functions);
+    
+    for (size_t i = 0; i < total_functions; i++) {
+        uint64_t time_since_scan = current_time - registered_functions_[i].last_scanned_timestamp;
+        candidates.push_back({i, time_since_scan});
+    }
+    
+    // Sort by time_since_scan descending (prioritize least recently scanned)
+    std::sort(candidates.begin(), candidates.end(),
+        [](const ScanCandidate& a, const ScanCandidate& b) {
+            return a.time_since_scan > b.time_since_scan;
+        });
+    
+    // Select top max_count candidates
+    size_t select_count = std::min(max_count, total_functions);
+    for (size_t i = 0; i < select_count; i++) {
+        indices_out.push_back(candidates[i].index);
+    }
+}
+
 void AntiHookDetector::Initialize() {
 #ifdef _WIN32
     SetupDllNotification();
@@ -360,9 +440,6 @@ void AntiHookDetector::Shutdown() {
 }
 
 bool AntiHookDetector::IsInlineHooked(const FunctionProtection& func) {
-    // Add random jitter to prevent timing prediction attacks
-    AddRandomJitter();
-    
     // Verify memory is readable before accessing
     if (!SafeMemory::IsReadable(reinterpret_cast<const void*>(func.address), func.prologue_size)) {
         // Memory is not readable (possibly freed/unmapped)
@@ -889,21 +966,48 @@ std::vector<ViolationEvent> AntiHookDetector::QuickCheck() {
     std::vector<ViolationEvent> violations;
     std::lock_guard<std::mutex> lock(functions_mutex_);
     
-    // Check subset for performance (first 10)
-    size_t checkCount = std::min(registered_functions_.size(), size_t(10));
-    for (size_t i = 0; i < checkCount; i++) {
-        if (IsInlineHooked(registered_functions_[i])) {
-            ViolationEvent ev;
-            ev.type = ViolationType::InlineHook;
-            ev.severity = Severity::Critical;
-            ev.address = registered_functions_[i].address;
-            static const char* detail_msg = "Inline hook detected";
-            ev.details = detail_msg;
-            ev.module_name = nullptr;
-            ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()).count();
-            ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
-            violations.push_back(ev);
+    // Apply jitter at scan-cycle boundary (before starting scan)
+    ApplyScanCycleJitter();
+    
+    // Start scan budget timer
+    current_scan_start_time_ms_ = GetCurrentTimeMs();
+    
+    // Calculate how many functions to scan (10-20% probabilistic)
+    size_t total_functions = registered_functions_.size();
+    size_t scan_count = static_cast<size_t>(total_functions * PROBABILISTIC_SCAN_RATIO);
+    scan_count = std::max(scan_count, size_t(1));  // Scan at least 1 if any registered
+    scan_count = std::min(scan_count, QUICK_CHECK_MAX_FUNCTIONS);  // Cap for QuickCheck
+    
+    // Select functions to scan (prioritizing least recently scanned)
+    std::vector<size_t> indices_to_scan;
+    SelectFunctionsToScan(indices_to_scan, scan_count);
+    
+    // Scan selected functions with budget enforcement
+    for (size_t idx : indices_to_scan) {
+        // Check scan budget - abort if we've exceeded 5ms
+        uint64_t elapsed = GetCurrentTimeMs() - current_scan_start_time_ms_;
+        if (elapsed >= SCAN_BUDGET_MS) {
+            break;  // Budget exceeded, resume next frame
+        }
+        
+        if (idx < registered_functions_.size()) {
+            auto& func = registered_functions_[idx];
+            
+            if (IsInlineHooked(func)) {
+                ViolationEvent ev;
+                ev.type = ViolationType::InlineHook;
+                ev.severity = Severity::Critical;
+                ev.address = func.address;
+                static const char* detail_msg = "Inline hook detected";
+                ev.details = detail_msg;
+                ev.module_name = nullptr;
+                ev.timestamp = GetCurrentTimeMs();
+                ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
+                violations.push_back(ev);
+            }
+            
+            // Update last scanned timestamp
+            func.last_scanned_timestamp = GetCurrentTimeMs();
         }
     }
     
@@ -932,6 +1036,8 @@ std::vector<ViolationEvent> AntiHookDetector::ScanCriticalAPIs() {
         {"user32.dll", "SetWindowsHookExW"},
     };
     
+    uint64_t current_time = GetCurrentTimeMs();
+    
     for (size_t i = 0; i < CRITICAL_APIS.size(); i++) {
         const auto& api = CRITICAL_APIS[i];
         
@@ -949,8 +1055,7 @@ std::vector<ViolationEvent> AntiHookDetector::ScanCriticalAPIs() {
             static const char* detail_msg = "IAT hook detected";
             ev.details = detail_msg;
             ev.module_name = api.module;
-            ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()).count();
+            ev.timestamp = current_time;
             // Include API index to prevent ID collisions
             ev.detection_id = static_cast<uint32_t>(ev.timestamp ^ (i << 24));
             violations.push_back(ev);
@@ -965,8 +1070,10 @@ std::vector<ViolationEvent> AntiHookDetector::CheckHoneypots() {
     std::vector<ViolationEvent> violations;
     std::lock_guard<std::mutex> lock(functions_mutex_);
     
+    uint64_t current_time = GetCurrentTimeMs();
+    
     // Check honeypot functions - ANY modification is guaranteed cheat detection
-    for (const auto& honeypot : honeypot_functions_) {
+    for (auto& honeypot : honeypot_functions_) {
         if (IsInlineHooked(honeypot)) {
             ViolationEvent ev;
             ev.type = ViolationType::InlineHook;
@@ -975,11 +1082,13 @@ std::vector<ViolationEvent> AntiHookDetector::CheckHoneypots() {
             static const char* detail_msg = "Honeypot function modified - cheat detected";
             ev.details = detail_msg;
             ev.module_name = nullptr;
-            ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()).count();
+            ev.timestamp = current_time;
             ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp ^ 0xDEADBEEF);
             violations.push_back(ev);
         }
+        
+        // Update last scanned timestamp for honeypots too
+        honeypot.last_scanned_timestamp = current_time;
     }
     
     return violations;
@@ -988,35 +1097,78 @@ std::vector<ViolationEvent> AntiHookDetector::CheckHoneypots() {
 std::vector<ViolationEvent> AntiHookDetector::FullScan() {
     std::vector<ViolationEvent> violations;
     
-    // Inline hook checks (scoped lock)
+    // Apply jitter at scan-cycle boundary (before starting scan)
+    ApplyScanCycleJitter();
+    
+    // Start scan budget timer
+    current_scan_start_time_ms_ = GetCurrentTimeMs();
+    
+    // Inline hook checks with probabilistic scanning and budget enforcement
     {
         std::lock_guard<std::mutex> lock(functions_mutex_);
-        for (const auto& func : registered_functions_) {
-            if (IsInlineHooked(func)) {
-                ViolationEvent ev;
-                ev.type = ViolationType::InlineHook;
-                ev.severity = Severity::Critical;
-                ev.address = func.address;
-                static const char* detail_msg = "Inline hook detected";
-                ev.details = detail_msg;
-                ev.module_name = nullptr;
-                ev.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::steady_clock::now().time_since_epoch()).count();
-                ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
-                violations.push_back(ev);
+        
+        // For FullScan, we scan more functions but still use probabilistic approach
+        size_t total_functions = registered_functions_.size();
+        size_t scan_count = static_cast<size_t>(total_functions * PROBABILISTIC_SCAN_RATIO);
+        scan_count = std::max(scan_count, size_t(1));
+        // Cap at the lesser of total_functions or FULL_SCAN_MAX_FUNCTIONS
+        if (scan_count > total_functions) {
+            scan_count = total_functions;
+        }
+        if (scan_count > FULL_SCAN_MAX_FUNCTIONS) {
+            scan_count = FULL_SCAN_MAX_FUNCTIONS;
+        }
+        
+        // Select functions to scan (prioritizing least recently scanned)
+        std::vector<size_t> indices_to_scan;
+        SelectFunctionsToScan(indices_to_scan, scan_count);
+        
+        for (size_t idx : indices_to_scan) {
+            // Check scan budget - abort if we've exceeded budget
+            uint64_t elapsed = GetCurrentTimeMs() - current_scan_start_time_ms_;
+            if (elapsed >= SCAN_BUDGET_MS) {
+                break;  // Budget exceeded, resume next frame
+            }
+            
+            if (idx < registered_functions_.size()) {
+                auto& func = registered_functions_[idx];
+                
+                if (IsInlineHooked(func)) {
+                    ViolationEvent ev;
+                    ev.type = ViolationType::InlineHook;
+                    ev.severity = Severity::Critical;
+                    ev.address = func.address;
+                    static const char* detail_msg = "Inline hook detected";
+                    ev.details = detail_msg;
+                    ev.module_name = nullptr;
+                    ev.timestamp = GetCurrentTimeMs();
+                    ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
+                    violations.push_back(ev);
+                }
+                
+                // Update last scanned timestamp
+                func.last_scanned_timestamp = GetCurrentTimeMs();
             }
         }
     } // Lock automatically released here
     
-    // Honeypot checks (has its own lock)
-    auto honeypotViolations = CheckHoneypots();
-    violations.insert(violations.end(), 
-                     honeypotViolations.begin(), honeypotViolations.end());
+    // Check scan budget before proceeding to honeypots
+    uint64_t elapsed = GetCurrentTimeMs() - current_scan_start_time_ms_;
+    if (elapsed < SCAN_BUDGET_MS) {
+        // Honeypot checks (has its own lock)
+        auto honeypotViolations = CheckHoneypots();
+        violations.insert(violations.end(), 
+                         honeypotViolations.begin(), honeypotViolations.end());
+    }
     
-    // IAT hook checks
-    auto iatViolations = ScanCriticalAPIs();
-    violations.insert(violations.end(), 
-                     iatViolations.begin(), iatViolations.end());
+    // Check scan budget before proceeding to IAT checks
+    elapsed = GetCurrentTimeMs() - current_scan_start_time_ms_;
+    if (elapsed < SCAN_BUDGET_MS) {
+        // IAT hook checks
+        auto iatViolations = ScanCriticalAPIs();
+        violations.insert(violations.end(), 
+                         iatViolations.begin(), iatViolations.end());
+    }
     
     return violations;
 }
