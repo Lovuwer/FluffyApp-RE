@@ -34,6 +34,13 @@
 #define ProcessDebugObjectHandle 30
 #define ProcessDebugFlags 31
 
+// Task 14: Debug flags constants for PEB patching detection
+// FLG_HEAP_ENABLE_TAIL_CHECK | FLG_HEAP_ENABLE_FREE_CHECK | FLG_HEAP_VALIDATE_PARAMETERS
+#define NtGlobalFlag_DEBUG_FLAGS 0x70
+
+// HEAP_TAIL_CHECKING_ENABLED | HEAP_FREE_CHECKING_ENABLED | HEAP_VALIDATE_PARAMETERS_ENABLED
+#define HEAP_DEBUG_FLAGS 0x40000060
+
 typedef NTSTATUS (NTAPI *NtQueryInformationProcessPtr)(
     HANDLE ProcessHandle,
     DWORD ProcessInformationClass,
@@ -321,6 +328,23 @@ std::vector<ViolationEvent> AntiDebugDetector::Check() {
         violations.push_back(ev);
     }
     
+    // Task 14: Check for PEB patching by cross-referencing heap flags
+    // This detects anti-anti-debug tools that patch NtGlobalFlag but can't patch heap flags.
+    // Checked before individual NtGlobalFlag/HeapFlags checks to provide specific "PEB patched" violation.
+    // If this check triggers, the subsequent NtGlobalFlag check will NOT trigger (NtGlobalFlag=0),
+    // but the HeapFlags check may still trigger, which is expected and provides additional context.
+    if (CheckHeapFlagsVsNtGlobalFlag()) {
+        ViolationEvent ev;
+        ev.type = ViolationType::DebuggerAttached;
+        ev.severity = Severity::High;  // High severity - clear evidence of anti-anti-debug tool
+        ev.details = "PEB patched - NtGlobalFlag clean but heap has debug flags (ScyllaHide/TitanHide detected)";
+        ev.timestamp = 0;
+        ev.address = 0;
+        ev.module_name = nullptr;
+        ev.detection_id = 0;
+        violations.push_back(ev);
+    }
+    
     if (CheckNtGlobalFlag()) {
         ViolationEvent ev;
         ev.type = ViolationType::DebuggerAttached;
@@ -417,6 +441,20 @@ std::vector<ViolationEvent> AntiDebugDetector::FullCheck() {
         ev.type = ViolationType::DebuggerAttached;
         ev.severity = Severity::High;  // High severity as specified (not Critical)
         ev.details = "Remote debugger detected";
+        ev.timestamp = 0;
+        ev.address = 0;
+        ev.module_name = nullptr;
+        ev.detection_id = 0;
+        violations.push_back(ev);
+    }
+    
+    // Task 14: Check if parent process is a known debugger
+    // This detects when application is launched from a debugger
+    if (CheckParentProcessDebugger()) {
+        ViolationEvent ev;
+        ev.type = ViolationType::DebuggerAttached;
+        ev.severity = Severity::High;  // High severity - strong indicator of debugging
+        ev.details = "Parent process is a known debugger (x64dbg, devenv, windbg, etc.)";
         ev.timestamp = 0;
         ev.address = 0;
         ev.module_name = nullptr;
@@ -805,11 +843,7 @@ bool AntiDebugDetector::CheckNtGlobalFlag() {
         DWORD ntGlobalFlag = *(DWORD*)((BYTE*)peb + 0x68);
     #endif
     
-    // FLG_HEAP_ENABLE_TAIL_CHECK | FLG_HEAP_ENABLE_FREE_CHECK | 
-    // FLG_HEAP_VALIDATE_PARAMETERS
-    const DWORD DEBUG_FLAGS = 0x70;
-    
-    return (ntGlobalFlag & DEBUG_FLAGS) != 0;
+    return (ntGlobalFlag & NtGlobalFlag_DEBUG_FLAGS) != 0;
 #else
     return false;
 #endif
@@ -903,6 +937,215 @@ bool AntiDebugDetector::CheckAllThreadsHardwareBP() {
     }
     
     return detected;
+#else
+    return false;
+#endif
+}
+
+// Task 14: Cross-reference heap flags with NtGlobalFlag to detect PEB patching
+// This method detects anti-anti-debug tools (ScyllaHide, TitanHide) that patch
+// NtGlobalFlag to 0 but cannot patch the heap flags that were set at process creation.
+// Returns true if inconsistency detected (NtGlobalFlag clean but heap has debug flags).
+bool AntiDebugDetector::CheckHeapFlagsVsNtGlobalFlag() {
+#ifdef _WIN32
+    // Read NtGlobalFlag from PEB
+    #ifdef _WIN64
+        PPEB peb = (PPEB)__readgsqword(0x60);
+        DWORD ntGlobalFlag = *(DWORD*)((BYTE*)peb + 0xBC);
+    #else
+        PPEB peb = (PPEB)__readfsdword(0x30);
+        DWORD ntGlobalFlag = *(DWORD*)((BYTE*)peb + 0x68);
+    #endif
+    
+    bool ntGlobalFlagIndicatesDebug = (ntGlobalFlag & NtGlobalFlag_DEBUG_FLAGS) != 0;
+    
+    // Check heap flags directly
+    HANDLE heap = GetProcessHeap();
+    if (!heap) {
+        return false;  // Can't check, inconclusive
+    }
+    
+    // Method 1: Check heap compatibility information
+    ULONG heapInfo = 0;
+    bool heapIndicatesDebug = false;
+    
+    if (HeapQueryInformation(heap, HeapCompatibilityInformation, 
+                             &heapInfo, sizeof(heapInfo), nullptr)) {
+        // Normal heap = 2 (LFH), debug heap = 0 or 1
+        if (heapInfo == 0 || heapInfo == 1) {
+            heapIndicatesDebug = true;
+        }
+    }
+    
+    // Method 2: Read heap flags directly from heap structure
+    // Heap flags are at different offsets based on architecture and Windows version
+    // This is a more reliable check as it reads the actual flags set at creation time
+    #ifdef _WIN64
+        // On x64, Flags is at offset 0x70, ForceFlags at 0x74
+        DWORD* heapFlags = (DWORD*)((BYTE*)heap + 0x70);
+        DWORD* heapForceFlags = (DWORD*)((BYTE*)heap + 0x74);
+    #else
+        // On x86, Flags is at offset 0x40, ForceFlags at 0x44
+        DWORD* heapFlags = (DWORD*)((BYTE*)heap + 0x40);
+        DWORD* heapForceFlags = (DWORD*)((BYTE*)heap + 0x44);
+    #endif
+    
+    // Validate memory is readable before accessing
+    MEMORY_BASIC_INFORMATION mbi;
+    if (VirtualQuery(heapFlags, &mbi, sizeof(mbi)) == 0) {
+        // Can't validate, use only HeapQueryInformation result
+        // Don't return inconsistency unless we have clear evidence
+        return false;
+    }
+    
+    // Check if memory region is readable (any readable protection flag)
+    const DWORD READABLE_PROTECTIONS = PAGE_READONLY | PAGE_READWRITE | 
+                                       PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | 
+                                       PAGE_WRITECOPY | PAGE_EXECUTE_WRITECOPY;
+    if (!(mbi.Protect & READABLE_PROTECTIONS)) {
+        // Memory not readable, use only HeapQueryInformation result
+        return false;
+    }
+    
+    // Read heap flags safely
+    DWORD flags = 0;
+    DWORD forceFlags = 0;
+    
+    __try {
+        flags = *heapFlags;
+        forceFlags = *heapForceFlags;
+    } __except(EXCEPTION_EXECUTE_HANDLER) {
+        // Access violation, heap structure not where expected
+        // Use only HeapQueryInformation result
+        if (!ntGlobalFlagIndicatesDebug && heapIndicatesDebug) {
+            return true;  // Inconsistency detected
+        }
+        return false;
+    }
+    
+    // ForceFlags in debug mode: HEAP_TAIL_CHECKING_ENABLED (0x20) | HEAP_FREE_CHECKING_ENABLED (0x40)
+    // Non-zero ForceFlags typically indicates debug heap, but check for specific debug bits
+    const DWORD FORCE_FLAGS_DEBUG_MASK = 0x60;  // HEAP_TAIL_CHECKING_ENABLED | HEAP_FREE_CHECKING_ENABLED
+    bool heapFlagsIndicateDebug = (flags & HEAP_DEBUG_FLAGS) != 0 || 
+                                  (forceFlags & FORCE_FLAGS_DEBUG_MASK) != 0;
+    
+    // Combine both methods for reliable detection
+    heapIndicatesDebug = heapIndicatesDebug || heapFlagsIndicateDebug;
+    
+    // Inconsistency: NtGlobalFlag says "clean" but heap has debug flags
+    // This indicates NtGlobalFlag was patched after process creation
+    if (!ntGlobalFlagIndicatesDebug && heapIndicatesDebug) {
+        return true;
+    }
+    
+    return false;
+#else
+    return false;
+#endif
+}
+
+// Task 14: Check if parent process is a known debugger
+// This method detects when the application is launched from a debugger.
+// Returns true if parent process is a known debugger (x64dbg, devenv, windbg, etc.).
+// Gracefully handles access failures (parent may have exited or be protected).
+bool AntiDebugDetector::CheckParentProcessDebugger() {
+#ifdef _WIN32
+    // Get current process ID
+    DWORD currentPid = GetCurrentProcessId();
+    
+    // Take snapshot of all processes
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) {
+        return false;  // Can't enumerate processes, inconclusive
+    }
+    
+    // Find our process entry to get parent PID
+    PROCESSENTRY32W pe;
+    pe.dwSize = sizeof(pe);
+    
+    DWORD parentPid = 0;
+    bool found = false;
+    
+    if (Process32FirstW(snapshot, &pe)) {
+        do {
+            if (pe.th32ProcessID == currentPid) {
+                parentPid = pe.th32ParentProcessID;
+                found = true;
+                break;
+            }
+        } while (Process32NextW(snapshot, &pe));
+    }
+    
+    if (!found) {
+        CloseHandle(snapshot);
+        return false;  // Couldn't find our process, inconclusive
+    }
+    
+    // Now find parent process name
+    wchar_t parentName[MAX_PATH] = {0};
+    bool gotParentName = false;
+    
+    // Reset to beginning of snapshot
+    pe.dwSize = sizeof(pe);
+    if (Process32FirstW(snapshot, &pe)) {
+        do {
+            if (pe.th32ProcessID == parentPid) {
+                wcsncpy_s(parentName, _countof(parentName), pe.szExeFile, _TRUNCATE);
+                gotParentName = true;
+                break;
+            }
+        } while (Process32NextW(snapshot, &pe));
+    }
+    
+    CloseHandle(snapshot);
+    
+    if (!gotParentName) {
+        // Parent process may have exited or be inaccessible
+        // This is normal and not a sign of debugging
+        return false;
+    }
+    
+    // Convert to lowercase for case-insensitive comparison
+    // Using _wcslwr_s for safer string manipulation
+    _wcslwr_s(parentName, _countof(parentName));
+    
+    // Known debugger process names
+    // NOTE: This is an intentionally hardcoded list of common debuggers and reverse engineering tools.
+    // False positives in legitimate development environments are acceptable and expected behavior
+    // for anti-debugging protection. This check is meant to detect when the application is launched
+    // directly from a debugger, which is a strong indicator of reverse engineering activity.
+    // The list should be periodically reviewed and updated as new tools emerge.
+    const wchar_t* debuggers[] = {
+        L"x64dbg.exe",
+        L"x32dbg.exe",
+        L"windbg.exe",
+        L"devenv.exe",        // Visual Studio
+        L"ida.exe",
+        L"ida64.exe",
+        L"ollydbg.exe",
+        L"idaq.exe",
+        L"idaq64.exe",
+        L"scylla.exe",
+        L"scyllahide.exe",
+        L"cheatengine-x86_64.exe",
+        L"cheatengine-i386.exe",
+        L"pestudio.exe",
+        L"processhacker.exe",
+        L"lordpe.exe",
+        L"importrec.exe",
+        L"immunitydebugger.exe",
+        L"reshacker.exe",
+        L"dnspy.exe"
+    };
+    
+    // Check if parent is a known debugger
+    for (const auto* debugger : debuggers) {
+        if (wcsstr(parentName, debugger) != nullptr) {
+            return true;
+        }
+    }
+    
+    return false;
 #else
     return false;
 #endif
