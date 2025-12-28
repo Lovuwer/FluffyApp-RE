@@ -185,6 +185,16 @@ bool InjectionDetector::IsKnownJITRegion(uintptr_t address) {
     
     // Fallback: Check against whitelist for thread origins
     // This provides an additional layer for user-configured whitelists
+    // 
+    // SECURITY NOTE: This fallback is necessary for flexibility but could
+    // potentially be exploited if the whitelist is misconfigured or if it
+    // uses weaker validation methods. Ensure the whitelist implementation
+    // also uses strong validation (not just name-based checks).
+    // 
+    // The whitelist should only be used for:
+    // - Custom JIT engines not in the signature database
+    // - Temporary workarounds during signature database population
+    // - User-specific scenarios that require manual configuration
     if (g_whitelist && g_whitelist->IsThreadOriginWhitelisted(address)) {
         return true;
     }

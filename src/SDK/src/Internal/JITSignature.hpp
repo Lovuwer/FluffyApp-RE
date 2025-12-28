@@ -37,6 +37,10 @@ struct JITSignature {
     JITEngineType engine_type;      ///< Type of JIT engine
     std::wstring version;           ///< Version string (e.g., L".NET 6.0", L"V8 10.x")
     std::vector<uint8_t> text_hash; ///< SHA-256 hash of first 4KB of .text section
+    size_t max_heap_distance;       ///< Maximum distance from module base for JIT heap (bytes)
+    
+    // Constructor with default heap distance
+    JITSignature() : max_heap_distance(32 * 1024 * 1024) {} // Default 32MB
 };
 
 /**
@@ -89,9 +93,10 @@ private:
      * Verify that an RWX region is within expected JIT heap ranges
      * @param address Address to check
      * @param module_base Base address of the parent module
+     * @param max_distance Maximum allowed distance from module (bytes)
      * @return True if the region is within valid JIT heap range
      */
-    bool IsWithinJITHeapRange(uintptr_t address, uintptr_t module_base);
+    bool IsWithinJITHeapRange(uintptr_t address, uintptr_t module_base, size_t max_distance);
 
     /**
      * Add built-in signatures for known JIT engines
@@ -110,6 +115,7 @@ private:
     struct ValidatedModule {
         uintptr_t base_address;
         JITEngineType engine_type;
+        size_t max_heap_distance;
         uint64_t validation_time;
     };
     std::vector<ValidatedModule> validated_cache_;

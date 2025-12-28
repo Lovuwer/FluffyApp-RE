@@ -24,6 +24,9 @@
 namespace Sentinel {
 namespace SDK {
 
+// Constants for JIT signature validation
+static constexpr size_t TEXT_HASH_SIZE = 4096;  // Size of .text section to hash
+
 // Helper function to convert hash to hex string for map key
 static std::string HashToHexString(const uint8_t* hash, size_t size) {
     std::ostringstream oss;
@@ -69,7 +72,7 @@ bool JITSignatureValidator::ValidateJITRegion(uintptr_t address) {
     for (const auto& cached : validated_cache_) {
         if (cached.base_address == module_base) {
             // Found in cache - verify the address is within expected JIT heap range
-            return IsWithinJITHeapRange(address, module_base);
+            return IsWithinJITHeapRange(address, module_base, cached.max_heap_distance);
         }
     }
 
@@ -101,7 +104,7 @@ bool JITSignatureValidator::ValidateJITRegion(uintptr_t address) {
     }
 
     // Verify the address is within expected JIT heap ranges
-    if (!IsWithinJITHeapRange(address, module_base)) {
+    if (!IsWithinJITHeapRange(address, module_base, signature.max_heap_distance)) {
         return false;
     }
 
@@ -109,6 +112,7 @@ bool JITSignatureValidator::ValidateJITRegion(uintptr_t address) {
     ValidatedModule cached_entry;
     cached_entry.base_address = module_base;
     cached_entry.engine_type = signature.engine_type;
+    cached_entry.max_heap_distance = signature.max_heap_distance;
     cached_entry.validation_time = GetTickCount64();
     validated_cache_.push_back(cached_entry);
 
@@ -178,8 +182,9 @@ bool JITSignatureValidator::HashTextSection(uintptr_t module_base, uint8_t* hash
         return false;
     }
 
-    // Hash the first 4KB of the .text section (or entire section if smaller)
-    size_t bytes_to_hash = (text_size < 4096) ? text_size : 4096;
+    // Hash the first TEXT_HASH_SIZE bytes of the .text section (or entire section if smaller)
+    // This size is chosen as a balance between uniqueness and performance
+    size_t bytes_to_hash = (text_size < TEXT_HASH_SIZE) ? text_size : TEXT_HASH_SIZE;
 
     // Initialize BCrypt for SHA-256
     BCRYPT_ALG_HANDLE hAlg = NULL;
@@ -285,7 +290,7 @@ bool JITSignatureValidator::GetTextSectionInfo(uintptr_t module_base,
 #endif
 }
 
-bool JITSignatureValidator::IsWithinJITHeapRange(uintptr_t address, uintptr_t module_base) {
+bool JITSignatureValidator::IsWithinJITHeapRange(uintptr_t address, uintptr_t module_base, size_t max_distance) {
 #ifdef _WIN32
     // Get module information
     MODULEINFO modInfo;
@@ -302,22 +307,22 @@ bool JITSignatureValidator::IsWithinJITHeapRange(uintptr_t address, uintptr_t mo
         return true;  // Within module range
     }
 
-    // JIT heaps can also be allocated nearby (within 2GB for x64 relative addressing)
-    // Allow addresses within 32MB of the module (conservative estimate)
-    const uintptr_t MAX_JIT_DISTANCE = 32 * 1024 * 1024;  // 32MB
+    // JIT heaps can also be allocated nearby (within max_distance for relative addressing)
+    // The max_distance is configurable per JIT engine type to accommodate different allocation patterns
     
-    if (address >= module_end && (address - module_end) < MAX_JIT_DISTANCE) {
-        return true;  // Near the module
+    if (address >= module_end && (address - module_end) < max_distance) {
+        return true;  // Near the module (after)
     }
     
-    if (address < module_base && (module_base - address) < MAX_JIT_DISTANCE) {
-        return true;  // Near the module
+    if (address < module_base && (module_base - address) < max_distance) {
+        return true;  // Near the module (before)
     }
 
     return false;  // Too far from the module
 #else
     (void)address;
     (void)module_base;
+    (void)max_distance;
     return false;
 #endif
 }
@@ -332,10 +337,24 @@ void JITSignatureValidator::AddSignature(const JITSignature& signature) {
 }
 
 void JITSignatureValidator::AddBuiltInSignatures() {
-    // NOTE: This function is intentionally left mostly empty as a secure default.
-    // JIT signatures must be extracted from actual DLL files using the hash extraction utility.
-    // See docs/JIT_SIGNATURE_DATABASE.md for detailed instructions.
+    // ============================================================================
+    // CRITICAL DEPLOYMENT REQUIREMENT
+    // ============================================================================
+    // This function is intentionally left mostly empty as a secure default.
+    // The signature database MUST be populated before production deployment
+    // to avoid widespread false positives on legitimate JIT engines.
     //
+    // IMPACT OF EMPTY DATABASE:
+    // - ALL JIT regions will be flagged as suspicious
+    // - .NET applications, Electron apps, LuaJIT games will trigger detections
+    // - Users must rely on manual whitelist as workaround
+    //
+    // See docs/JIT_SIGNATURE_DATABASE.md for detailed instructions on:
+    // - Extracting signatures using scripts/extract_jit_hashes.py
+    // - Testing and validating signatures
+    // - Maintenance and update procedures
+    // ============================================================================
+    
     // To add signatures:
     // 1. Run: python3 scripts/extract_jit_hashes.py <path_to_jit_dll> --version "<version>" --engine-type <type>
     // 2. Copy the generated code into this function
@@ -360,6 +379,7 @@ void JITSignatureValidator::AddBuiltInSignatures() {
         0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11,
         0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99
     };
+    net8_clrjit.max_heap_distance = 32 * 1024 * 1024;  // 32MB (default)
     AddSignature(net8_clrjit);
     */
 
