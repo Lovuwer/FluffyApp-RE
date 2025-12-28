@@ -13,6 +13,9 @@
 #include <chrono>
 #endif
 
+#include <cmath>
+#include <vector>
+
 using namespace Sentinel::SDK;
 
 /**
@@ -241,6 +244,60 @@ TEST(SpeedHackTests, WallClockValidationPeriodic) {
 }
 
 /**
+ * Test: Calibration Variance
+ * This test verifies that calibration variance is <2% across 10 consecutive measurements.
+ * This ensures the calibration is robust and not easily poisoned.
+ */
+TEST(SpeedHackTests, CalibrationVariance) {
+    // This test needs access to internal calibration, so we'll test indirectly
+    // by verifying that multiple Initialize() calls produce consistent results
+    
+    const int num_calibrations = 10;
+    std::vector<float> time_scales;
+    
+    for (int i = 0; i < num_calibrations; i++) {
+        SpeedHackDetector detector;
+        detector.Initialize();
+        
+        // Run a few frames to stabilize
+        for (int j = 0; j < 20; j++) {
+            detector.ValidateFrame();
+            #ifdef _WIN32
+            Sleep(10);
+            #else
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            #endif
+        }
+        
+        time_scales.push_back(detector.GetTimeScale());
+        detector.Shutdown();
+    }
+    
+    // Calculate mean and variance
+    double mean = 0.0;
+    for (float ts : time_scales) {
+        mean += ts;
+    }
+    mean /= num_calibrations;
+    
+    double variance = 0.0;
+    for (float ts : time_scales) {
+        double diff = ts - mean;
+        variance += diff * diff;
+    }
+    variance /= num_calibrations;
+    double stddev = std::sqrt(variance);
+    
+    // Coefficient of variation (CV) = stddev / mean
+    // CV < 0.02 means variance < 2%
+    double cv = stddev / mean;
+    
+    EXPECT_LT(cv, 0.02)
+        << "Calibration variance should be < 2%, got CV=" << cv 
+        << " (mean=" << mean << ", stddev=" << stddev << ")";
+}
+
+/**
  * Manual test instructions (not automated):
  * 
  * Adversarial Test - Simulated Speed Hack:
@@ -258,6 +315,14 @@ TEST(SpeedHackTests, WallClockValidationPeriodic) {
  * - After 3+ anomalies, ValidateFrame() should return false
  * - The test should fail due to detected speed manipulation
  * 
+ * Adversarial Test - Hooked Sleep():
+ * To test that calibration survives Sleep() hooking:
+ * 1. Build the test executable in Release mode
+ * 2. Hook Sleep() to return 10x faster (e.g., Sleep(100) returns after 10ms)
+ * 3. Run the CalibrationVariance or NormalOperation test
+ * 4. Verify that the calibration is still accurate and detection still works
+ * 5. The calibration now uses busy-wait with QueryPerformanceCounter, so Sleep() hooks have no effect
+ * 
  * Definition of Done criteria:
  * - Detects 2x speed acceleration within 3 seconds
  * - Zero false positives in 10000 normal frames (25% threshold)
@@ -265,6 +330,8 @@ TEST(SpeedHackTests, WallClockValidationPeriodic) {
  * - ValidateFrame() executes in < 1ms
  * - RDTSC integrated as third time source
  * - Monotonicity checks detect time going backwards
+ * - Calibration variance <2% across 10 consecutive measurements
+ * - Detection survives Sleep() being hooked
  * 
  * Severity Level:
  * - Speed hack detection severity is "High" (not "Critical")
