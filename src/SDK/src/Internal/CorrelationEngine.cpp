@@ -521,7 +521,7 @@ bool CorrelationEngine::IsFalsePositivePattern() const {
             has_rwx_detection = true;
         }
         if (signal.category == DetectionCategory::Hooks && signal.module_name) {
-            std::string module(signal.module_name);
+            std::string module(signal.module_name);  // Safe - checked for null above
             std::transform(module.begin(), module.end(), module.begin(), ::tolower);
             if (module.find("overlay") != std::string::npos ||
                 module.find("discord") != std::string::npos) {
@@ -540,6 +540,9 @@ bool CorrelationEngine::IsFalsePositivePattern() const {
 
 double CorrelationEngine::ApplyEnvironmentalPenalty(double base_score) const {
     // Apply 30% penalty (multiply by 0.7) when VM or cloud gaming detected
+    // VM detection: CPUID hypervisor bit, system characteristics
+    // Cloud gaming: Environment variables (GFN_SDK_VERSION, XBOX_CLOUD_GAMING)
+    // These flags are set once during Initialize() via DetectEnvironment()
     if (environment_.is_vm_environment || environment_.is_cloud_gaming) {
         return base_score * ENVIRONMENTAL_PENALTY_FACTOR;
     }
