@@ -977,11 +977,11 @@ TEST(AntiHookTests, PerformanceScanBudget) {
     std::cout << "  Average time: " << avg_time << " ms" << std::endl;
     std::cout << "  Max time (worst-case): " << max_time << " ms" << std::endl;
     
-    // Verify worst-case is under 2ms (target from requirements)
-    // Note: Since we apply jitter (0-10ms) at cycle boundary, we allow up to 12ms total
-    // The scan itself should be well under 2ms, jitter is separate
+    // Verify worst-case is under target
+    // Target: 2ms scan + 5ms budget enforcement + 10ms max jitter = 17ms conservative limit
+    // We use 15ms as the threshold to ensure we're well within acceptable bounds
     EXPECT_LT(max_time, 15.0)
-        << "QuickCheck worst-case should be under 15ms (including jitter)";
+        << "QuickCheck worst-case should be under 15ms (2ms scan + jitter + budget margin)";
     
     detector.Shutdown();
 }

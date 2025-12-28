@@ -980,7 +980,7 @@ std::vector<ViolationEvent> AntiHookDetector::QuickCheck() {
     size_t total_functions = registered_functions_.size();
     size_t scan_count = static_cast<size_t>(total_functions * PROBABILISTIC_SCAN_RATIO);
     scan_count = std::max(scan_count, size_t(1));  // Scan at least 1 if any registered
-    scan_count = std::min(scan_count, size_t(20));  // Cap at 20 for QuickCheck
+    scan_count = std::min(scan_count, QUICK_CHECK_MAX_FUNCTIONS);  // Cap for QuickCheck
     
     // Select functions to scan (prioritizing least recently scanned)
     std::vector<size_t> indices_to_scan;
@@ -1115,8 +1115,8 @@ std::vector<ViolationEvent> AntiHookDetector::FullScan() {
         size_t total_functions = registered_functions_.size();
         size_t scan_count = static_cast<size_t>(total_functions * PROBABILISTIC_SCAN_RATIO);
         scan_count = std::max(scan_count, size_t(1));
-        // For FullScan, allow scanning more functions (up to 50)
-        scan_count = std::min(scan_count, std::min(total_functions, size_t(50)));
+        // For FullScan, allow scanning more functions
+        scan_count = std::min(scan_count, std::min(total_functions, FULL_SCAN_MAX_FUNCTIONS));
         
         // Select functions to scan (prioritizing least recently scanned)
         std::vector<size_t> indices_to_scan;

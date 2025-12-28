@@ -136,6 +136,8 @@ private:
     static constexpr uint64_t SCAN_BUDGET_MS = 5;  // 5ms max per scan cycle
     static constexpr uint64_t FULL_COVERAGE_WINDOW_MS = 500;  // 500ms coverage guarantee
     static constexpr float PROBABILISTIC_SCAN_RATIO = 0.15f;  // 15% of functions per cycle (10-20% range)
+    static constexpr size_t QUICK_CHECK_MAX_FUNCTIONS = 20;  // Cap for QuickCheck to keep it fast
+    static constexpr size_t FULL_SCAN_MAX_FUNCTIONS = 50;  // Cap for FullScan for comprehensive checks
 };
 
 /**
