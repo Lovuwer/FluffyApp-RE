@@ -357,6 +357,7 @@ bool SpeedHackDetector::ValidateSourceRatios() {
                 // Check if this anomaly is within the 5-second window
                 if (now - last_timing_anomaly_time_ <= CLOUD_ANOMALY_WINDOW_MS) {
                     timing_anomalies_in_window_++;
+                    last_timing_anomaly_time_ = now;  // Update timestamp for rolling window
                 } else {
                     // Outside window, reset counter
                     timing_anomalies_in_window_ = 1;

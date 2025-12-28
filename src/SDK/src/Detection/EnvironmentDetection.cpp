@@ -149,7 +149,12 @@ bool EnvironmentDetector::DetectCloudGamingProcesses() {
     if (Process32FirstW(snapshot, &pe)) {
         do {
             std::wstring process_name(pe.szExeFile);
-            std::transform(process_name.begin(), process_name.end(), process_name.begin(), ::towlower);
+            // Convert to lowercase using a locale-safe approach
+            for (auto& c : process_name) {
+                if (c >= L'A' && c <= L'Z') {
+                    c = c + (L'a' - L'A');
+                }
+            }
             
             // GeForce NOW detection
             if (process_name.find(L"geforcenow") != std::wstring::npos ||
@@ -284,7 +289,12 @@ bool EnvironmentDetector::DetectHypervisor() {
     struct utsname buffer;
     if (uname(&buffer) == 0) {
         std::string release(buffer.release);
-        std::transform(release.begin(), release.end(), release.begin(), ::tolower);
+        // Convert to lowercase using locale-safe approach
+        for (auto& c : release) {
+            if (c >= 'A' && c <= 'Z') {
+                c = c + ('a' - 'A');
+            }
+        }
         
         if (release.find("vbox") != std::string::npos ||
             release.find("qemu") != std::string::npos ||
