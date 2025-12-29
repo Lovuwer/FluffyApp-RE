@@ -7,13 +7,18 @@
  * Task 12: IAT Hook Detection Implementation
  * Task 3: TOCTOU Vulnerability Fixes
  * Task 2: Decouple Anti-Hook Jitter from Hot Path
+ * Task 10: Secure TOCTOU Double-Read Pattern
  * 
  * TOCTOU Protection Mechanisms:
  * 
- * 1. Double-Check Pattern (Lines 332-385):
- *    - Performs two sequential memory reads with a memory barrier
- *    - Detects dynamic hooks being installed/removed between checks
- *    - Prevents race conditions where hooks appear after verification
+ * 1. Triple-Read Pattern with Random Delay (Task 10):
+ *    - Performs three sequential memory reads with memory barrier
+ *    - On mismatch between first two reads, performs third read after random delay (10-50ms)
+ *    - Implements "triple match" requirement: if any two of three reads match, that value is authoritative
+ *    - All mismatches logged as "potential TOCTOU" signal with timestamps for correlation
+ *    - Random read ordering: sometimes reads forward, sometimes backward through function bytes
+ *    - For critical functions, maintains persistent baseline hash and compares against it
+ *    - If persistent baseline and current read both differ from clean, escalates as confirmed hook
  * 
  * 2. Extended Hook Detection (Lines 754-815):
  *    - Scans first 16 bytes (not just 2) to catch trampoline hooks
@@ -446,37 +451,136 @@ bool AntiHookDetector::IsInlineHooked(const FunctionProtection& func) {
         return false;  // Can't verify, assume not hooked to avoid false positives
     }
     
-    // DOUBLE-CHECK PATTERN: First read
+    // Task 10: Random read ordering - sometimes read forward, sometimes backward
+    std::uniform_int_distribution<int> order_dist(0, 1);
+    bool read_forward = order_dist(rng) == 0;
+    
+    // TRIPLE-READ PATTERN: First read
     uint8_t firstRead[32];  // Max prologue size from Context.hpp
-    if (!SafeMemory::SafeRead(reinterpret_cast<const void*>(func.address), 
-                               firstRead, func.prologue_size)) {
-        // Failed to read (access violation despite IsReadable check)
-        return false;
+    if (read_forward) {
+        if (!SafeMemory::SafeRead(reinterpret_cast<const void*>(func.address), 
+                                   firstRead, func.prologue_size)) {
+            return false;
+        }
+    } else {
+        // Read backward - read bytes in reverse order
+        for (size_t i = 0; i < func.prologue_size; i++) {
+            size_t reverse_idx = func.prologue_size - 1 - i;
+            if (!SafeMemory::SafeRead(reinterpret_cast<const void*>(func.address + reverse_idx), 
+                                       &firstRead[reverse_idx], 1)) {
+                return false;
+            }
+        }
     }
     
     // Memory barrier to ensure first read completes before second read
     MemoryBarrier();
     
-    // DOUBLE-CHECK PATTERN: Second read
+    // TRIPLE-READ PATTERN: Second read
     uint8_t secondRead[32];
-    if (!SafeMemory::SafeRead(reinterpret_cast<const void*>(func.address), 
-                               secondRead, func.prologue_size)) {
-        // Failed to read
+    if (read_forward) {
+        if (!SafeMemory::SafeRead(reinterpret_cast<const void*>(func.address), 
+                                   secondRead, func.prologue_size)) {
+            return false;
+        }
+    } else {
+        // Read backward
+        for (size_t i = 0; i < func.prologue_size; i++) {
+            size_t reverse_idx = func.prologue_size - 1 - i;
+            if (!SafeMemory::SafeRead(reinterpret_cast<const void*>(func.address + reverse_idx), 
+                                       &secondRead[reverse_idx], 1)) {
+                return false;
+            }
+        }
+    }
+    
+    // Check for mismatch between first and second reads
+    bool first_second_mismatch = (std::memcmp(firstRead, secondRead, func.prologue_size) != 0);
+    
+    if (first_second_mismatch) {
+        // Task 10: Perform third read after random delay
+        std::uniform_int_distribution<int> delay_dist(TOCTOU_MIN_DELAY_MS, TOCTOU_MAX_DELAY_MS);
+        int delay_ms = delay_dist(rng);
+        std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+        
+        // TRIPLE-READ PATTERN: Third read
+        uint8_t thirdRead[32];
+        if (!SafeMemory::SafeRead(reinterpret_cast<const void*>(func.address), 
+                                   thirdRead, func.prologue_size)) {
+            return false;
+        }
+        
+        // Task 10: Triple match requirement - if any two of three reads match, that value is authoritative
+        uint8_t* authoritative = nullptr;
+        
+        bool first_third_match = (std::memcmp(firstRead, thirdRead, func.prologue_size) == 0);
+        bool second_third_match = (std::memcmp(secondRead, thirdRead, func.prologue_size) == 0);
+        
+        if (first_third_match) {
+            authoritative = firstRead;  // First and third match
+        } else if (second_third_match) {
+            authoritative = secondRead;  // Second and third match
+        } else {
+            // All three reads are different - this is highly suspicious
+            // Log as potential TOCTOU
+            LogTOCTOUMismatch(func, GetCurrentTimeMs());
+            // Use third read as most recent
+            authoritative = thirdRead;
+        }
+        
+        // Log all mismatches as potential TOCTOU signal
+        LogTOCTOUMismatch(func, GetCurrentTimeMs());
+        
+        // Use authoritative value for comparison
+        uint8_t* currentBytes = authoritative;
+        
+        // Compare with original prologue
+        if (std::memcmp(currentBytes, func.original_prologue.data(), func.prologue_size) != 0) {
+            // Task 10: For critical functions, check baseline hash
+            if (func.is_critical && func.baseline_hash != 0) {
+                uint64_t current_hash = Internal::ComputeHash(currentBytes, func.prologue_size);
+                uint64_t original_hash = Internal::ComputeHash(func.original_prologue.data(), func.prologue_size);
+                
+                // If persistent baseline and current read both differ from clean, escalate as confirmed hook
+                if (func.baseline_hash != original_hash && current_hash != original_hash) {
+                    // Confirmed hook - baseline was compromised and current state is also compromised
+                    return true;
+                }
+            }
+            
+            // Check for hook patterns
+            for (const auto& pattern : HOOK_PATTERNS) {
+                if (pattern.bytes.size() <= func.prologue_size) {
+                    if (MatchesPattern(currentBytes, pattern)) {
+                        return true;  // Hook pattern detected
+                    }
+                }
+            }
+            // Bytes changed but no known pattern - still suspicious
+            return true;
+        }
+        
         return false;
     }
     
-    // Compare the two reads - if different, hook is being installed/removed dynamically
-    if (std::memcmp(firstRead, secondRead, func.prologue_size) != 0) {
-        // Dynamic hook detected - bytes changed between reads
-        return true;
-    }
-    
-    // Use the second read for comparison (most recent)
+    // No mismatch between first and second reads - use second read for comparison
     uint8_t* currentBytes = secondRead;
     
     // Compare with original prologue using safe comparison
     if (!SafeMemory::SafeCompare(reinterpret_cast<const void*>(func.address),
                                   func.original_prologue.data(), func.prologue_size)) {
+        // Task 10: For critical functions, check baseline hash
+        if (func.is_critical && func.baseline_hash != 0) {
+            uint64_t current_hash = Internal::ComputeHash(currentBytes, func.prologue_size);
+            uint64_t original_hash = Internal::ComputeHash(func.original_prologue.data(), func.prologue_size);
+            
+            // If persistent baseline and current read both differ from clean, escalate as confirmed hook
+            if (func.baseline_hash != original_hash && current_hash != original_hash) {
+                // Confirmed hook - baseline was compromised and current state is also compromised
+                return true;
+            }
+        }
+        
         // Bytes changed - check for hook patterns
         for (const auto& pattern : HOOK_PATTERNS) {
             if (pattern.bytes.size() <= func.prologue_size) {
@@ -1328,6 +1432,42 @@ void AntiHookDetector::CleanupDllNotification() {
     }
 }
 #endif
+
+// Task 10: TOCTOU Mismatch Logging
+void AntiHookDetector::LogTOCTOUMismatch(const FunctionProtection& func, uint64_t timestamp) {
+    std::lock_guard<std::mutex> lock(toctou_mutex_);
+    
+    // Add mismatch to tracking list
+    TOCTOUMismatch mismatch;
+    mismatch.address = func.address;
+    mismatch.function_name = func.name;
+    mismatch.timestamp = timestamp;
+    
+    toctou_mismatches_.push_back(mismatch);
+    
+    // Clean up old mismatches (outside the correlation window)
+    uint64_t cutoff_time = timestamp - TOCTOU_WINDOW_MS;
+    toctou_mismatches_.erase(
+        std::remove_if(toctou_mismatches_.begin(), toctou_mismatches_.end(),
+            [cutoff_time](const TOCTOUMismatch& m) {
+                return m.timestamp < cutoff_time;
+            }),
+        toctou_mismatches_.end()
+    );
+    
+#ifdef _DEBUG
+    fprintf(stderr, "[AntiHook] TOCTOU mismatch detected: %s (0x%llx) at %llu ms\n",
+            func.name.c_str(), (unsigned long long)func.address, (unsigned long long)timestamp);
+#endif
+}
+
+// Task 10: Get TOCTOU Correlation Score
+int AntiHookDetector::GetTOCTOUCorrelationScore() {
+    std::lock_guard<std::mutex> lock(toctou_mutex_);
+    
+    // Return count of mismatches within the correlation window
+    return static_cast<int>(toctou_mismatches_.size());
+}
 
 } // namespace SDK
 } // namespace Sentinel
