@@ -897,7 +897,10 @@ bool AntiHookDetector::HasSuspiciousJump(const void* address) {
         }
     }
     
-    // Check for hooks at offsets 0-5 (catches trampoline hooks)
+    // Check for jump/call instructions at function prologue (offsets 0-5)
+    // Note: This is a fast-path check for UNREGISTERED functions (via CheckFunction).
+    // For REGISTERED functions, IsInlineHooked() scans the entire prologue_size
+    // and detects patterns at any offset within the full 64-byte range.
     for (size_t offset = 0; offset <= 5 && offset < SCAN_SIZE; offset++) {
         // Check for JMP instructions at various offsets
         if (offset + 1 <= SCAN_SIZE) {
