@@ -31,14 +31,18 @@ struct MemoryRegion {
 /**
  * Protected function tracking
  * Task 11: Expanded to support 64-byte scanning for critical functions
+ * Task 10: Added baseline_hash for TOCTOU protection
  */
 struct FunctionProtection {
     uintptr_t address;
     std::string name;
-    std::array<uint8_t, 64> original_prologue;  // Expanded from 32 to 64 bytes
+    std::array<uint8_t, 64> original_prologue;  // Task 11: Expanded from 32 to 64 bytes
     size_t prologue_size;
     uint64_t last_scanned_timestamp = 0;  // Timestamp in milliseconds for probabilistic scanning
-    bool is_critical = false;  // Flag for critical security functions requiring full-function scan
+    
+    // Task 10 & 11: Baseline hash and critical function marking
+    uint64_t baseline_hash = 0;  // Hash of clean prologue for critical functions
+    bool is_critical = false;    // Mark critical functions for enhanced protection
 };
 
 /**
