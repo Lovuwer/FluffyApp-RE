@@ -1346,3 +1346,56 @@ TEST(AntiHookTests, CriticalFunctionFullScan) {
     
     detector.Shutdown();
 }
+
+/**
+ * Test 37: NtProtectVirtualMemory Hook Detection (Definition of Done)
+ * Task 11: Demonstrates the exact use case from the problem statement
+ * - Mid-function hook at offset +20 on NtProtectVirtualMemory is detected
+ */
+TEST(AntiHookTests, NtProtectVirtualMemoryMidFunctionHook) {
+    AntiHookDetector detector;
+    detector.Initialize();
+    
+    // Simulate NtProtectVirtualMemory function
+    uint8_t ntProtectVirtualMemory[64];
+    memset(ntProtectVirtualMemory, 0x90, 64);
+    
+    // Typical NtProtectVirtualMemory prologue pattern
+    // MOV R10, RCX; MOV EAX, syscall_number; SYSCALL; RET
+    ntProtectVirtualMemory[0] = 0x4C;  // MOV R10, RCX
+    ntProtectVirtualMemory[1] = 0x8B;
+    ntProtectVirtualMemory[2] = 0xD1;
+    ntProtectVirtualMemory[3] = 0xB8;  // MOV EAX, imm32
+    ntProtectVirtualMemory[4] = 0x50;  // Syscall number (example)
+    ntProtectVirtualMemory[5] = 0x00;
+    ntProtectVirtualMemory[6] = 0x00;
+    ntProtectVirtualMemory[7] = 0x00;
+    
+    FunctionProtection func;
+    func.address = reinterpret_cast<uintptr_t>(ntProtectVirtualMemory);
+    func.name = "NtProtectVirtualMemory";
+    func.prologue_size = 64;  // Full 64-byte scan - CRITICAL for security functions
+    func.is_critical = true;
+    memcpy(func.original_prologue.data(), ntProtectVirtualMemory, 64);
+    
+    detector.RegisterFunction(func);
+    
+    // Verify clean state
+    EXPECT_FALSE(detector.CheckFunction(func.address))
+        << "NtProtectVirtualMemory should be clean initially";
+    
+    // **DEFINITION OF DONE TEST**:
+    // Place a mid-function hook at offset +20 (beyond old 16-byte detection)
+    // This simulates an attacker placing a hook after the prologue to evade detection
+    ntProtectVirtualMemory[20] = 0xE9;  // JMP rel32 - trampoline to hook handler
+    ntProtectVirtualMemory[21] = 0x00;
+    ntProtectVirtualMemory[22] = 0x00;
+    ntProtectVirtualMemory[23] = 0x00;
+    ntProtectVirtualMemory[24] = 0x00;
+    
+    // With Task 11 implementation, this MUST be detected
+    EXPECT_TRUE(detector.CheckFunction(func.address))
+        << "Mid-function hook at offset +20 on NtProtectVirtualMemory MUST be detected";
+    
+    detector.Shutdown();
+}
