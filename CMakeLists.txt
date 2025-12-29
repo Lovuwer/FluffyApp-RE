@@ -319,6 +319,9 @@ endif()
 # Sentinel SDK (In-Game Shield)
 if(SENTINEL_BUILD_SDK)
     add_subdirectory(src/SDK)
+    
+    # Add SDK examples (including DummyGame)
+    add_subdirectory(examples/DummyGame)
 endif()
 
 # Sentinel Watchtower (Roblox Module)
