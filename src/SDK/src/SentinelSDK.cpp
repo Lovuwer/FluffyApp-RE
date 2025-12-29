@@ -108,13 +108,28 @@ uint64_t GenerateHandle() {
 void EmitDetectionTelemetry(const ViolationEvent& event, DetectionType detection_type, float confidence) {
     if (!g_context || !g_context->telemetry) return;
     
+    // Hash only relevant fields to avoid padding bytes and sensitive data exposure
+    struct TelemetryHashData {
+        uint64_t type;
+        uint64_t severity;
+        uint64_t address;
+        uint64_t detection_id;
+        
+        TelemetryHashData(const ViolationEvent& e) 
+            : type(static_cast<uint64_t>(e.type))
+            , severity(static_cast<uint64_t>(e.severity))
+            , address(e.address)
+            , detection_id(e.detection_id)
+        {}
+    } hash_data(event);
+    
     // Create telemetry event
     TelemetryEvent telemetry_event = g_context->telemetry->CreateEventFromViolation(
         event,
         detection_type,
         confidence,
-        &event,  // Use the event itself as raw data for hashing
-        sizeof(event)
+        &hash_data,  // Use structured hash data instead of full event
+        sizeof(hash_data)
     );
     
     // Update correlation state if available

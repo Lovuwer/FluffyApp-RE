@@ -185,6 +185,8 @@ private:
     
     // Configuration storage
     GlobalConfig global_config_;
+    // NOTE: NUM_DETECTION_TYPES must be updated when new DetectionType enum values are added
+    // Current types: AntiDebug, AntiHook, MemoryIntegrity, SpeedHack, InjectionDetect, NetworkAnomaly
     static constexpr size_t NUM_DETECTION_TYPES = 6;
     DetectionConfig detection_configs_[NUM_DETECTION_TYPES];
     

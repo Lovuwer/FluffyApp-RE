@@ -228,6 +228,8 @@ private:
     mutable std::mutex events_mutex_;
     
     // Baseline tracking (one per detection type)
+    // NOTE: NUM_DETECTION_TYPES must be updated when new DetectionType enum values are added
+    // Current types: AntiDebug, AntiHook, MemoryIntegrity, SpeedHack, InjectionDetect, NetworkAnomaly
     static constexpr size_t NUM_DETECTION_TYPES = 6;
     DetectionBaseline baselines_[NUM_DETECTION_TYPES];
     

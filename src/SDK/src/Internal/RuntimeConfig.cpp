@@ -189,19 +189,25 @@ void RuntimeConfig::ResetExceptionCounters() {
 }
 
 void RuntimeConfig::CheckForUpdates() {
-    std::lock_guard<std::mutex> lock(config_mutex_);
+    uint64_t current_time;
+    uint64_t elapsed;
     
-    uint64_t current_time = GetCurrentTimeMs();
-    uint64_t elapsed = current_time - last_update_time_ms_;
+    {
+        std::lock_guard<std::mutex> lock(config_mutex_);
+        current_time = GetCurrentTimeMs();
+        elapsed = current_time - last_update_time_ms_;
+    }
     
     // Check if update interval has passed
     if (elapsed >= global_config_.config_update_interval_ms) {
-        last_update_time_ms_ = current_time;
+        // Make network request without holding the lock
+        bool update_success = LoadFromServer();
         
-        // Unlock while making network request to avoid blocking
-        config_mutex_.unlock();
-        LoadFromServer();
-        config_mutex_.lock();
+        // Update timestamp if successful
+        if (update_success) {
+            std::lock_guard<std::mutex> lock(config_mutex_);
+            last_update_time_ms_ = current_time;
+        }
     }
 }
 
@@ -236,7 +242,12 @@ uint64_t RuntimeConfig::GetCurrentTimeMs() const {
 
 size_t RuntimeConfig::TypeToIndex(DetectionType type) const {
     size_t index = static_cast<size_t>(type);
-    return std::min(index, NUM_DETECTION_TYPES - 1);
+    // Validate index is within bounds
+    if (index >= NUM_DETECTION_TYPES) {
+        // Return 0 (Unknown) for invalid types - safer than returning last index
+        return 0;
+    }
+    return index;
 }
 
 } // namespace SDK
