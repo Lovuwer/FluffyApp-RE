@@ -488,7 +488,13 @@ int main(int /*argc*/, char** /*argv*/) {
     config.heartbeat_interval_ms = 1000;
     config.integrity_scan_interval_ms = 5000;
     config.debug_mode = true;
-    config.log_path = "/tmp/sentinel_dummy_game.log";
+    
+    // Use platform-appropriate temp directory for logs
+    #ifdef _WIN32
+        config.log_path = "C:\\Temp\\sentinel_dummy_game.log";
+    #else
+        config.log_path = "/tmp/sentinel_dummy_game.log";
+    #endif
     
     ErrorCode init_result = Initialize(&config);
     if (init_result != ErrorCode::Success) {

@@ -463,8 +463,10 @@ bool AntiHookDetector::IsInlineHooked(const FunctionProtection& func) {
     std::uniform_int_distribution<int> order_dist(0, 1);
     bool read_forward = order_dist(rng) == 0;
     
-    // TRIPLE-READ PATTERN: First read (Task 10 + Task 11: 64-byte buffers)
-    uint8_t firstRead[64];  // Task 11: Expanded to 64 bytes
+    // TRIPLE-READ PATTERN: First read (64-byte buffers for extended function coverage)
+    // Uses larger buffer size to detect hooks placed deeper in function prologues,
+    // such as mid-function hooks at offsets >16 bytes (e.g., offset +20, +32, +50)
+    uint8_t firstRead[64];  // Extended to 64 bytes for comprehensive coverage
     if (read_forward) {
         if (!SafeMemory::SafeRead(reinterpret_cast<const void*>(func.address), 
                                    firstRead, func.prologue_size)) {

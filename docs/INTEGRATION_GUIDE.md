@@ -732,7 +732,11 @@ printf("Update took %lld µs\n", duration.count());
 ```cpp
 #ifdef DEVELOPER_BUILD
     // Allow debugger in dev builds
-    config.features = DetectionFeatures::Standard & ~DetectionFeatures::AntiDebug;
+    // Note: Requires DetectionFeatures to support bitwise operations
+    config.features = static_cast<DetectionFeatures>(
+        static_cast<uint32_t>(DetectionFeatures::Standard) & 
+        ~static_cast<uint32_t>(DetectionFeatures::AntiDebug)
+    );
 #endif
 ```
 
