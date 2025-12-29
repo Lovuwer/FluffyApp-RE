@@ -105,6 +105,9 @@ public:
     std::vector<ViolationEvent> QuickCheck();
     std::vector<ViolationEvent> FullScan();
     
+    // Task 10: TOCTOU correlation score (public for testing/monitoring)
+    int GetTOCTOUCorrelationScore();
+    
 private:
     bool IsInlineHooked(const FunctionProtection& func);
     bool HasSuspiciousJump(const void* address);
@@ -118,7 +121,6 @@ private:
     
     // Task 10: TOCTOU detection helpers
     void LogTOCTOUMismatch(const FunctionProtection& func, uint64_t timestamp);
-    int GetTOCTOUCorrelationScore();
     
 #ifdef _WIN32
     static void CALLBACK DllNotificationCallback(
