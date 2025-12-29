@@ -380,35 +380,15 @@ bool CorrelationEngine::ShouldWhitelist(const ViolationEvent& event) const {
             if (!event.module_name.empty()) {
                 std::string module = event.module_name;
                 std::transform(module.begin(), module.end(), module.begin(), ::tolower);
-                std::wstring module_wide(module.begin(), module.end());
                 
-                // Check each verified overlay
-                for (const auto& overlay : environment_.verified_overlays) {
-                    // Extract vendor from overlay vendor name
-                    OverlayVendor vendor = OverlayVendor::Unknown;
-                    if (overlay.vendor_name == L"Discord") {
-                        vendor = OverlayVendor::Discord;
-                    } else if (overlay.vendor_name == L"Steam") {
-                        vendor = OverlayVendor::Steam;
-                    } else if (overlay.vendor_name == L"NVIDIA") {
-                        vendor = OverlayVendor::NVIDIA;
-                    } else if (overlay.vendor_name == L"OBS") {
-                        vendor = OverlayVendor::OBS;
-                    }
-                    
-                    // Check if this hook pattern is expected for this overlay
-                    // We only need to check if the module matches - the verifier was
-                    // already initialized during DetectAndVerifyOverlays
-                    if (vendor != OverlayVendor::Unknown) {
-                        // Check if module is a graphics DLL (expected hook target)
-                        if (module.find("d3d") != std::string::npos ||
-                            module.find("dxgi") != std::string::npos ||
-                            module.find("opengl") != std::string::npos ||
-                            module.find("vulkan") != std::string::npos) {
-                            // Only suppress if it's a verified overlay hooking graphics APIs
-                            return true;
-                        }
-                    }
+                // Check if module is a graphics DLL (expected hook target for overlays)
+                if (module.find("d3d") != std::string::npos ||
+                    module.find("dxgi") != std::string::npos ||
+                    module.find("opengl") != std::string::npos ||
+                    module.find("vulkan") != std::string::npos) {
+                    // Only suppress if we have a verified overlay
+                    // (overlay hooking graphics APIs is expected)
+                    return true;
                 }
             }
         }

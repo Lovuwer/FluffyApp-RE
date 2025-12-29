@@ -32,7 +32,7 @@ protected:
         event.severity = severity;
         event.timestamp = 0;
         event.address = 0;
-        event.module_name = nullptr;
+        event.module_name = "";  // Empty string, not nullptr
         event.details = "Test violation";
         event.detection_id = 0;
         return event;
