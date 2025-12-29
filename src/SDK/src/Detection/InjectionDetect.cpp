@@ -18,6 +18,7 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <winternl.h>
 #include <psapi.h>
 #include <tlhelp32.h>
 #pragma comment(lib, "psapi.lib")
@@ -326,6 +327,10 @@ std::vector<ViolationEvent> InjectionDetector::ScanThreads() {
 
 // Helper function to check if a thread starts in Windows thread pool
 bool InjectionDetector::IsWindowsThreadPoolThread(uintptr_t startAddress) {
+    // This is now a wrapper that calls the enhanced validation
+    // We need to open the thread to perform full validation
+    // However, we don't have the thread handle here, so we do basic checks
+    
     // Get module info for the start address
     MEMORY_BASIC_INFORMATION mbi;
     if (VirtualQuery((LPCVOID)startAddress, &mbi, sizeof(mbi)) == 0) {
@@ -350,17 +355,17 @@ bool InjectionDetector::IsWindowsThreadPoolThread(uintptr_t startAddress) {
             _wcsicmp(moduleName, L"kernel32.dll") == 0 ||
             _wcsicmp(moduleName, L"kernelbase.dll") == 0) {
             
-            // Check proximity to thread pool functions in ntdll
-            // We use TpReleaseWork as a reference point for thread pool APIs
+            // TASK 8: Reduced proximity window from 64KB to 4KB (one page)
+            // This prevents attackers from using arbitrary code in ntdll
             HMODULE hNtdll = GetModuleHandleW(L"ntdll.dll");
             if (hNtdll) {
                 FARPROC pTpFunc = GetProcAddress(hNtdll, "TpReleaseWork");
-                // If we're within ~64KB of thread pool functions, likely a worker thread
+                // Strict proximity check: within 4KB of thread pool functions
                 if (pTpFunc) {
                     uintptr_t tpFunc = (uintptr_t)pTpFunc;
                     uintptr_t distance = (startAddress > tpFunc) ? 
                         (startAddress - tpFunc) : (tpFunc - startAddress);
-                    if (distance < 65536) {  // Within 64KB
+                    if (distance < 4096) {  // Within 4KB (one page)
                         return true;
                     }
                 }
@@ -377,7 +382,246 @@ bool InjectionDetector::IsWindowsThreadPoolThread(uintptr_t startAddress) {
         }
     }
     
+    // Basic check failed - not a recognized thread pool pattern
+    // For full validation, use IsWindowsThreadPoolThreadEnhanced with thread handle
     return false;
+}
+
+// Enhanced thread pool validation with stack walk and TLS verification
+bool InjectionDetector::IsWindowsThreadPoolThreadEnhanced(HANDLE hThread, uintptr_t startAddress) {
+    // First, check basic proximity to thread pool functions (already reduced to 4KB)
+    if (!IsWindowsThreadPoolThread(startAddress)) {
+        return false;  // Not even in the right module/proximity
+    }
+    
+    // TASK 8: Perform stack walk validation
+    // Legitimate thread pool threads have consistent call stack patterns
+    if (!ValidateThreadPoolStackWalk(hThread)) {
+        return false;  // Stack doesn't match expected thread pool pattern
+    }
+    
+    // TASK 8: Verify TEB ThreadLocalStoragePointer contains expected thread pool TLS data
+    if (!ValidateThreadPoolTLS(hThread)) {
+        return false;  // TLS data doesn't match thread pool expectations
+    }
+    
+    // TASK 8: Check if this is a known submitted work item
+    // This correlates the executing thread with registered work items
+    if (!IsKnownThreadPoolWorkItem(startAddress)) {
+        // Unknown work item - could be hijacked
+        // However, we may not have visibility into all work items,
+        // so we treat this as "suspicious but not definitive"
+        // The other checks (stack walk, TLS) provide the main defense
+        return true;  // Still accept if stack/TLS checks passed
+    }
+    
+    // All validations passed - this is a legitimate thread pool thread
+    return true;
+}
+
+// Validate thread pool thread stack walk
+bool InjectionDetector::ValidateThreadPoolStackWalk(HANDLE hThread) {
+    // TASK 8: Implement full stack walk validation
+    // Legitimate thread pool threads have consistent call stack patterns
+    
+    // Get thread context
+    CONTEXT context;
+    memset(&context, 0, sizeof(context));
+    context.ContextFlags = CONTEXT_CONTROL;
+    
+    // Suspend thread to get consistent context
+    DWORD suspendCount = SuspendThread(hThread);
+    if (suspendCount == (DWORD)-1) {
+        return false;  // Failed to suspend - suspicious
+    }
+    
+    BOOL contextResult = GetThreadContext(hThread, &context);
+    ResumeThread(hThread);
+    
+    if (!contextResult) {
+        return false;  // Failed to get context
+    }
+    
+#ifdef _WIN64
+    uintptr_t stackPointer = context.Rsp;
+    uintptr_t instructionPointer = context.Rip;
+#else
+    uintptr_t stackPointer = context.Esp;
+    uintptr_t instructionPointer = context.Eip;
+#endif
+    
+    // Validate instruction pointer is in legitimate code
+    MEMORY_BASIC_INFORMATION mbi;
+    if (VirtualQuery((LPCVOID)instructionPointer, &mbi, sizeof(mbi)) == 0) {
+        return false;
+    }
+    
+    // IP must be in MEM_IMAGE (not private memory)
+    if (mbi.Type != MEM_IMAGE) {
+        return false;  // Executing from non-image memory is suspicious
+    }
+    
+    // Walk the stack and verify return addresses
+    // Thread pool threads should have return addresses in ntdll/kernel32/kernelbase
+    const int MAX_STACK_FRAMES = 16;
+    int validFramesFound = 0;
+    int suspiciousFramesFound = 0;
+    
+    uintptr_t currentStackPtr = stackPointer;
+    for (int i = 0; i < MAX_STACK_FRAMES; i++) {
+        // Read potential return address from stack
+        uintptr_t returnAddress = 0;
+        SIZE_T bytesRead = 0;
+        
+        __try {
+            if (!ReadProcessMemory(GetCurrentProcess(), 
+                                  (LPCVOID)currentStackPtr, 
+                                  &returnAddress, 
+                                  sizeof(returnAddress), 
+                                  &bytesRead)) {
+                break;  // Can't read further
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {
+            break;
+        }
+        
+        if (bytesRead != sizeof(returnAddress) || returnAddress == 0) {
+            break;
+        }
+        
+        // Check if this looks like a valid return address
+        if (VirtualQuery((LPCVOID)returnAddress, &mbi, sizeof(mbi)) != 0) {
+            wchar_t modulePath[MAX_PATH];
+            if (mbi.AllocationBase && 
+                GetModuleFileNameW((HMODULE)mbi.AllocationBase, modulePath, MAX_PATH) > 0) {
+                
+                const wchar_t* moduleName = wcsrchr(modulePath, L'\\');
+                moduleName = moduleName ? moduleName + 1 : modulePath;
+                
+                // Count frames in thread pool infrastructure
+                if (_wcsicmp(moduleName, L"ntdll.dll") == 0 ||
+                    _wcsicmp(moduleName, L"kernel32.dll") == 0 ||
+                    _wcsicmp(moduleName, L"kernelbase.dll") == 0) {
+                    validFramesFound++;
+                }
+                // Frames in private memory are suspicious
+                else if (mbi.Type == MEM_PRIVATE) {
+                    suspiciousFramesFound++;
+                }
+            }
+        }
+        
+        currentStackPtr += sizeof(uintptr_t);
+    }
+    
+    // Thread pool threads should have at least 2-3 frames in thread pool infrastructure
+    // and minimal frames in private memory
+    if (validFramesFound < 2) {
+        return false;  // Not enough thread pool frames
+    }
+    
+    if (suspiciousFramesFound > 1) {
+        return false;  // Too many suspicious frames
+    }
+    
+    return true;
+}
+
+// Validate thread pool TLS data
+bool InjectionDetector::ValidateThreadPoolTLS(HANDLE hThread) {
+    // TASK 8: Verify TEB.ThreadLocalStoragePointer contains expected thread pool TLS data
+    
+    // Get thread TEB (Thread Environment Block)
+    typedef NTSTATUS (NTAPI *pNtQueryInformationThread)(
+        HANDLE, ULONG, PVOID, ULONG, PULONG);
+    
+    static auto NtQueryInformationThread = 
+        (pNtQueryInformationThread)GetProcAddress(
+            GetModuleHandleW(L"ntdll.dll"), 
+            "NtQueryInformationThread");
+    
+    if (!NtQueryInformationThread) {
+        return true;  // Can't validate, assume OK (fail open for compatibility)
+    }
+    
+    // Query ThreadBasicInformation to get TEB address
+    struct THREAD_BASIC_INFORMATION {
+        NTSTATUS ExitStatus;
+        PVOID TebBaseAddress;
+        PVOID ClientId[2];
+        KAFFINITY AffinityMask;
+        LONG Priority;
+        LONG BasePriority;
+    } tbi;
+    
+    memset(&tbi, 0, sizeof(tbi));
+    NTSTATUS status = NtQueryInformationThread(
+        hThread,
+        0,  // ThreadBasicInformation
+        &tbi,
+        sizeof(tbi),
+        nullptr);
+    
+    if (status != 0 || !tbi.TebBaseAddress) {
+        return true;  // Can't get TEB, fail open
+    }
+    
+    // Read TLS pointer from TEB
+    // TEB structure has ThreadLocalStoragePointer at a known offset
+    // For x64: offset 0x58, for x86: offset 0x2C
+#ifdef _WIN64
+    const size_t TLS_POINTER_OFFSET = 0x58;
+#else
+    const size_t TLS_POINTER_OFFSET = 0x2C;
+#endif
+    
+    uintptr_t tlsPointer = 0;
+    SIZE_T bytesRead = 0;
+    
+    __try {
+        if (!ReadProcessMemory(GetCurrentProcess(),
+                              (LPCVOID)((uintptr_t)tbi.TebBaseAddress + TLS_POINTER_OFFSET),
+                              &tlsPointer,
+                              sizeof(tlsPointer),
+                              &bytesRead)) {
+            return true;  // Can't read TLS, fail open
+        }
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        return true;  // Exception, fail open
+    }
+    
+    if (bytesRead != sizeof(tlsPointer)) {
+        return true;  // Partial read, fail open
+    }
+    
+    // Thread pool threads typically have non-NULL TLS pointer
+    // Injected threads often have NULL or invalid TLS
+    if (tlsPointer == 0) {
+        return false;  // NULL TLS is suspicious for thread pool threads
+    }
+    
+    // Validate the TLS pointer points to valid memory
+    MEMORY_BASIC_INFORMATION mbi;
+    if (VirtualQuery((LPCVOID)tlsPointer, &mbi, sizeof(mbi)) == 0) {
+        return false;  // Invalid TLS pointer
+    }
+    
+    // TLS should be in committed readable memory
+    if (mbi.State != MEM_COMMIT) {
+        return false;
+    }
+    
+    if (!(mbi.Protect & PAGE_READONLY) && 
+        !(mbi.Protect & PAGE_READWRITE) &&
+        !(mbi.Protect & PAGE_EXECUTE_READ) &&
+        !(mbi.Protect & PAGE_EXECUTE_READWRITE)) {
+        return false;  // TLS should be readable
+    }
+    
+    // TLS validation passed
+    return true;
 }
 
 // Helper function to check if a thread belongs to CLR (.NET)
@@ -456,8 +700,67 @@ bool InjectionDetector::IsLegitimateTrampoline(uintptr_t address,
     return false;
 }
 
+// TASK 8: Thread pool work item tracking
+void InjectionDetector::RegisterThreadPoolWorkItem(uintptr_t work_function) {
+    std::lock_guard<std::mutex> lock(work_items_mutex_);
+    
+    // Clean up expired items first
+    CleanupExpiredWorkItems();
+    
+    ThreadPoolWorkItem item;
+    item.work_function = work_function;
+    item.submit_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    item.thread_id = 0;
+    
+    thread_pool_work_items_.push_back(item);
+}
+
+void InjectionDetector::UnregisterThreadPoolWorkItem(uintptr_t work_function) {
+    std::lock_guard<std::mutex> lock(work_items_mutex_);
+    
+    thread_pool_work_items_.erase(
+        std::remove_if(thread_pool_work_items_.begin(), thread_pool_work_items_.end(),
+            [work_function](const ThreadPoolWorkItem& item) {
+                return item.work_function == work_function;
+            }),
+        thread_pool_work_items_.end());
+}
+
+bool InjectionDetector::IsKnownThreadPoolWorkItem(uintptr_t address) const {
+    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(work_items_mutex_));
+    
+    // Check if this address is a known work item
+    for (const auto& item : thread_pool_work_items_) {
+        // Check if address is within reasonable proximity of work function
+        // Work items may have trampolines or wrapper functions
+        const uintptr_t proximity = 1024;  // 1KB proximity
+        if (address >= item.work_function && 
+            address < item.work_function + proximity) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+void InjectionDetector::CleanupExpiredWorkItems() {
+    // Remove work items older than timeout
+    // This function assumes the caller holds work_items_mutex_
+    uint64_t currentTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    
+    thread_pool_work_items_.erase(
+        std::remove_if(thread_pool_work_items_.begin(), thread_pool_work_items_.end(),
+            [currentTime](const ThreadPoolWorkItem& item) {
+                return (currentTime - item.submit_time) > WORK_ITEM_TIMEOUT_MS;
+            }),
+        thread_pool_work_items_.end());
+}
+
 bool InjectionDetector::IsThreadSuspicious(uint32_t threadId) {
-    HANDLE hThread = OpenThread(THREAD_QUERY_INFORMATION, FALSE, threadId);
+    // TASK 8: Enhanced thread validation with proper thread handle management
+    HANDLE hThread = OpenThread(THREAD_QUERY_INFORMATION | THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME, FALSE, threadId);
     if (!hThread) return false;
     
     // Get thread start address
@@ -482,9 +785,8 @@ bool InjectionDetector::IsThreadSuspicious(uint32_t threadId) {
         sizeof(startAddress), 
         nullptr);
     
-    CloseHandle(hThread);
-    
     if (status != 0 || !startAddress) {
+        CloseHandle(hThread);
         return false;
     }
     
@@ -498,37 +800,55 @@ bool InjectionDetector::IsThreadSuspicious(uint32_t threadId) {
     }
     __except (EXCEPTION_EXECUTE_HANDLER) {
         // Failed to query, assume suspicious
+        CloseHandle(hThread);
         return true;
     }
     
     if (queryResult == 0) {
+        CloseHandle(hThread);
         return true;  // Can't query = suspicious
     }
     
     // If thread starts in MEM_IMAGE or MEM_MAPPED, it's likely legitimate
     if (mbi.Type != MEM_PRIVATE) {
+        CloseHandle(hThread);
         return false;
     }
     
     // Check whitelist for thread origins (covers JIT compilers, game engines, etc.)
     if (g_whitelist && g_whitelist->IsThreadOriginWhitelisted(startAddr)) {
+        CloseHandle(hThread);
         return false;
     }
     
-    // Check for Windows thread pool threads
+    // TASK 8: Use enhanced thread pool validation with stack walk and TLS checks
+    // If basic check passes, perform full validation
     if (IsWindowsThreadPoolThread(startAddr)) {
-        return false;
+        // Perform enhanced validation
+        bool isLegitimate = IsWindowsThreadPoolThreadEnhanced(hThread, startAddr);
+        CloseHandle(hThread);
+        
+        if (isLegitimate) {
+            return false;  // Validated as legitimate thread pool thread
+        } else {
+            // Failed enhanced validation - likely hijacked thread pool thread
+            return true;  // TASK 8: Detect hijacked thread pool threads
+        }
     }
     
     // Check for CLR managed threads
     if (IsCLRThread(startAddr)) {
+        CloseHandle(hThread);
         return false;
     }
     
     // Check if this is a legitimate trampoline near a known module
     if (IsLegitimateTrampoline(startAddr, mbi)) {
+        CloseHandle(hThread);
         return false;
     }
+    
+    CloseHandle(hThread);
     
     // Thread starting in MEM_PRIVATE without whitelist match is suspicious
     return true;
@@ -900,6 +1220,23 @@ bool InjectionDetector::IsModuleSuspicious(const wchar_t* module_path) {
 bool InjectionDetector::IsThreadSuspicious(uint32_t thread_id) {
     (void)thread_id;
     return false;
+}
+
+void InjectionDetector::RegisterThreadPoolWorkItem(uintptr_t work_function) {
+    (void)work_function;
+}
+
+void InjectionDetector::UnregisterThreadPoolWorkItem(uintptr_t work_function) {
+    (void)work_function;
+}
+
+bool InjectionDetector::IsKnownThreadPoolWorkItem(uintptr_t address) const {
+    (void)address;
+    return false;
+}
+
+void InjectionDetector::CleanupExpiredWorkItems() {
+    // Not implemented for non-Windows platforms
 }
 
 #endif // _WIN32

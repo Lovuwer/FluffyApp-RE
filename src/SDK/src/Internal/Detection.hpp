@@ -263,6 +263,12 @@ private:
         size_t region_size;
     };
     
+    // Thread pool work item tracking (API available on all platforms, implementation varies)
+    void RegisterThreadPoolWorkItem(uintptr_t work_function);
+    void UnregisterThreadPoolWorkItem(uintptr_t work_function);
+    bool IsKnownThreadPoolWorkItem(uintptr_t address) const;
+    void CleanupExpiredWorkItems();
+    
 #ifdef _WIN32
     bool IsSuspiciousRegion(const MEMORY_BASIC_INFORMATION& mbi);
     bool IsKnownJITRegion(uintptr_t address);
@@ -280,7 +286,21 @@ private:
     // Thread validation helpers
     bool IsWindowsThreadPoolThread(uintptr_t startAddress);
     bool IsCLRThread(uintptr_t startAddress);
+    bool IsWindowsThreadPoolThreadEnhanced(HANDLE hThread, uintptr_t startAddress);
+    bool ValidateThreadPoolStackWalk(HANDLE hThread);
+    bool ValidateThreadPoolTLS(HANDLE hThread);
     bool IsLegitimateTrampoline(uintptr_t address, const MEMORY_BASIC_INFORMATION& mbi);
+    
+    // Thread pool work item tracking structures
+    struct ThreadPoolWorkItem {
+        uintptr_t work_function;
+        uint64_t submit_time;
+        uint32_t thread_id;  // 0 if not yet executing
+    };
+    
+    std::vector<ThreadPoolWorkItem> thread_pool_work_items_;
+    std::mutex work_items_mutex_;
+    static constexpr uint64_t WORK_ITEM_TIMEOUT_MS = 300000;  // 5 minutes
 #endif
     
     std::vector<std::wstring> known_modules_;
