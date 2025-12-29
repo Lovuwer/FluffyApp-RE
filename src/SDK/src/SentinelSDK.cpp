@@ -353,7 +353,13 @@ SENTINEL_API ErrorCode SENTINEL_CALL Update() {
             event.type = ViolationType::SpeedHack;
             event.severity = Severity::High;
             event.timestamp = GetSecureTime();
-            event.details = "Speed manipulation detected";
+            
+            // Add environment information to details for telemetry
+            std::string env_str = "environment: ";
+            env_str += g_context->speed_hack->GetEnvironmentString();
+            env_str += ", details: Speed manipulation detected";
+            event.details = env_str;
+            
             ReportViolation(event);
             result = ErrorCode::TamperingDetected;
         }
