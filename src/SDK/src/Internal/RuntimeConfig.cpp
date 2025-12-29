@@ -242,14 +242,16 @@ uint64_t RuntimeConfig::GetCurrentTimeMs() const {
 
 size_t RuntimeConfig::TypeToIndex(DetectionType type) const {
     size_t index = static_cast<size_t>(type);
-    // Map Unknown (255) to index 0, other invalid types also to 0
-    // Valid types are 0-5 (AntiDebug through NetworkAnomaly)
-    if (type == DetectionType::Unknown || index >= NUM_DETECTION_TYPES) {
-        // Note: We don't have a dedicated slot for Unknown, so we map it to 0
-        // This is acceptable since Unknown should never be used in runtime operations
-        return 0;
+    // Map Unknown (255) to index 6 (dedicated slot)
+    if (type == DetectionType::Unknown) {
+        return 6;
     }
-    return index;
+    // Valid types are 0-5 (AntiDebug through NetworkAnomaly)
+    if (index < 6) {
+        return index;
+    }
+    // Other invalid types also map to Unknown slot
+    return 6;
 }
 
 } // namespace SDK

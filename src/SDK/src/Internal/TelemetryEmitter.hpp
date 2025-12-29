@@ -235,8 +235,9 @@ private:
     
     // Baseline tracking (one per detection type)
     // NOTE: NUM_DETECTION_TYPES must be updated when new DetectionType enum values are added
-    // Current types: AntiDebug, AntiHook, MemoryIntegrity, SpeedHack, InjectionDetect, NetworkAnomaly
-    static constexpr size_t NUM_DETECTION_TYPES = 6;
+    // Current types: AntiDebug(0), AntiHook(1), MemoryIntegrity(2), SpeedHack(3), 
+    //                InjectionDetect(4), NetworkAnomaly(5), Unknown(255)->index 6
+    static constexpr size_t NUM_DETECTION_TYPES = 7;  // 6 valid types + 1 for Unknown
     DetectionBaseline baselines_[NUM_DETECTION_TYPES];
     
     // Anomaly detection constants

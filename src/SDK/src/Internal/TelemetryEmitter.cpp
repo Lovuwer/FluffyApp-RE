@@ -17,13 +17,14 @@ TelemetryEmitter::TelemetryEmitter()
     , current_memory_scanned_(0)
 {
     // Initialize baselines - use explicit types instead of loop to avoid Unknown (255) issue
-    // The baseline array stores data for valid detection types 0-5 only
+    // The baseline array stores data for valid detection types 0-5, plus Unknown at index 6
     baselines_[0].type = DetectionType::AntiDebug;
     baselines_[1].type = DetectionType::AntiHook;
     baselines_[2].type = DetectionType::MemoryIntegrity;
     baselines_[3].type = DetectionType::SpeedHack;
     baselines_[4].type = DetectionType::InjectionDetect;
     baselines_[5].type = DetectionType::NetworkAnomaly;
+    baselines_[6].type = DetectionType::Unknown;  // Dedicated slot for Unknown
     
     for (size_t i = 0; i < NUM_DETECTION_TYPES; ++i) {
         baselines_[i].total_detections = 0;
@@ -213,12 +214,16 @@ uint64_t TelemetryEmitter::GetCurrentTimeMs() const {
 
 size_t TelemetryEmitter::TypeToIndex(DetectionType type) const {
     size_t index = static_cast<size_t>(type);
-    // Map Unknown (255) to index 0, other invalid types also to 0
-    // Valid types are 0-5 (AntiDebug through NetworkAnomaly)
-    if (type == DetectionType::Unknown || index >= NUM_DETECTION_TYPES) {
-        return 0;
+    // Map Unknown (255) to index 6 (dedicated slot)
+    if (type == DetectionType::Unknown) {
+        return 6;
     }
-    return index;
+    // Valid types are 0-5 (AntiDebug through NetworkAnomaly)
+    if (index < 6) {
+        return index;
+    }
+    // Other invalid types also map to Unknown slot
+    return 6;
 }
 
 } // namespace SDK
