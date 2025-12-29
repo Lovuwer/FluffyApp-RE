@@ -475,4 +475,135 @@ TEST(InjectionDetectTests, HollowedJITModuleDetection) {
     VirtualFree(fakeJIT, 0, MEM_RELEASE);
     detector.Shutdown();
 }
+
+/**
+ * Test 13: Thread Pool Work Item Registration (Task 8)
+ * Verify that work item registration and tracking works correctly
+ */
+TEST(InjectionDetectTests, ThreadPoolWorkItemTracking) {
+    InjectionDetector detector;
+    detector.Initialize();
+    
+    // Register some work items
+    uintptr_t workItem1 = 0x140001000;
+    uintptr_t workItem2 = 0x140002000;
+    
+    detector.RegisterThreadPoolWorkItem(workItem1);
+    detector.RegisterThreadPoolWorkItem(workItem2);
+    
+    // Verify items are known
+    EXPECT_TRUE(detector.IsKnownThreadPoolWorkItem(workItem1))
+        << "Registered work item should be known";
+    EXPECT_TRUE(detector.IsKnownThreadPoolWorkItem(workItem2))
+        << "Registered work item should be known";
+    
+    // Verify proximity matching (within 1KB)
+    EXPECT_TRUE(detector.IsKnownThreadPoolWorkItem(workItem1 + 512))
+        << "Address near work item should be recognized";
+    
+    // Verify unknown items
+    EXPECT_FALSE(detector.IsKnownThreadPoolWorkItem(0x150000000))
+        << "Unknown address should not be recognized";
+    
+    // Unregister and verify
+    detector.UnregisterThreadPoolWorkItem(workItem1);
+    EXPECT_FALSE(detector.IsKnownThreadPoolWorkItem(workItem1))
+        << "Unregistered work item should not be known";
+    
+    EXPECT_TRUE(detector.IsKnownThreadPoolWorkItem(workItem2))
+        << "Other work items should still be registered";
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test 14: Thread Pool Proximity Window Reduction (Task 8)
+ * Verify that the proximity window was reduced from 64KB to 4KB
+ * 
+ * This test verifies that code outside the 4KB window of TpReleaseWork
+ * is no longer whitelisted as a thread pool thread
+ */
+TEST(InjectionDetectTests, ThreadPoolProximityWindowReduction) {
+    InjectionDetector detector;
+    detector.Initialize();
+    
+    // Get TpReleaseWork address
+    HMODULE hNtdll = GetModuleHandleW(L"ntdll.dll");
+    ASSERT_NE(hNtdll, nullptr) << "ntdll.dll should be loaded";
+    
+    FARPROC pTpReleaseWork = GetProcAddress(hNtdll, "TpReleaseWork");
+    ASSERT_NE(pTpReleaseWork, nullptr) << "TpReleaseWork should be exported";
+    
+    uintptr_t tpReleaseWork = (uintptr_t)pTpReleaseWork;
+    
+    // Test addresses within 4KB - should be whitelisted
+    uintptr_t within4KB = tpReleaseWork + 2048;  // 2KB away
+    EXPECT_TRUE(detector.IsWindowsThreadPoolThread(within4KB))
+        << "Address within 4KB of TpReleaseWork should be recognized as thread pool";
+    
+    // Test addresses beyond 4KB but within 64KB - should NOT be whitelisted
+    uintptr_t beyond4KB = tpReleaseWork + 8192;  // 8KB away (within old 64KB window)
+    EXPECT_FALSE(detector.IsWindowsThreadPoolThread(beyond4KB))
+        << "Address beyond 4KB should NOT be recognized (even if within 64KB)";
+    
+    // Test addresses way beyond 64KB - should NOT be whitelisted
+    uintptr_t wayBeyond = tpReleaseWork + 100000;  // 100KB away
+    EXPECT_FALSE(detector.IsWindowsThreadPoolThread(wayBeyond))
+        << "Address far from TpReleaseWork should NOT be recognized";
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test 15: Simulated Hijacked Thread Pool Thread (Task 8)
+ * 
+ * This test simulates a hijacked thread pool thread by:
+ * 1. Creating a thread with a start address in private memory
+ * 2. Verifying it's detected as suspicious despite being "near" thread pool code
+ * 
+ * In a real attack, the attacker would hijack an existing thread pool thread
+ * via NtQueueApcThread or similar, but we simulate the detection logic here.
+ */
+TEST(InjectionDetectTests, HijackedThreadPoolDetection) {
+    InjectionDetector detector;
+    detector.Initialize();
+    
+    // Allocate memory that simulates injected code
+    const size_t allocSize = 4096;
+    void* injectedCode = VirtualAlloc(
+        nullptr,
+        allocSize,
+        MEM_COMMIT | MEM_RESERVE,
+        PAGE_EXECUTE_READWRITE
+    );
+    
+    ASSERT_NE(injectedCode, nullptr) << "Failed to allocate injected code memory";
+    
+    // Fill with shellcode pattern (NOP sled + return)
+    memset(injectedCode, 0x90, allocSize);  // NOPs
+    uint8_t* codePtr = (uint8_t*)injectedCode;
+    codePtr[allocSize - 1] = 0xC3;  // RET instruction
+    
+    uintptr_t injectedAddr = (uintptr_t)injectedCode;
+    
+    // This address is in private memory, not in thread pool infrastructure
+    // The basic IsWindowsThreadPoolThread check should fail
+    EXPECT_FALSE(detector.IsWindowsThreadPoolThread(injectedAddr))
+        << "Private memory should not be recognized as thread pool";
+    
+    // Even if we had enhanced validation, it would fail because:
+    // 1. Stack walk would show private memory frames
+    // 2. TLS validation might fail
+    // 3. Not a registered work item
+    
+    // Note: We can't easily test IsWindowsThreadPoolThreadEnhanced here without
+    // creating actual threads, but the logic is in place to detect:
+    // - Private memory execution
+    // - Missing thread pool stack frames
+    // - Invalid TLS data
+    
+    // Cleanup
+    VirtualFree(injectedCode, 0, MEM_RELEASE);
+    detector.Shutdown();
+}
 #endif
