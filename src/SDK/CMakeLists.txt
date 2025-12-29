@@ -32,6 +32,8 @@ set(SDK_SOURCES
     src/Internal/SafeMemory.cpp
     src/Internal/SignatureVerify.cpp
     src/Internal/JITSignature.cpp
+    src/Internal/TelemetryEmitter.cpp
+    src/Internal/RuntimeConfig.cpp
     src/Core/Heartbeat.cpp
     src/Core/MemoryProtection.cpp
     src/Core/FunctionProtection.cpp
@@ -62,6 +64,8 @@ set(SDK_HEADERS
     src/Internal/SignatureVerify.hpp
     src/Internal/JITSignature.hpp
     src/Internal/EnvironmentDetection.hpp
+    src/Internal/TelemetryEmitter.hpp
+    src/Internal/RuntimeConfig.hpp
 )
 
 # Header files for IDE organization only (not compiled)

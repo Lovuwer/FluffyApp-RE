@@ -10,6 +10,9 @@
 #include "Internal/Protection.hpp"
 #include "Internal/CorrelationEngine.hpp"
 #include "Internal/Whitelist.hpp"
+#include "Internal/TelemetryEmitter.hpp"
+#include "Internal/RuntimeConfig.hpp"
+#include "Internal/EnvironmentDetection.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -72,6 +75,11 @@ struct SDKContext {
     std::unique_ptr<PacketEncryption> packet_crypto;
     std::unique_ptr<CloudReporter> reporter;
     
+    // Task 14: Telemetry and runtime configuration
+    std::unique_ptr<TelemetryEmitter> telemetry;
+    std::unique_ptr<RuntimeConfig> runtime_config;
+    std::unique_ptr<EnvironmentDetector> env_detector;
+    
     // Session info
     std::string session_token;
     std::string hardware_id;
@@ -96,14 +104,142 @@ uint64_t GenerateHandle() {
     return g_context->next_handle++;
 }
 
+// Task 14: Helper to emit telemetry for detections
+void EmitDetectionTelemetry(const ViolationEvent& event, DetectionType detection_type, float confidence) {
+    if (!g_context || !g_context->telemetry) return;
+    
+    // Hash only relevant fields to avoid padding bytes and sensitive data exposure
+    struct TelemetryHashData {
+        uint64_t type;
+        uint64_t severity;
+        uint64_t address;
+        uint64_t detection_id;
+        
+        TelemetryHashData(const ViolationEvent& e) 
+            : type(static_cast<uint64_t>(e.type))
+            , severity(static_cast<uint64_t>(e.severity))
+            , address(e.address)
+            , detection_id(e.detection_id)
+        {}
+    } hash_data(event);
+    
+    // Create telemetry event
+    TelemetryEvent telemetry_event = g_context->telemetry->CreateEventFromViolation(
+        event,
+        detection_type,
+        confidence,
+        &hash_data,  // Use structured hash data instead of full event
+        sizeof(hash_data)
+    );
+    
+    // Update correlation state if available
+    if (g_context->correlation) {
+        CorrelationSnapshot snapshot;
+        snapshot.current_score = g_context->correlation->GetCorrelationScore();
+        snapshot.unique_categories = g_context->correlation->GetUniqueSignalCount();
+        snapshot.signal_count = static_cast<uint32_t>(snapshot.unique_categories);  // Simplified
+        snapshot.has_correlated_anomaly = false;  // Would need more detailed tracking
+        
+        g_context->telemetry->UpdateCorrelationState(snapshot);
+    }
+    
+    // Emit the telemetry event
+    g_context->telemetry->EmitEvent(telemetry_event);
+}
+
+// Task 14: Helper to check if detection should run based on runtime config
+bool ShouldRunDetection(DetectionType detection_type) {
+    if (!g_context || !g_context->runtime_config) return true;
+    return g_context->runtime_config->IsDetectionEnabled(detection_type);
+}
+
+// Task 14: Helper to check if detection is in dry-run mode
+bool IsDetectionDryRun(DetectionType detection_type) {
+    if (!g_context || !g_context->runtime_config) return false;
+    return g_context->runtime_config->IsDetectionDryRun(detection_type);
+}
+
+// Task 14: Wrapper for detection execution with telemetry and exception handling
+template<typename DetectionFunc>
+std::vector<ViolationEvent> RunDetectionWithTelemetry(
+    DetectionType detection_type,
+    DetectionFunc&& detection_func,
+    float base_confidence = 0.8f)
+{
+    std::vector<ViolationEvent> violations;
+    
+    if (!g_context) return violations;
+    
+    // Check if detection is enabled
+    if (!ShouldRunDetection(detection_type)) {
+        return violations;
+    }
+    
+    auto start_time = std::chrono::high_resolution_clock::now();
+    
+    try {
+        // Run the detection
+        violations = detection_func();
+        
+        // Calculate scan duration
+        auto end_time = std::chrono::high_resolution_clock::now();
+        auto duration_us = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count();
+        
+        // Set performance metrics for telemetry
+        if (g_context->telemetry) {
+            g_context->telemetry->SetPerformanceMetrics(duration_us, 0);  // Memory scanned would be set by detector
+        }
+        
+        // Emit telemetry for each violation
+        for (const auto& violation : violations) {
+            EmitDetectionTelemetry(violation, detection_type, base_confidence);
+        }
+        
+        // In dry-run mode, clear violations so they don't trigger enforcement
+        if (IsDetectionDryRun(detection_type)) {
+            violations.clear();
+        }
+        
+    } catch (const std::exception& e) {
+        // Record exception for automatic degradation
+        if (g_context->runtime_config) {
+            g_context->runtime_config->RecordException(detection_type);
+        }
+        
+        // Log the exception (in production, this would be sent to monitoring)
+        SetLastError(std::string("Detection exception: ") + e.what());
+    } catch (...) {
+        // Record unknown exception
+        if (g_context->runtime_config) {
+            g_context->runtime_config->RecordException(detection_type);
+        }
+        
+        SetLastError("Unknown detection exception");
+    }
+    
+    return violations;
+}
+
 void HeartbeatThreadFunc() {
     int heartbeat_counter = 0;  // Task 11: Counter for periodic all-thread scanning
     
     while (g_context && !g_context->shutdown_requested.load()) {
         if (g_context->active.load()) {
+            // Task 14: Check for runtime config updates periodically
+            if (g_context->runtime_config && heartbeat_counter % 300 == 0) {  // Every 5 minutes at 1s intervals
+                g_context->runtime_config->CheckForUpdates();
+            }
+            
             // Perform background integrity checks
             if (g_context->integrity) {
-                g_context->integrity->QuickCheck();
+                auto violations = RunDetectionWithTelemetry(
+                    DetectionType::MemoryIntegrity,
+                    [&]() { return g_context->integrity->QuickCheck(); }
+                );
+                
+                for (const auto& violation : violations) {
+                    ReportViolation(violation);
+                }
             }
             
             // Check for debuggers
@@ -112,7 +248,11 @@ void HeartbeatThreadFunc() {
                 // This balances thoroughness with performance impact
                 if (heartbeat_counter % 10 == 0) {
                     // FullCheck includes CheckAllThreadsHardwareBP
-                    auto violations = g_context->anti_debug->FullCheck();
+                    auto violations = RunDetectionWithTelemetry(
+                        DetectionType::AntiDebug,
+                        [&]() { return g_context->anti_debug->FullCheck(); },
+                        0.9f  // Higher confidence for full check
+                    );
                     
                     // Report any violations found
                     for (const auto& violation : violations) {
@@ -120,7 +260,11 @@ void HeartbeatThreadFunc() {
                     }
                 } else {
                     // Regular quick check on other heartbeats
-                    auto violations = g_context->anti_debug->Check();
+                    auto violations = RunDetectionWithTelemetry(
+                        DetectionType::AntiDebug,
+                        [&]() { return g_context->anti_debug->Check(); },
+                        0.7f  // Lower confidence for quick check
+                    );
                     
                     // Report any violations found
                     for (const auto& violation : violations) {
@@ -251,6 +395,18 @@ SENTINEL_API ErrorCode SENTINEL_CALL Initialize(const Configuration* config) {
     g_context->correlation = std::make_unique<CorrelationEngine>();
     g_context->correlation->Initialize();
     
+    // Task 14: Initialize telemetry and runtime configuration
+    g_context->env_detector = std::make_unique<EnvironmentDetector>();
+    g_context->env_detector->Initialize();
+    g_context->env_detector->DetectEnvironment();
+    
+    g_context->telemetry = std::make_unique<TelemetryEmitter>();
+    g_context->telemetry->Initialize();
+    g_context->telemetry->SetEnvironmentDetector(g_context->env_detector.get());
+    
+    g_context->runtime_config = std::make_unique<RuntimeConfig>();
+    g_context->runtime_config->Initialize();
+    
     // Initialize network if cloud endpoint provided
     if (config->cloud_endpoint && strlen(config->cloud_endpoint) > 0) {
         g_context->packet_crypto = std::make_unique<PacketEncryption>();
@@ -288,6 +444,11 @@ SENTINEL_API void SENTINEL_CALL Shutdown() {
     g_context->correlation.reset();
     g_context->packet_crypto.reset();
     g_context->reporter.reset();
+    
+    // Task 14: Cleanup telemetry and runtime config
+    g_context->telemetry.reset();
+    g_context->runtime_config.reset();
+    g_context->env_detector.reset();
     
     // Clear protected items
     g_context->protected_regions.clear();
