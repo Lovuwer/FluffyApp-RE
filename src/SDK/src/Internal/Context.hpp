@@ -37,6 +37,10 @@ struct FunctionProtection {
     std::array<uint8_t, 32> original_prologue;
     size_t prologue_size;
     uint64_t last_scanned_timestamp = 0;  // Timestamp in milliseconds for probabilistic scanning
+    
+    // Task 10: Baseline hash for critical functions
+    uint64_t baseline_hash = 0;  // Hash of clean prologue for critical functions
+    bool is_critical = false;    // Mark critical functions for enhanced protection
 };
 
 /**

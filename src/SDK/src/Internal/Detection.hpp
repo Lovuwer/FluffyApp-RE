@@ -116,6 +116,10 @@ private:
     void ApplyScanCycleJitter();
     uint64_t GetCurrentTimeMs() const;
     
+    // Task 10: TOCTOU detection helpers
+    void LogTOCTOUMismatch(const FunctionProtection& func, uint64_t timestamp);
+    int GetTOCTOUCorrelationScore();
+    
 #ifdef _WIN32
     static void CALLBACK DllNotificationCallback(
         ULONG notification_reason,
@@ -131,6 +135,15 @@ private:
     std::vector<FunctionProtection> honeypot_functions_;
     std::mutex functions_mutex_;
     
+    // Task 10: TOCTOU mismatch tracking
+    struct TOCTOUMismatch {
+        uintptr_t address;
+        std::string function_name;
+        uint64_t timestamp;
+    };
+    std::vector<TOCTOUMismatch> toctou_mismatches_;
+    mutable std::mutex toctou_mutex_;  // Mutable to allow locking in const methods if needed
+    
     // Scan state tracking for budget enforcement
     uint64_t current_scan_start_time_ms_ = 0;
     static constexpr uint64_t SCAN_BUDGET_MS = 5;  // 5ms max per scan cycle
@@ -138,6 +151,11 @@ private:
     static constexpr float PROBABILISTIC_SCAN_RATIO = 0.15f;  // 15% of functions per cycle (10-20% range)
     static constexpr size_t QUICK_CHECK_MAX_FUNCTIONS = 20;  // Cap for QuickCheck to keep it fast
     static constexpr size_t FULL_SCAN_MAX_FUNCTIONS = 50;  // Cap for FullScan for comprehensive checks
+    
+    // Task 10: TOCTOU detection constants
+    static constexpr uint64_t TOCTOU_WINDOW_MS = 10000;  // 10 second window for correlation
+    static constexpr int TOCTOU_MIN_DELAY_MS = 10;  // Minimum delay for third read
+    static constexpr int TOCTOU_MAX_DELAY_MS = 50;  // Maximum delay for third read
 };
 
 /**
