@@ -5,6 +5,7 @@
  */
 
 #include "CorrelationEngine.hpp"
+#include "OverlayVerifier.hpp"
 #include <cmath>
 #include <algorithm>
 
@@ -352,33 +353,55 @@ Severity CorrelationEngine::DegradeSeverity(Severity original) const {
 }
 
 void CorrelationEngine::DetectEnvironment() {
-    environment_.has_discord_overlay = DetectOverlayDLLs();
+    DetectAndVerifyOverlays();
     environment_.is_vm_environment = DetectVMEnvironment();
     environment_.is_cloud_gaming = DetectCloudGaming();
 }
 
 bool CorrelationEngine::ShouldWhitelist(const ViolationEvent& event) const {
-    // Whitelist hook detections if we have known overlays
+    // NEVER suppress hook detections on critical security functions
+    // This prevents overlays from masking critical security violations
     if (event.type == ViolationType::InlineHook || 
         event.type == ViolationType::IATHook) {
         
-        if (environment_.has_discord_overlay ||
-            environment_.has_obs_overlay ||
-            environment_.has_steam_overlay ||
-            environment_.has_nvidia_overlay) {
+        // Check if this is a critical security function
+        if (!event.module_name.empty()) {
+            std::string module = event.module_name;
+            std::wstring module_wide(module.begin(), module.end());
             
-            // Check if the module name matches known overlays
+            if (OverlayVerifier::IsCriticalSecurityFunction(module_wide.c_str())) {
+                return false; // Never suppress critical security function hooks
+            }
+        }
+        
+        // Check if we have any verified overlays
+        if (!environment_.verified_overlays.empty()) {
+            // Check if the module name matches a verified overlay or expected hook pattern
             if (!event.module_name.empty()) {
                 std::string module = event.module_name;
                 std::transform(module.begin(), module.end(), module.begin(), ::tolower);
+                std::wstring module_wide(module.begin(), module.end());
                 
-                if (module.find("discord") != std::string::npos ||
-                    module.find("obs") != std::string::npos ||
-                    module.find("steam") != std::string::npos ||
-                    module.find("overlay") != std::string::npos ||
-                    module.find("nvidia") != std::string::npos ||
-                    module.find("geforce") != std::string::npos) {
-                    return true;
+                // Check each verified overlay
+                for (const auto& overlay : environment_.verified_overlays) {
+                    // Extract vendor from overlay vendor name
+                    OverlayVendor vendor = OverlayVendor::Unknown;
+                    if (overlay.vendor_name == L"Discord") {
+                        vendor = OverlayVendor::Discord;
+                    } else if (overlay.vendor_name == L"Steam") {
+                        vendor = OverlayVendor::Steam;
+                    } else if (overlay.vendor_name == L"NVIDIA") {
+                        vendor = OverlayVendor::NVIDIA;
+                    } else if (overlay.vendor_name == L"OBS") {
+                        vendor = OverlayVendor::OBS;
+                    }
+                    
+                    // Check if this hook pattern is expected for this overlay
+                    OverlayVerifier verifier;
+                    if (verifier.IsExpectedHookPattern(vendor, module_wide.c_str())) {
+                        // Only suppress if it's a verified overlay with expected hook pattern
+                        return true;
+                    }
                 }
             }
         }
@@ -399,51 +422,70 @@ bool CorrelationEngine::ShouldWhitelist(const ViolationEvent& event) const {
     return false;
 }
 
-bool CorrelationEngine::DetectOverlayDLLs() {
+void CorrelationEngine::DetectAndVerifyOverlays() {
 #ifdef _WIN32
+    environment_.verified_overlays.clear();
+    
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, GetCurrentProcessId());
     if (snapshot == INVALID_HANDLE_VALUE) {
-        return false;
+        return;
     }
     
-    bool found_overlay = false;
+    OverlayVerifier verifier;
+    verifier.Initialize();
+    
     MODULEENTRY32W me;
     me.dwSize = sizeof(me);
     
     if (Module32FirstW(snapshot, &me)) {
         do {
             std::wstring module_name(me.szModule);
-            std::transform(module_name.begin(), module_name.end(), module_name.begin(), ::towlower);
+            std::wstring module_path(me.szExePath);
             
-            // Check for known overlay DLLs
-            if (module_name.find(L"discord") != std::wstring::npos) {
-                environment_.has_discord_overlay = true;
-                found_overlay = true;
-            }
-            if (module_name.find(L"obs") != std::wstring::npos || 
-                module_name.find(L"gameoverlayrenderer") != std::wstring::npos) {
-                environment_.has_obs_overlay = true;
-                found_overlay = true;
-            }
-            if (module_name.find(L"steam") != std::wstring::npos) {
-                environment_.has_steam_overlay = true;
-                found_overlay = true;
-            }
-            if (module_name.find(L"nvidia") != std::wstring::npos ||
-                module_name.find(L"geforce") != std::wstring::npos ||
-                module_name.find(L"nvda") != std::wstring::npos) {
-                environment_.has_nvidia_overlay = true;
-                found_overlay = true;
+            // Check if this could be an overlay module
+            if (OverlayVerifier::IsPotentialOverlay(module_name.c_str())) {
+                // Verify the overlay
+                auto result = verifier.VerifyOverlay(module_path.c_str());
+                
+                if (result.is_verified) {
+                    // This is a verified overlay - add to list
+                    VerifiedOverlay overlay;
+                    overlay.module_path = result.module_path;
+                    overlay.is_verified = true;
+                    
+                    // Map vendor to name
+                    switch (result.vendor) {
+                        case OverlayVendor::Discord:
+                            overlay.vendor_name = L"Discord";
+                            break;
+                        case OverlayVendor::Steam:
+                            overlay.vendor_name = L"Steam";
+                            break;
+                        case OverlayVendor::NVIDIA:
+                            overlay.vendor_name = L"NVIDIA";
+                            break;
+                        case OverlayVendor::OBS:
+                            overlay.vendor_name = L"OBS";
+                            break;
+                        default:
+                            overlay.vendor_name = L"Unknown";
+                            break;
+                    }
+                    
+                    environment_.verified_overlays.push_back(overlay);
+                } else {
+                    // Potential overlay but not verified - log as suspicious
+                    // Don't suppress detections for this
+                    // Future: could emit telemetry event about unsigned overlay
+                }
             }
         } while (Module32NextW(snapshot, &me));
     }
     
     CloseHandle(snapshot);
-    return found_overlay;
+    verifier.Shutdown();
 #else
-    // On Linux, check /proc/self/maps for loaded libraries
-    // Simplified implementation
-    return false;
+    environment_.verified_overlays.clear();
 #endif
 }
 
@@ -511,8 +553,15 @@ bool CorrelationEngine::DetectCloudGaming() {
 }
 
 bool CorrelationEngine::IsFalsePositivePattern() const {
-    // Check for known false positive pattern: Discord + RWX + overlay process
-    bool has_discord_overlay = environment_.has_discord_overlay;
+    // Check for known false positive pattern: Verified Discord overlay + RWX + overlay hook
+    bool has_verified_discord = false;
+    for (const auto& overlay : environment_.verified_overlays) {
+        if (overlay.vendor_name == L"Discord") {
+            has_verified_discord = true;
+            break;
+        }
+    }
+    
     bool has_rwx_detection = false;
     bool has_overlay_hook = false;
     
@@ -530,8 +579,8 @@ bool CorrelationEngine::IsFalsePositivePattern() const {
         }
     }
     
-    // Known false positive: Discord overlay + RWX memory + overlay hook
-    if (has_discord_overlay && has_rwx_detection && has_overlay_hook) {
+    // Known false positive: Verified Discord overlay + RWX memory + overlay hook
+    if (has_verified_discord && has_rwx_detection && has_overlay_hook) {
         return true;
     }
     

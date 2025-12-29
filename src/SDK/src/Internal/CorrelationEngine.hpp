@@ -60,22 +60,28 @@ struct CorrelationState {
 };
 
 /**
+ * Verified overlay information
+ */
+struct VerifiedOverlay {
+    std::wstring module_path;
+    std::wstring vendor_name;
+    bool is_verified;
+    
+    VerifiedOverlay() 
+        : is_verified(false)
+    {}
+};
+
+/**
  * Known environment patterns to whitelist
  */
 struct EnvironmentContext {
-    bool has_discord_overlay;
-    bool has_obs_overlay;
-    bool has_steam_overlay;
-    bool has_nvidia_overlay;
+    std::vector<VerifiedOverlay> verified_overlays;
     bool is_vm_environment;
     bool is_cloud_gaming;
     
     EnvironmentContext() 
-        : has_discord_overlay(false)
-        , has_obs_overlay(false)
-        , has_steam_overlay(false)
-        , has_nvidia_overlay(false)
-        , is_vm_environment(false)
+        : is_vm_environment(false)
         , is_cloud_gaming(false)
     {}
 };
@@ -202,9 +208,9 @@ private:
     bool DetectCorrelatedAnomaly() const;
     
     /**
-     * Check for known overlay DLLs
+     * Detect and verify overlay DLLs using signature validation
      */
-    bool DetectOverlayDLLs();
+    void DetectAndVerifyOverlays();
     
     /**
      * Check for VM environment
