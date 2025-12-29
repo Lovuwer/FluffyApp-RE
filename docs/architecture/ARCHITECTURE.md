@@ -751,3 +751,444 @@ public:
 
 **Document Revision:** 1.0  
 **Next Review:** Q2 2025
+
+---
+
+## 9. Security Architecture: Trust Boundaries & Attack Surface
+
+**Added:** 2025-01-29  
+**Purpose:** Red team perspective on system trust boundaries and attacker interaction points
+
+### 9.1 Trust Boundary Model
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ HYPERVISOR (Ring -1) - UNTRUSTED                                    │
+│ ┌─────────────────────────────────────────────────────────────────┐ │
+│ │ KERNEL (Ring 0) - PARTIALLY TRUSTED                             │ │
+│ │ ┌─────────────────────────────────────────────────────────────┐ │ │
+│ │ │ SENTINEL SDK (Ring 3) - DEFENSIVE CODE                      │ │ │
+│ │ │ ┌─────────────────────────────────────────────────────────┐ │ │ │
+│ │ │ │ GAME (Ring 3) - PROTECTED CODE                          │ │ │ │
+│ │ │ │                                                           │ │ │ │
+│ │ │ │  ╔════════════════════════════════════════════════════╗  │ │ │ │
+│ │ │ │  ║ TRUST BOUNDARIES:                                  ║  │ │ │ │
+│ │ │ │  ║                                                    ║  │ │ │ │
+│ │ │ │  ║ ⚠️  SDK ↔ Kernel: UNTRUSTED                       ║  │ │ │ │
+│ │ │ │  ║     Kernel can lie to all SDK syscalls             ║  │ │ │ │
+│ │ │ │  ║                                                    ║  │ │ │ │
+│ │ │ │  ║ ⚠️  SDK ↔ Network: UNTRUSTED                      ║  │ │ │ │
+│ │ │ │  ║     Attacker controls client network stack         ║  │ │ │ │
+│ │ │ │  ║                                                    ║  │ │ │ │
+│ │ │ │  ║ ⚠️  SDK ↔ Game Memory: PARTIALLY TRUSTED          ║  │ │ │ │
+│ │ │ │  ║     Game can be hooked/patched by attacker         ║  │ │ │ │
+│ │ │ │  ║                                                    ║  │ │ │ │
+│ │ │ │  ║ ✅  Cloud ↔ SDK: TRUSTED (with crypto)            ║  │ │ │ │
+│ │ │ │  ║     Requires HMAC auth + TLS + cert pinning        ║  │ │ │ │
+│ │ │ │  ╚════════════════════════════════════════════════════╝  │ │ │ │
+│ │ │ └─────────────────────────────────────────────────────────┘ │ │ │
+│ │ └─────────────────────────────────────────────────────────────┘ │ │
+│ └─────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 9.2 Attack Interaction Points
+
+#### 9.2.1 Memory Access Paths (High Risk)
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│ ATTACKER MEMORY INTERACTION                                        │
+├────────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│  ┌──────────────┐                                                 │
+│  │  ATTACKER    │                                                 │
+│  │   PROCESS    │                                                 │
+│  └──────┬───────┘                                                 │
+│         │                                                          │
+│         │ [1] ReadProcessMemory / WriteProcessMemory              │
+│         │ [2] Memory scanners (Cheat Engine)                      │
+│         │ [3] Kernel driver (direct physical memory)              │
+│         │ [4] DLL injection (code injection)                      │
+│         │                                                          │
+│         ▼                                                          │
+│  ┌──────────────────────────────────────────────┐                 │
+│  │      GAME PROCESS MEMORY SPACE               │                 │
+│  │                                              │                 │
+│  │  ┌────────────────┐  ┌────────────────┐     │                 │
+│  │  │  .text (code)  │  │  .data (vars)  │     │                 │
+│  │  │  ⚠️  READABLE  │  │  ⚠️  WRITABLE  │     │                 │
+│  │  └────────────────┘  └────────────────┘     │                 │
+│  │                                              │                 │
+│  │  ┌────────────────┐  ┌────────────────┐     │                 │
+│  │  │ Protected      │  │  Heap (values) │     │                 │
+│  │  │ Functions      │  │  ⚠️  SCANNAB LE│     │                 │
+│  │  │ ⚠️  HOOKABLE   │  └────────────────┘     │                 │
+│  │  └────────────────┘                         │                 │
+│  └──────────────────────────────────────────────┘                 │
+│                                                                    │
+│  DEFENSES:                                                         │
+│  • Integrity hashing (periodic, bypassable)                        │
+│  • Hook detection (TOCTOU vulnerable)                              │
+│  • Value obfuscation (reversible)                                  │
+│  • Guard pages (removable)                                         │
+│                                                                    │
+│  WEAKNESSES:                                                       │
+│  ❌ Kernel driver bypasses all protections                         │
+│  ❌ Restore-on-scan defeats periodic checks                        │
+│  ❌ Page table manipulation shows different read/execute pages     │
+│                                                                    │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+#### 9.2.2 API Call Interception (Critical Risk)
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│ API HOOKING ATTACK SURFACE                                         │
+├────────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│  SDK Anti-Debug Check:                                             │
+│                                                                    │
+│    SDK Code:                    Attacker Hook:                     │
+│  ┌─────────────────────┐      ┌─────────────────────┐             │
+│  │ Call                │      │ Intercept           │             │
+│  │ IsDebuggerPresent() │─────▶│ Always return FALSE │             │
+│  └─────────────────────┘      └─────────────────────┘             │
+│           │                              │                         │
+│           ▼                              │ (hooked)                │
+│  ┌─────────────────────┐                │                         │
+│  │ Expect: TRUE/FALSE  │                │                         │
+│  │ Actual: Always FALSE│◀───────────────┘                         │
+│  └─────────────────────┘                                           │
+│                                                                    │
+│  ATTACK VECTOR:                                                    │
+│  1. Inline hook (patch first 5 bytes to JMP)                      │
+│  2. IAT hook (modify import address table)                        │
+│  3. VEH hook (vectored exception handler)                         │
+│  4. Kernel SSDT hook (system service dispatch table)              │
+│                                                                    │
+│  DEFENSES:                                                         │
+│  • Anti-hook detector (periodic scanning)                         │
+│  • SENTINEL_PROTECTED_CALL (inline verification)                  │
+│  • Direct syscall (bypass user-mode hooks)                        │
+│  • Double-check pattern (memory barrier)                          │
+│                                                                    │
+│  WEAKNESSES:                                                       │
+│  ❌ TOCTOU: Hook after check, before call                          │
+│  ❌ Kernel hooks defeat all user-mode checks                       │
+│  ❌ Hardware breakpoints (no memory modification)                  │
+│                                                                    │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+#### 9.2.3 Network Communication (Medium Risk)
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│ NETWORK ATTACK SURFACE                                             │
+├────────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│  ┌──────────────┐                ┌──────────────┐                 │
+│  │     SDK      │                │   ATTACKER   │                 │
+│  │   (Client)   │                │  (MITM Proxy)│                 │
+│  └──────┬───────┘                └──────┬───────┘                 │
+│         │                               │                          │
+│         │ [1] Heartbeat                 │                          │
+│         │─────────────────────────────▶ │ Intercept                │
+│         │                               │ Modify                   │
+│         │ [2] Violation Report          │ Replay                   │
+│         │─────────────────────────────▶ │ Drop                     │
+│         │                               │                          │
+│         │ [3] Threat Intel Request      │                          │
+│         │◀───────────────────────────── │ Forge response           │
+│         │                               │                          │
+│         ▼                               ▼                          │
+│  ┌──────────────────────────────────────────────┐                 │
+│  │         SENTINEL CLOUD (SERVER)              │                 │
+│  │                                              │                 │
+│  │  Expected: Legitimate SDK requests           │                 │
+│  │  Reality: May receive forged/replayed        │                 │
+│  └──────────────────────────────────────────────┘                 │
+│                                                                    │
+│  ATTACK VECTORS:                                                   │
+│  1. Packet sniffing (if unencrypted)                              │
+│  2. MITM with root CA (TLS decryption)                            │
+│  3. Replay attack (capture & resend packets)                      │
+│  4. Packet dropping (silence violation reports)                   │
+│  5. Request forgery (craft fake requests)                         │
+│                                                                    │
+│  DEFENSES:                                                         │
+│  • TLS 1.3 encryption                                              │
+│  • Certificate pinning (planned)                                   │
+│  • HMAC request signing (planned)                                  │
+│  • Nonce + timestamp (planned)                                     │
+│                                                                    │
+│  WEAKNESSES:                                                       │
+│  ⚠️  Certificate pinning NOT YET IMPLEMENTED                       │
+│  ⚠️  Request signing NOT YET IMPLEMENTED                           │
+│  ⚠️  Replay protection NOT YET IMPLEMENTED                         │
+│  ❌ Root CA compromise defeats TLS                                 │
+│                                                                    │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+#### 9.2.4 Time Source Manipulation (Critical for Speed Hacks)
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│ TIME SOURCE ATTACK SURFACE                                         │
+├────────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│  SDK Speed Check:                                                  │
+│                                                                    │
+│  ┌─────────────────┐     ┌─────────────────┐     ┌──────────────┐ │
+│  │ GetTickCount64  │────▶│ Hook: Return    │────▶│ Fake: 1000ms │ │
+│  └─────────────────┘     │ 2x actual time  │     └──────────────┘ │
+│                          └─────────────────┘                       │
+│                                                                    │
+│  ┌─────────────────┐     ┌─────────────────┐     ┌──────────────┐ │
+│  │ QPC             │────▶│ Hook: Return    │────▶│ Fake: 2000ms │ │
+│  └─────────────────┘     │ 2x actual time  │     └──────────────┘ │
+│                          └─────────────────┘                       │
+│                                                                    │
+│  ┌─────────────────┐     ┌─────────────────┐     ┌──────────────┐ │
+│  │ RDTSC           │────▶│ Kernel hook     │────▶│ Fake: 2x CPU │ │
+│  └─────────────────┘     │ intercept       │     │ cycles       │ │
+│                          └─────────────────┘     └──────────────┘ │
+│                                                                    │
+│  Cross-validation FAILS: All sources report consistent 2x time    │
+│                                                                    │
+│  DEFENSES:                                                         │
+│  • Multi-source cross-validation (defeated by coordinated hooks)   │
+│  • Server-side time validation (REQUIRED for production)          │
+│                                                                    │
+│  WEAKNESSES:                                                       │
+│  ❌ ALL client-side time sources are hookable                      │
+│  ❌ Client-side speed detection is FUNDAMENTALLY BROKEN            │
+│  ❌ SERVER VALIDATION IS MANDATORY                                 │
+│                                                                    │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+### 9.3 Data Flow with Attack Points
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ DATA FLOW: SDK UPDATE CYCLE                                         │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ┌──────────────────┐                                               │
+│  │ Game calls       │                                               │
+│  │ SDK::Update()    │                                               │
+│  └────────┬─────────┘                                               │
+│           │                                                         │
+│           ▼                                                         │
+│  ┌──────────────────────────────────────────┐                      │
+│  │ 1. Anti-Debug Checks                     │                      │
+│  │    ⚠️  Attack: Hook IsDebuggerPresent    │                      │
+│  │    ⚠️  Attack: Patch PEB.BeingDebugged   │                      │
+│  └────────┬─────────────────────────────────┘                      │
+│           │                                                         │
+│           ▼                                                         │
+│  ┌──────────────────────────────────────────┐                      │
+│  │ 2. Anti-Hook Checks (Probabilistic)      │                      │
+│  │    ⚠️  Attack: TOCTOU (hook after check) │                      │
+│  │    ⚠️  Attack: Restore-on-scan           │                      │
+│  └────────┬─────────────────────────────────┘                      │
+│           │                                                         │
+│           ▼                                                         │
+│  ┌──────────────────────────────────────────┐                      │
+│  │ 3. Integrity Checks (Sampling)           │                      │
+│  │    ⚠️  Attack: Hook SafeHash function    │                      │
+│  │    ⚠️  Attack: Modify between samples    │                      │
+│  └────────┬─────────────────────────────────┘                      │
+│           │                                                         │
+│           ▼                                                         │
+│  ┌──────────────────────────────────────────┐                      │
+│  │ 4. Collect Violations                    │                      │
+│  │    ⚠️  Attack: Hook violation reporting  │                      │
+│  └────────┬─────────────────────────────────┘                      │
+│           │                                                         │
+│           ▼                                                         │
+│  ┌──────────────────────────────────────────┐                      │
+│  │ 5. Queue for Cloud Reporting             │                      │
+│  │    ⚠️  Attack: Block network traffic     │                      │
+│  │    ⚠️  Attack: Drop violation packets    │                      │
+│  └────────┬─────────────────────────────────┘                      │
+│           │                                                         │
+│           ▼                                                         │
+│  ┌──────────────────────────────────────────┐                      │
+│  │ 6. Return to Game                        │                      │
+│  │    ⚠️  Attack: Hook return value         │                      │
+│  └──────────────────────────────────────────┘                      │
+│                                                                     │
+│  EVERY STEP IS AN ATTACK SURFACE                                   │
+│  No single check is unbypassable                                   │
+│  Defense-in-depth and correlation required                         │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 9.4 Privilege Rings and Attack Capabilities
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ PRIVILEGE ESCALATION IMPACT                                         │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  Ring 3 (User Mode) - Attacker Capabilities:                        │
+│  ✅ Hook user-mode APIs (IAT, inline, VEH)                          │
+│  ✅ Modify process memory                                           │
+│  ✅ Inject DLLs                                                      │
+│  ✅ Manipulate network stack                                        │
+│  ❌ Cannot bypass kernel protection (if implemented)                │
+│                                                                     │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│                                                                     │
+│  Ring 0 (Kernel Mode) - Attacker Capabilities:                      │
+│  ✅ Everything Ring 3 can do, PLUS:                                 │
+│  ✅ Hook syscalls (SSDT, Shadow SSDT)                               │
+│  ✅ Manipulate page tables (shadow pages)                           │
+│  ✅ Hide memory regions from VirtualQuery                           │
+│  ✅ Modify physical memory directly                                 │
+│  ✅ Intercept RDTSC instruction                                     │
+│  ✅ Defeat ALL user-mode anti-cheat                                 │
+│  ❌ Cannot bypass hypervisor (if present)                           │
+│                                                                     │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│                                                                     │
+│  Ring -1 (Hypervisor) - Attacker Capabilities:                      │
+│  ✅ Everything Ring 0 can do, PLUS:                                 │
+│  ✅ Intercept ALL VM exits                                          │
+│  ✅ Hide from kernel detection                                      │
+│  ✅ Defeat Secure Boot / HVCI                                       │
+│  ✅ Complete system control                                         │
+│  ❌ Requires boot-time loading (detectable by Secure Boot)          │
+│                                                                     │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│                                                                     │
+│  SENTINEL SDK POSITION: Ring 3 (User Mode)                          │
+│                                                                     │
+│  IMPLICATION:                                                       │
+│  ❌ Cannot prevent Ring 0 attacks                                   │
+│  ❌ Cannot prevent Ring -1 attacks                                  │
+│  ✅ Can DETECT some Ring 3 attacks                                  │
+│  ✅ Can DETER casual attackers                                      │
+│  ✅ Can collect telemetry for server-side analysis                  │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 9.5 Recommended Security Architecture
+
+Based on red team analysis, the recommended security model is:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ DEFENSE-IN-DEPTH ARCHITECTURE                                       │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  Layer 1: CLIENT-SIDE DETECTION (Deterrence)                        │
+│  ┌────────────────────────────────────────────────────────────────┐ │
+│  │ Sentinel SDK (User Mode)                                        │ │
+│  │ • Detect basic cheats (public tools)                            │ │
+│  │ • Raise effort bar for casual attackers                         │ │
+│  │ • Collect telemetry                                             │ │
+│  │ ⚠️  ASSUMPTION: Bypassable by kernel-mode tools                │ │
+│  └────────────────────────────────────────────────────────────────┘ │
+│                           │                                         │
+│                           ▼                                         │
+│  Layer 2: SERVER-SIDE VALIDATION (Authority)                        │
+│  ┌────────────────────────────────────────────────────────────────┐ │
+│  │ Game Server                                                      │ │
+│  │ • Validate all critical state (health, position, resources)     │ │
+│  │ • Enforce physics (movement speed, action cooldowns)            │ │
+│  │ • Detect impossible actions (teleport, instant kills)           │ │
+│  │ ✅ AUTHORITATIVE: Client cannot bypass                          │ │
+│  └────────────────────────────────────────────────────────────────┘ │
+│                           │                                         │
+│                           ▼                                         │
+│  Layer 3: BEHAVIORAL ANALYSIS (Pattern Detection)                   │
+│  ┌────────────────────────────────────────────────────────────────┐ │
+│  │ Sentinel Cloud                                                   │ │
+│  │ • Aggregate telemetry from all clients                          │ │
+│  │ • Statistical anomaly detection                                 │ │
+│  │ • Cheat signature database                                      │ │
+│  │ • Correlation across multiple signals                           │ │
+│  │ ✅ SMART: Detects patterns invisible to client                  │ │
+│  └────────────────────────────────────────────────────────────────┘ │
+│                           │                                         │
+│                           ▼                                         │
+│  Layer 4: ECONOMIC DISINCENTIVES (Punishment)                       │
+│  ┌────────────────────────────────────────────────────────────────┐ │
+│  │ Ban System                                                       │ │
+│  │ • HWID bans (expensive for attacker to bypass)                  │ │
+│  │ • Delayed ban waves (uncertainty for cheat developers)          │ │
+│  │ • IP blacklists                                                 │ │
+│  │ ✅ ECONOMIC: Make cheating cost > value gained                  │ │
+│  └────────────────────────────────────────────────────────────────┘ │
+│                                                                     │
+│  EACH LAYER COMPENSATES FOR WEAKNESSES OF OTHERS                    │
+│  No single layer is sufficient                                     │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 10. Honest Security Posture
+
+### 10.1 What Sentinel SDK CAN Do
+
+✅ **Deter Casual Attackers**
+- Detect public cheat tools (Cheat Engine basic mode)
+- Raise difficulty for script kiddies
+- Make obvious cheating harder
+
+✅ **Collect Intelligence**
+- Telemetry on cheat attempts
+- Pattern analysis across player base
+- Cheat tool signatures
+
+✅ **Support Server Validation**
+- Provide client-side signals
+- Enable correlation with server state
+- Fast detection of basic manipulations
+
+### 10.2 What Sentinel SDK CANNOT Do
+
+❌ **Prevent Kernel-Mode Cheats**
+- Kernel drivers bypass all user-mode checks
+- Page table manipulation is invisible
+- SSDT hooks intercept all syscalls
+
+❌ **Guarantee Detection**
+- TOCTOU vulnerabilities in periodic checks
+- Restore-on-scan defeats integrity checks
+- All time sources are hookable
+
+❌ **Replace Server Validation**
+- Client-side is advisory, not authoritative
+- Speed hack detection requires server
+- Critical game state must be server-validated
+
+❌ **Prevent Determined Adversaries**
+- With enough effort, all checks are bypassable
+- Code can be reverse engineered
+- Obfuscation only delays, doesn't prevent
+
+### 10.3 Security Model: Deterrence, Not Prevention
+
+**Sentinel SDK is a DETERRENCE system, not a PREVENTION system.**
+
+- **Goal:** Raise the effort bar above the value of cheating
+- **Strategy:** Multiple weak signals into strong correlation
+- **Reality:** Determined attacker with kernel access bypasses everything
+- **Mitigation:** Server-side validation + behavioral analysis + economic disincentives
+
+---
+
+**Architecture Document Updated:** 2025-01-29  
+**Red Team Review:** Complete  
+**Next Security Review:** Q2 2025
