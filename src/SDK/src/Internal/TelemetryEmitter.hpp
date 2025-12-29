@@ -213,6 +213,12 @@ private:
      */
     uint64_t GetCurrentTimeMs() const;
     
+    /**
+     * Convert detection type to array index
+     * Maps Unknown (255) and invalid types to 0
+     */
+    size_t TypeToIndex(DetectionType type) const;
+    
     // Environment detector (optional, set by SDK)
     EnvironmentDetector* env_detector_;
     

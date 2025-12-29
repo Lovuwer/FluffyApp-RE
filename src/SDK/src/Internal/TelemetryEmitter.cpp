@@ -16,9 +16,16 @@ TelemetryEmitter::TelemetryEmitter()
     , current_scan_duration_us_(0)
     , current_memory_scanned_(0)
 {
-    // Initialize baselines
+    // Initialize baselines - use explicit types instead of loop to avoid Unknown (255) issue
+    // The baseline array stores data for valid detection types 0-5 only
+    baselines_[0].type = DetectionType::AntiDebug;
+    baselines_[1].type = DetectionType::AntiHook;
+    baselines_[2].type = DetectionType::MemoryIntegrity;
+    baselines_[3].type = DetectionType::SpeedHack;
+    baselines_[4].type = DetectionType::InjectionDetect;
+    baselines_[5].type = DetectionType::NetworkAnomaly;
+    
     for (size_t i = 0; i < NUM_DETECTION_TYPES; ++i) {
-        baselines_[i].type = static_cast<DetectionType>(i);
         baselines_[i].total_detections = 0;
         baselines_[i].baseline_rate_per_hour = 0;
         baselines_[i].window_start_time_ms = GetCurrentTimeMs();
@@ -124,19 +131,12 @@ void TelemetryEmitter::SetPerformanceMetrics(uint64_t scan_duration_us, size_t m
 }
 
 bool TelemetryEmitter::IsDetectionRateAnomalous(DetectionType type) const {
-    size_t index = static_cast<size_t>(type);
-    if (index >= NUM_DETECTION_TYPES) {
-        return false;
-    }
+    size_t index = TypeToIndex(type);
     return baselines_[index].is_anomalous;
 }
 
 const DetectionBaseline& TelemetryEmitter::GetBaseline(DetectionType type) const {
-    size_t index = static_cast<size_t>(type);
-    if (index >= NUM_DETECTION_TYPES) {
-        static DetectionBaseline empty_baseline;
-        return empty_baseline;
-    }
+    size_t index = TypeToIndex(type);
     return baselines_[index];
 }
 
@@ -151,10 +151,7 @@ void TelemetryEmitter::ClearEvents() {
 }
 
 void TelemetryEmitter::UpdateBaseline(DetectionType type) {
-    size_t index = static_cast<size_t>(type);
-    if (index >= NUM_DETECTION_TYPES) {
-        return;
-    }
+    size_t index = TypeToIndex(type);
     
     DetectionBaseline& baseline = baselines_[index];
     baseline.total_detections++;
@@ -175,10 +172,7 @@ void TelemetryEmitter::UpdateBaseline(DetectionType type) {
 }
 
 void TelemetryEmitter::CheckAnomalies(DetectionType type) {
-    size_t index = static_cast<size_t>(type);
-    if (index >= NUM_DETECTION_TYPES) {
-        return;
-    }
+    size_t index = TypeToIndex(type);
     
     DetectionBaseline& baseline = baselines_[index];
     
@@ -215,6 +209,16 @@ uint64_t TelemetryEmitter::GetCurrentTimeMs() const {
     auto now = system_clock::now();
     auto duration = now.time_since_epoch();
     return duration_cast<milliseconds>(duration).count();
+}
+
+size_t TelemetryEmitter::TypeToIndex(DetectionType type) const {
+    size_t index = static_cast<size_t>(type);
+    // Map Unknown (255) to index 0, other invalid types also to 0
+    // Valid types are 0-5 (AntiDebug through NetworkAnomaly)
+    if (type == DetectionType::Unknown || index >= NUM_DETECTION_TYPES) {
+        return 0;
+    }
+    return index;
 }
 
 } // namespace SDK
