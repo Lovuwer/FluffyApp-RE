@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cwctype>
 #include <cstring>
 
 namespace Sentinel {
@@ -192,7 +193,8 @@ OverlayVerificationResult OverlayVerifier::VerifyOverlay(const wchar_t* module_p
 
     // Check hash against known-good database (if available)
     std::wstring name_lower = module_name;
-    std::transform(name_lower.begin(), name_lower.end(), name_lower.begin(), ::towlower);
+    std::transform(name_lower.begin(), name_lower.end(), name_lower.begin(), 
+        [](wchar_t c) { return std::towlower(c); });
     
     auto it = known_good_hashes_.find(name_lower);
     if (it != known_good_hashes_.end()) {
@@ -217,7 +219,8 @@ bool OverlayVerifier::IsPotentialOverlay(const wchar_t* module_name) {
     if (!module_name) return false;
 
     std::wstring name_lower = module_name;
-    std::transform(name_lower.begin(), name_lower.end(), name_lower.begin(), ::towlower);
+    std::transform(name_lower.begin(), name_lower.end(), name_lower.begin(), 
+        [](wchar_t c) { return std::towlower(c); });
 
     // Check for common overlay keywords
     if (name_lower.find(L"discord") != std::wstring::npos) return true;
@@ -225,6 +228,7 @@ bool OverlayVerifier::IsPotentialOverlay(const wchar_t* module_name) {
     if (name_lower.find(L"overlay") != std::wstring::npos) return true;
     if (name_lower.find(L"nvidia") != std::wstring::npos) return true;
     if (name_lower.find(L"geforce") != std::wstring::npos) return true;
+    if (name_lower.find(L"nvda") != std::wstring::npos) return true;
     if (name_lower.find(L"obs") != std::wstring::npos) return true;
     if (name_lower.find(L"gameoverlayrenderer") != std::wstring::npos) return true;
 
@@ -235,7 +239,8 @@ OverlayVendor OverlayVerifier::IdentifyVendor(const wchar_t* module_name) {
     if (!module_name) return OverlayVendor::Unknown;
 
     std::wstring name_lower = module_name;
-    std::transform(name_lower.begin(), name_lower.end(), name_lower.begin(), ::towlower);
+    std::transform(name_lower.begin(), name_lower.end(), name_lower.begin(), 
+        [](wchar_t c) { return std::towlower(c); });
 
     if (name_lower.find(L"discord") != std::wstring::npos) {
         return OverlayVendor::Discord;
@@ -245,7 +250,8 @@ OverlayVendor OverlayVerifier::IdentifyVendor(const wchar_t* module_name) {
         return OverlayVendor::Steam;
     }
     if (name_lower.find(L"nvidia") != std::wstring::npos || 
-        name_lower.find(L"geforce") != std::wstring::npos) {
+        name_lower.find(L"geforce") != std::wstring::npos ||
+        name_lower.find(L"nvda") != std::wstring::npos) {
         return OverlayVendor::NVIDIA;
     }
     if (name_lower.find(L"obs") != std::wstring::npos) {
@@ -264,7 +270,8 @@ bool OverlayVerifier::IsExpectedHookPattern(OverlayVendor vendor, const wchar_t*
 
         // Check if module is in expected list
         std::wstring mod_lower = module_name;
-        std::transform(mod_lower.begin(), mod_lower.end(), mod_lower.begin(), ::towlower);
+        std::transform(mod_lower.begin(), mod_lower.end(), mod_lower.begin(), 
+            [](wchar_t c) { return std::towlower(c); });
 
         bool module_match = false;
         for (const auto& expected_mod : pattern.expected_hook_modules) {
@@ -281,11 +288,13 @@ bool OverlayVerifier::IsExpectedHookPattern(OverlayVendor vendor, const wchar_t*
 
         // Check if function is in expected list
         std::wstring func_lower = function_name;
-        std::transform(func_lower.begin(), func_lower.end(), func_lower.begin(), ::towlower);
+        std::transform(func_lower.begin(), func_lower.end(), func_lower.begin(), 
+            [](wchar_t c) { return std::towlower(c); });
 
         for (const auto& expected_func : pattern.expected_hook_functions) {
             std::wstring exp_lower = expected_func;
-            std::transform(exp_lower.begin(), exp_lower.end(), exp_lower.begin(), ::towlower);
+            std::transform(exp_lower.begin(), exp_lower.end(), exp_lower.begin(), 
+                [](wchar_t c) { return std::towlower(c); });
             if (func_lower.find(exp_lower) != std::wstring::npos) {
                 return true;
             }
@@ -299,11 +308,13 @@ bool OverlayVerifier::IsCriticalSecurityFunction(const wchar_t* function_name) {
     if (!function_name) return false;
 
     std::wstring func_lower = function_name;
-    std::transform(func_lower.begin(), func_lower.end(), func_lower.begin(), ::towlower);
+    std::transform(func_lower.begin(), func_lower.end(), func_lower.begin(), 
+        [](wchar_t c) { return std::towlower(c); });
 
     for (int i = 0; CRITICAL_SECURITY_FUNCTIONS[i] != nullptr; i++) {
         std::wstring critical_lower = CRITICAL_SECURITY_FUNCTIONS[i];
-        std::transform(critical_lower.begin(), critical_lower.end(), critical_lower.begin(), ::towlower);
+        std::transform(critical_lower.begin(), critical_lower.end(), critical_lower.begin(), 
+            [](wchar_t c) { return std::towlower(c); });
         
         if (func_lower == critical_lower) {
             return true;

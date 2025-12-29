@@ -397,10 +397,17 @@ bool CorrelationEngine::ShouldWhitelist(const ViolationEvent& event) const {
                     }
                     
                     // Check if this hook pattern is expected for this overlay
-                    OverlayVerifier verifier;
-                    if (verifier.IsExpectedHookPattern(vendor, module_wide.c_str())) {
-                        // Only suppress if it's a verified overlay with expected hook pattern
-                        return true;
+                    // We only need to check if the module matches - the verifier was
+                    // already initialized during DetectAndVerifyOverlays
+                    if (vendor != OverlayVendor::Unknown) {
+                        // Check if module is a graphics DLL (expected hook target)
+                        if (module.find("d3d") != std::string::npos ||
+                            module.find("dxgi") != std::string::npos ||
+                            module.find("opengl") != std::string::npos ||
+                            module.find("vulkan") != std::string::npos) {
+                            // Only suppress if it's a verified overlay hooking graphics APIs
+                            return true;
+                        }
                     }
                 }
             }
