@@ -8,6 +8,7 @@
  * Task 10: Secure TOCTOU Double-Read Pattern
  * Task 3: TOCTOU Vulnerability Fixes
  * Task 2: Decouple Anti-Hook Jitter from Hot Path
+ * Task 10: Secure TOCTOU Double-Read Pattern
  * 
  * TOCTOU Protection Mechanisms:
  * 
@@ -462,8 +463,13 @@ bool AntiHookDetector::IsInlineHooked(const FunctionProtection& func) {
     std::uniform_int_distribution<int> order_dist(0, 1);
     bool read_forward = order_dist(rng) == 0;
     
+copilot/expand-hook-detection-coverage
     // TRIPLE-READ PATTERN: First read (Task 10 + Task 11: 64-byte buffers)
     uint8_t firstRead[64];  // Task 11: Expanded to 64 bytes
+=======
+    // TRIPLE-READ PATTERN: First read
+    uint8_t firstRead[32];  // Max prologue size from Context.hpp
+ main
     if (read_forward) {
         if (!SafeMemory::SafeRead(reinterpret_cast<const void*>(func.address), 
                                    firstRead, func.prologue_size)) {
