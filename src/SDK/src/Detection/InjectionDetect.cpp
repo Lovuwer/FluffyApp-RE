@@ -38,6 +38,10 @@ namespace SDK {
 // Constants
 static constexpr size_t PAGE_SIZE = 0x1000;  // 4KB page size
 
+// Thread pool validation constants (Task 8)
+static constexpr int MIN_THREAD_POOL_STACK_FRAMES = 2;  // Minimum valid thread pool frames required
+static constexpr int MAX_SUSPICIOUS_STACK_FRAMES = 1;   // Maximum private memory frames allowed
+
 // Helper function to convert address to hex string
 static std::string ToHex(uintptr_t value) {
     std::ostringstream oss;
@@ -469,25 +473,20 @@ bool InjectionDetector::ValidateThreadPoolStackWalk(HANDLE hThread) {
     
     uintptr_t currentStackPtr = stackPointer;
     for (int i = 0; i < MAX_STACK_FRAMES; i++) {
-        // Read potential return address from stack
+        // Read potential return address from stack using direct memory access
+        // This is safe because we're reading our own process memory
         uintptr_t returnAddress = 0;
-        SIZE_T bytesRead = 0;
         
         __try {
-            if (!ReadProcessMemory(GetCurrentProcess(), 
-                                  (LPCVOID)currentStackPtr, 
-                                  &returnAddress, 
-                                  sizeof(returnAddress), 
-                                  &bytesRead)) {
-                break;  // Can't read further
-            }
+            // Direct memory read (faster than ReadProcessMemory for same process)
+            returnAddress = *(uintptr_t*)currentStackPtr;
         }
         __except (EXCEPTION_EXECUTE_HANDLER) {
-            break;
+            break;  // Can't read further - invalid stack address
         }
         
-        if (bytesRead != sizeof(returnAddress) || returnAddress == 0) {
-            break;
+        if (returnAddress == 0) {
+            break;  // End of meaningful stack
         }
         
         // Check if this looks like a valid return address
@@ -515,13 +514,14 @@ bool InjectionDetector::ValidateThreadPoolStackWalk(HANDLE hThread) {
         currentStackPtr += sizeof(uintptr_t);
     }
     
-    // Thread pool threads should have at least 2-3 frames in thread pool infrastructure
-    // and minimal frames in private memory
-    if (validFramesFound < 2) {
+    // Thread pool threads should have at least MIN_THREAD_POOL_STACK_FRAMES frames
+    // in thread pool infrastructure and no more than MAX_SUSPICIOUS_STACK_FRAMES
+    // frames in private memory
+    if (validFramesFound < MIN_THREAD_POOL_STACK_FRAMES) {
         return false;  // Not enough thread pool frames
     }
     
-    if (suspiciousFramesFound > 1) {
+    if (suspiciousFramesFound > MAX_SUSPICIOUS_STACK_FRAMES) {
         return false;  // Too many suspicious frames
     }
     
@@ -598,6 +598,16 @@ bool InjectionDetector::ValidateThreadPoolTLS(HANDLE hThread) {
     
     // Thread pool threads typically have non-NULL TLS pointer
     // Injected threads often have NULL or invalid TLS
+    // 
+    // NOTE: While some legitimate threads may have NULL TLS in rare cases,
+    // thread pool threads created by the Windows thread pool API always
+    // have TLS data initialized. If we reach this point, we've already
+    // verified:
+    // 1. The thread starts near TpReleaseWork (within 4KB)
+    // 2. The stack has legitimate thread pool frames
+    // 
+    // Therefore, NULL TLS at this point is a strong indicator of
+    // a hijacked or fake thread pool thread.
     if (tlsPointer == 0) {
         return false;  // NULL TLS is suspicious for thread pool threads
     }
@@ -711,6 +721,8 @@ void InjectionDetector::RegisterThreadPoolWorkItem(uintptr_t work_function) {
     item.work_function = work_function;
     item.submit_time = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
+    // thread_id starts at 0 (unassigned) and can be updated when the work item
+    // is actually executed by a specific thread pool thread
     item.thread_id = 0;
     
     thread_pool_work_items_.push_back(item);
@@ -728,7 +740,8 @@ void InjectionDetector::UnregisterThreadPoolWorkItem(uintptr_t work_function) {
 }
 
 bool InjectionDetector::IsKnownThreadPoolWorkItem(uintptr_t address) const {
-    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(work_items_mutex_));
+    // Note: We need to lock the mutex even in a const method, so it's declared mutable
+    std::lock_guard<std::mutex> lock(work_items_mutex_);
     
     // Check if this address is a known work item
     for (const auto& item : thread_pool_work_items_) {

@@ -304,7 +304,7 @@ private:
     };
     
     std::vector<ThreadPoolWorkItem> thread_pool_work_items_;
-    std::mutex work_items_mutex_;
+    mutable std::mutex work_items_mutex_;  // Mutable to allow locking in const methods
     static constexpr uint64_t WORK_ITEM_TIMEOUT_MS = 300000;  // 5 minutes
 #endif
     
