@@ -3,7 +3,7 @@
  * 
  * Copyright (c) 2025 Sentinel Security. All rights reserved.
  * 
- * Task 11: Inline Hook Detection Implementation
+ * Task 11: Expanded Hook Detection Coverage (64 bytes, mid-function hooks, exception-based hooks)
  * Task 12: IAT Hook Detection Implementation
  * Task 3: TOCTOU Vulnerability Fixes
  * Task 2: Decouple Anti-Hook Jitter from Hot Path
@@ -15,11 +15,12 @@
  *    - Detects dynamic hooks being installed/removed between checks
  *    - Prevents race conditions where hooks appear after verification
  * 
- * 2. Extended Hook Detection (Lines 754-815):
- *    - Scans first 16 bytes (not just 2) to catch trampoline hooks
- *    - Checks for hooks at offsets 0-5 to detect delayed hooks
- *    - Detects INT 3 breakpoints anywhere in prologue
+ * 2. Extended Hook Detection (Task 11 - Expanded Coverage):
+ *    - Scans first 64 bytes (increased from 16) for critical functions
+ *    - Checks for hooks at any offset within scanned region (not just 0-5)
+ *    - Detects INT 3 (0xCC), INT 1 (0xF1), UD2 (0x0F 0x0B) breakpoints anywhere
  *    - Identifies PUSH/RET and JMP [rip+X] patterns at any offset
+ *    - Catches mid-function hooks placed after prologue (offset >16)
  * 
  * 3. Scan-Cycle Jitter (Task 2 - Decoupled from Hot Path):
  *    - Jitter moved from per-function loop to scan-cycle boundaries
@@ -108,6 +109,12 @@ namespace {
         
         // INT 3 (breakpoint, 1 byte) - CC
         {{0xCC}, {0xFF}, "INT 3 breakpoint"},
+        
+        // INT 1 (single-step trap, 1 byte) - F1 (used by VEH debuggers)
+        {{0xF1}, {0xFF}, "INT 1 single-step trap"},
+        
+        // UD2 (undefined instruction, 2 bytes) - 0F 0B (used for exception-based hooks)
+        {{0x0F, 0x0B}, {0xFF, 0xFF}, "UD2 undefined instruction"},
     };
     
     bool MatchesPattern(const uint8_t* bytes, const HookPattern& pattern) {
@@ -447,7 +454,7 @@ bool AntiHookDetector::IsInlineHooked(const FunctionProtection& func) {
     }
     
     // DOUBLE-CHECK PATTERN: First read
-    uint8_t firstRead[32];  // Max prologue size from Context.hpp
+    uint8_t firstRead[64];  // Max prologue size expanded to 64 bytes (Task 11)
     if (!SafeMemory::SafeRead(reinterpret_cast<const void*>(func.address), 
                                firstRead, func.prologue_size)) {
         // Failed to read (access violation despite IsReadable check)
@@ -458,7 +465,7 @@ bool AntiHookDetector::IsInlineHooked(const FunctionProtection& func) {
     MemoryBarrier();
     
     // DOUBLE-CHECK PATTERN: Second read
-    uint8_t secondRead[32];
+    uint8_t secondRead[64];  // Max prologue size expanded to 64 bytes (Task 11)
     if (!SafeMemory::SafeRead(reinterpret_cast<const void*>(func.address), 
                                secondRead, func.prologue_size)) {
         // Failed to read
@@ -477,11 +484,14 @@ bool AntiHookDetector::IsInlineHooked(const FunctionProtection& func) {
     // Compare with original prologue using safe comparison
     if (!SafeMemory::SafeCompare(reinterpret_cast<const void*>(func.address),
                                   func.original_prologue.data(), func.prologue_size)) {
-        // Bytes changed - check for hook patterns
-        for (const auto& pattern : HOOK_PATTERNS) {
-            if (pattern.bytes.size() <= func.prologue_size) {
-                if (MatchesPattern(currentBytes, pattern)) {
-                    return true;  // Hook pattern detected
+        // Bytes changed - check for hook patterns at any offset
+        // Task 11: Scan entire prologue for hook patterns, not just at offset 0
+        for (size_t offset = 0; offset < func.prologue_size; offset++) {
+            for (const auto& pattern : HOOK_PATTERNS) {
+                if (offset + pattern.bytes.size() <= func.prologue_size) {
+                    if (MatchesPattern(currentBytes + offset, pattern)) {
+                        return true;  // Hook pattern detected at offset
+                    }
                 }
             }
         }
@@ -859,8 +869,8 @@ bool AntiHookDetector::IsDelayLoadIATHooked(const char* module_name, const char*
 }
 
 bool AntiHookDetector::HasSuspiciousJump(const void* address) {
-    // Extended check: scan first 16 bytes instead of just 2
-    constexpr size_t SCAN_SIZE = 16;
+    // Task 11: Extended check to scan first 64 bytes (increased from 16)
+    constexpr size_t SCAN_SIZE = 64;
     
     // Verify memory is readable
     if (!SafeMemory::IsReadable(address, SCAN_SIZE)) {
@@ -870,6 +880,21 @@ bool AntiHookDetector::HasSuspiciousJump(const void* address) {
     uint8_t bytes[SCAN_SIZE];
     if (!SafeMemory::SafeRead(address, bytes, SCAN_SIZE)) {
         return false;  // Failed to read
+    }
+    
+    // Check for exception-based hooks (INT 3, INT 1, UD2) anywhere in scanned region
+    // Task 11: These are almost never legitimate in normal code
+    for (size_t i = 0; i < SCAN_SIZE; i++) {
+        if (bytes[i] == 0xCC) {  // INT 3 breakpoint
+            return true;
+        }
+        if (bytes[i] == 0xF1) {  // INT 1 single-step trap (VEH debuggers)
+            return true;
+        }
+        // Check for UD2 (0x0F 0x0B)
+        if (i + 1 < SCAN_SIZE && bytes[i] == 0x0F && bytes[i + 1] == 0x0B) {
+            return true;
+        }
     }
     
     // Check for hooks at offsets 0-5 (catches trampoline hooks)
@@ -886,13 +911,6 @@ bool AntiHookDetector::HasSuspiciousJump(const void* address) {
                 case 0xFF:  // JMP/CALL indirect
                     return true;
             }
-        }
-    }
-    
-    // Check for INT 3 (0xCC) anywhere in the first 16 bytes
-    for (size_t i = 0; i < SCAN_SIZE; i++) {
-        if (bytes[i] == 0xCC) {
-            return true;
         }
     }
     

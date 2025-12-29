@@ -1115,3 +1115,234 @@ TEST(AntiHookTests, PerformanceFrameTimeStability) {
     
     detector.Shutdown();
 }
+
+/**
+ * Test 31: Mid-Function Hook Detection at Offset +20
+ * Task 11: Verifies that hooks placed at offset +20 are detected
+ */
+TEST(AntiHookTests, MidFunctionHookAtOffset20) {
+    AntiHookDetector detector;
+    detector.Initialize();
+    
+    // Create a 64-byte buffer to simulate a function
+    uint8_t buffer[64];
+    memset(buffer, 0x90, 64);  // Fill with NOPs
+    
+    // Place a normal prologue at the beginning
+    buffer[0] = 0x55;  // PUSH RBP
+    buffer[1] = 0x48;  // REX.W
+    buffer[2] = 0x89;  // MOV
+    buffer[3] = 0xE5;  // RBP, RSP
+    
+    FunctionProtection func;
+    func.address = reinterpret_cast<uintptr_t>(buffer);
+    func.name = "MidFunctionHook20";
+    func.prologue_size = 64;  // Scan full 64 bytes
+    memcpy(func.original_prologue.data(), buffer, 64);
+    
+    detector.RegisterFunction(func);
+    
+    // Verify it's clean initially
+    EXPECT_FALSE(detector.CheckFunction(func.address))
+        << "Function should be clean initially";
+    
+    // Place a hook at offset +20 (mid-function)
+    buffer[20] = 0xE9;  // JMP rel32
+    buffer[21] = 0x00;
+    buffer[22] = 0x00;
+    buffer[23] = 0x00;
+    buffer[24] = 0x00;
+    
+    // Now it should be detected
+    EXPECT_TRUE(detector.CheckFunction(func.address))
+        << "Mid-function hook at offset +20 should be detected";
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test 32: Mid-Function Hook Detection at Offset +32
+ * Task 11: Verifies that hooks placed at offset +32 are detected
+ */
+TEST(AntiHookTests, MidFunctionHookAtOffset32) {
+    AntiHookDetector detector;
+    detector.Initialize();
+    
+    // Create a 64-byte buffer to simulate a function
+    uint8_t buffer[64];
+    memset(buffer, 0x90, 64);  // Fill with NOPs
+    
+    // Place a normal prologue at the beginning
+    buffer[0] = 0x55;  // PUSH RBP
+    buffer[1] = 0x48;  // REX.W
+    buffer[2] = 0x89;  // MOV
+    buffer[3] = 0xE5;  // RBP, RSP
+    
+    FunctionProtection func;
+    func.address = reinterpret_cast<uintptr_t>(buffer);
+    func.name = "MidFunctionHook32";
+    func.prologue_size = 64;  // Scan full 64 bytes
+    memcpy(func.original_prologue.data(), buffer, 64);
+    
+    detector.RegisterFunction(func);
+    
+    // Verify it's clean initially
+    EXPECT_FALSE(detector.CheckFunction(func.address))
+        << "Function should be clean initially";
+    
+    // Place a hook at offset +32 (mid-function)
+    buffer[32] = 0xE9;  // JMP rel32
+    buffer[33] = 0x00;
+    buffer[34] = 0x00;
+    buffer[35] = 0x00;
+    buffer[36] = 0x00;
+    
+    // Now it should be detected
+    EXPECT_TRUE(detector.CheckFunction(func.address))
+        << "Mid-function hook at offset +32 should be detected";
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test 33: INT 1 (Single-Step Trap) Detection
+ * Task 11: Verifies that INT 1 breakpoints are detected (VEH debuggers)
+ */
+TEST(AntiHookTests, Int1DetectionVEH) {
+    AntiHookDetector detector;
+    detector.Initialize();
+    
+    // Test INT 1 at various positions within 64 bytes
+    for (size_t pos = 0; pos < 64; pos++) {
+        uint8_t buffer[64];
+        memset(buffer, 0x90, 64);  // Fill with NOPs
+        
+        // Place an INT 1 at the position
+        buffer[pos] = 0xF1;
+        
+        uintptr_t addr = reinterpret_cast<uintptr_t>(buffer);
+        bool isHooked = detector.CheckFunction(addr);
+        
+        EXPECT_TRUE(isHooked)
+            << "INT 1 (VEH debugger) at position " << pos << " should be detected";
+    }
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test 34: UD2 (Undefined Instruction) Detection
+ * Task 11: Verifies that UD2 instructions are detected (exception-based hooks)
+ */
+TEST(AntiHookTests, UD2DetectionExceptionHook) {
+    AntiHookDetector detector;
+    detector.Initialize();
+    
+    // Test UD2 at various positions within 64 bytes
+    for (size_t pos = 0; pos < 63; pos++) {  // 63 because UD2 is 2 bytes
+        uint8_t buffer[64];
+        memset(buffer, 0x90, 64);  // Fill with NOPs
+        
+        // Place a UD2 at the position
+        buffer[pos] = 0x0F;
+        buffer[pos + 1] = 0x0B;
+        
+        uintptr_t addr = reinterpret_cast<uintptr_t>(buffer);
+        bool isHooked = detector.CheckFunction(addr);
+        
+        EXPECT_TRUE(isHooked)
+            << "UD2 (exception-based hook) at position " << pos << " should be detected";
+    }
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test 35: Extended 64-Byte Coverage Test
+ * Task 11: Verifies that all hook patterns are detected anywhere in 64 bytes
+ */
+TEST(AntiHookTests, Extended64ByteCoverage) {
+    AntiHookDetector detector;
+    detector.Initialize();
+    
+    struct HookTest {
+        std::vector<uint8_t> pattern;
+        const char* name;
+    };
+    
+    std::vector<HookTest> hooks = {
+        {{0xE9, 0x00, 0x00, 0x00, 0x00}, "JMP rel32"},
+        {{0xCC}, "INT 3"},
+        {{0xF1}, "INT 1"},
+        {{0x0F, 0x0B}, "UD2"},
+        {{0xFF, 0x25, 0x00, 0x00, 0x00, 0x00}, "JMP [rip+0]"},
+    };
+    
+    // Test each pattern at multiple positions within the 64-byte range
+    for (const auto& hook : hooks) {
+        // Test at offsets: 0, 16, 32, 48, 60
+        std::vector<size_t> test_offsets = {0, 16, 32, 48, 60};
+        
+        for (size_t offset : test_offsets) {
+            if (offset + hook.pattern.size() > 64) continue;
+            
+            uint8_t buffer[64];
+            memset(buffer, 0x90, 64);
+            
+            // Copy hook pattern at offset
+            memcpy(buffer + offset, hook.pattern.data(), hook.pattern.size());
+            
+            FunctionProtection func;
+            func.address = reinterpret_cast<uintptr_t>(buffer);
+            func.name = std::string("Extended_") + hook.name + "_" + std::to_string(offset);
+            func.prologue_size = 64;
+            memset(func.original_prologue.data(), 0x90, 64);  // Original was all NOPs
+            
+            detector.RegisterFunction(func);
+            
+            bool isHooked = detector.CheckFunction(func.address);
+            EXPECT_TRUE(isHooked)
+                << hook.name << " at offset " << offset << " should be detected in 64-byte scan";
+            
+            detector.UnregisterFunction(func.address);
+        }
+    }
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test 36: Critical Function Full Scan
+ * Task 11: Verifies that critical functions are scanned with full 64-byte coverage
+ */
+TEST(AntiHookTests, CriticalFunctionFullScan) {
+    AntiHookDetector detector;
+    detector.Initialize();
+    
+    // Create a function buffer
+    uint8_t buffer[64];
+    memset(buffer, 0x90, 64);
+    
+    // Simulate NtProtectVirtualMemory or similar critical function
+    FunctionProtection func;
+    func.address = reinterpret_cast<uintptr_t>(buffer);
+    func.name = "NtProtectVirtualMemory";
+    func.prologue_size = 64;  // Full 64-byte scan for critical functions
+    func.is_critical = true;  // Mark as critical
+    memcpy(func.original_prologue.data(), buffer, 64);
+    
+    detector.RegisterFunction(func);
+    
+    // Verify it's clean
+    EXPECT_FALSE(detector.CheckFunction(func.address))
+        << "Critical function should be clean initially";
+    
+    // Place a hook at offset +50 (beyond the old 16-byte limit)
+    buffer[50] = 0xCC;  // INT 3
+    
+    // Should be detected with expanded coverage
+    EXPECT_TRUE(detector.CheckFunction(func.address))
+        << "Hook at offset +50 in critical function should be detected";
+    
+    detector.Shutdown();
+}
