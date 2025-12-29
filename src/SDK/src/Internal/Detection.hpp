@@ -252,6 +252,17 @@ public:
      */
     std::vector<ViolationEvent> ScanModuleSignatures();
     
+    // Thread pool work item tracking (API available on all platforms, implementation varies)
+    void RegisterThreadPoolWorkItem(uintptr_t work_function);
+    void UnregisterThreadPoolWorkItem(uintptr_t work_function);
+    bool IsKnownThreadPoolWorkItem(uintptr_t address) const;
+    void CleanupExpiredWorkItems();
+    
+#ifdef _WIN32
+    // Exposed for testing purposes
+    bool IsWindowsThreadPoolThread(uintptr_t startAddress);
+#endif
+    
 private:
     void EnumerateKnownModules();
     bool IsModuleSuspicious(const wchar_t* module_path);
@@ -262,12 +273,6 @@ private:
         uintptr_t base_address;
         size_t region_size;
     };
-    
-    // Thread pool work item tracking (API available on all platforms, implementation varies)
-    void RegisterThreadPoolWorkItem(uintptr_t work_function);
-    void UnregisterThreadPoolWorkItem(uintptr_t work_function);
-    bool IsKnownThreadPoolWorkItem(uintptr_t address) const;
-    void CleanupExpiredWorkItems();
     
 #ifdef _WIN32
     bool IsSuspiciousRegion(const MEMORY_BASIC_INFORMATION& mbi);
