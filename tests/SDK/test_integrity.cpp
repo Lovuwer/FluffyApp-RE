@@ -264,17 +264,31 @@ TEST(IntegrityCheckTests, QuickCheckVsFullScan) {
 
 /**
  * Test 7: Uninitialized State
- * Verifies that verification passes when not initialized (fail-safe behavior)
+ * Verifies that verification fails closed when not initialized (TASK-04: fail-safe behavior)
  */
 TEST(IntegrityCheckTests, UninitializedState) {
     IntegrityChecker checker;
     // Don't call Initialize()
     
-    // Should return empty violations (assume OK when not initialized)
+    // TASK-04: Should return violations when not initialized (fail closed)
     std::vector<ViolationEvent> violations = checker.QuickCheck();
     
+#ifdef _WIN32
+    // On Windows, uninitialized checker should fail closed
+    EXPECT_FALSE(violations.empty())
+        << "Uninitialized checker should return violations on Windows (fail closed)";
+    
+    if (!violations.empty()) {
+        EXPECT_EQ(violations[0].type, ViolationType::ModuleModified)
+            << "Violation should be ModuleModified";
+        EXPECT_EQ(violations[0].severity, Severity::Critical)
+            << "Violation severity should be Critical";
+    }
+#else
+    // On non-Windows platforms, code section verification is not supported
     EXPECT_TRUE(violations.empty())
-        << "Uninitialized checker should return no violations";
+        << "Uninitialized checker returns no violations on non-Windows platforms";
+#endif
 }
 
 /**
@@ -327,4 +341,59 @@ TEST(IntegrityCheckTests, RegionUnregistration) {
     
     delete[] buffer;
     checker.Shutdown();
+}
+
+/**
+ * Test 9: TASK-04 - Initialization Failure Detection
+ * Verifies that QuickCheck() returns violation when initialization failed (Windows only)
+ */
+TEST(IntegrityCheckTests, TASK04_InitializationFailureDetection) {
+#ifdef _WIN32
+    IntegrityChecker checker;
+    // Don't call Initialize() - this simulates initialization failure
+    
+    // QuickCheck should detect initialization failure and return violation
+    std::vector<ViolationEvent> violations = checker.QuickCheck();
+    
+    EXPECT_FALSE(violations.empty())
+        << "QuickCheck should return violations when initialization failed";
+    
+    if (!violations.empty()) {
+        // Should be a ModuleModified violation with Critical severity
+        EXPECT_EQ(violations[0].type, ViolationType::ModuleModified)
+            << "Violation should be ModuleModified type";
+        EXPECT_EQ(violations[0].severity, Severity::Critical)
+            << "Violation severity should be Critical";
+        EXPECT_EQ(violations[0].details, "Code section hash mismatch")
+            << "Violation details should indicate code section issue";
+    }
+#else
+    GTEST_SKIP() << "Test only applicable on Windows";
+#endif
+}
+
+/**
+ * Test 10: TASK-04 - FullScan with Initialization Failure
+ * Verifies that FullScan() also returns violation when initialization failed (Windows only)
+ */
+TEST(IntegrityCheckTests, TASK04_FullScanInitializationFailure) {
+#ifdef _WIN32
+    IntegrityChecker checker;
+    // Don't call Initialize() - this simulates initialization failure
+    
+    // FullScan should also detect initialization failure
+    std::vector<ViolationEvent> violations = checker.FullScan();
+    
+    EXPECT_FALSE(violations.empty())
+        << "FullScan should return violations when initialization failed";
+    
+    if (!violations.empty()) {
+        EXPECT_EQ(violations[0].type, ViolationType::ModuleModified)
+            << "Violation should be ModuleModified type";
+        EXPECT_EQ(violations[0].severity, Severity::Critical)
+            << "Violation severity should be Critical";
+    }
+#else
+    GTEST_SKIP() << "Test only applicable on Windows";
+#endif
 }

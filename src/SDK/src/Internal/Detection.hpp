@@ -185,6 +185,7 @@ private:
     uint64_t code_section_hash_ = 0;
     uintptr_t code_section_base_ = 0;
     size_t code_section_size_ = 0;
+    bool initialization_failed_ = false;
     std::mutex regions_mutex_;
 };
 

@@ -24,13 +24,17 @@ void IntegrityChecker::Initialize() {
 #ifdef _WIN32
     // Get module base
     HMODULE hModule = GetModuleHandle(nullptr);
-    if (!hModule) return;
+    if (!hModule) {
+        initialization_failed_ = true;
+        return;
+    }
     
     // Parse PE header
     PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)hModule;
     
     // Verify DOS header is readable
     if (!SafeMemory::IsReadable(dosHeader, sizeof(IMAGE_DOS_HEADER))) {
+        initialization_failed_ = true;
         return;
     }
     
@@ -39,6 +43,7 @@ void IntegrityChecker::Initialize() {
     
     // Verify NT headers are readable
     if (!SafeMemory::IsReadable(ntHeaders, sizeof(IMAGE_NT_HEADERS))) {
+        initialization_failed_ = true;
         return;
     }
     
@@ -59,6 +64,7 @@ void IntegrityChecker::Initialize() {
             if (!SafeMemory::IsReadable((void*)code_section_base_, code_section_size_)) {
                 code_section_base_ = 0;
                 code_section_size_ = 0;
+                initialization_failed_ = true;
                 return;
             }
             
@@ -70,11 +76,17 @@ void IntegrityChecker::Initialize() {
                 code_section_base_ = 0;
                 code_section_size_ = 0;
                 code_section_hash_ = 0;
+                initialization_failed_ = true;
+                return;
             }
-            break;
+            // Successfully initialized
+            return;
         }
         section++;
     }
+    
+    // If we didn't find .text section at all, mark as initialization failed
+    initialization_failed_ = true;
 #endif
 }
 
@@ -215,8 +227,18 @@ bool IntegrityChecker::VerifyRegion(const MemoryRegion& region) {
 }
 
 bool IntegrityChecker::VerifyCodeSection() {
+    if (initialization_failed_) {
+        // Initialization failed - report as violation to trigger alert
+        return false;
+    }
     if (code_section_base_ == 0 || code_section_size_ == 0) {
-        return true; // Not initialized, assume OK
+#ifdef _WIN32
+        // On Windows, this should have been initialized - fail closed
+        return false;
+#else
+        // On non-Windows platforms, code section verification is not supported
+        return true;
+#endif
     }
     
     // Verify memory is readable before hashing
