@@ -96,7 +96,8 @@ Result<PatternScanner::CompiledPattern> PatternScanner::compilePattern(
         }
         
         // Check if both characters are hex digits
-        if (!std::isxdigit(token[0]) || !std::isxdigit(token[1])) {
+        if (!std::isxdigit(static_cast<unsigned char>(token[0])) || 
+            !std::isxdigit(static_cast<unsigned char>(token[1]))) {
             return ErrorCode::InvalidHexString;
         }
         

@@ -202,12 +202,12 @@ TEST(ProtectionManagerTests, GuardPageTriggersVEHOnAccess) {
     void* page = VirtualAlloc(nullptr, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     ASSERT_NE(page, nullptr);
     
-    bool callbackInvoked = false;
-    Sentinel::Address accessedAddress = 0;
+    std::atomic<bool> callbackInvoked{false};
+    std::atomic<Sentinel::Address> accessedAddress{0};
     
     manager.setGuardPageCallback([&](const GuardPageAccess& access) {
-        callbackInvoked = true;
-        accessedAddress = access.address;
+        callbackInvoked.store(true, std::memory_order_release);
+        accessedAddress.store(access.address, std::memory_order_release);
     });
     
     auto result = manager.installGuardPage(
@@ -221,10 +221,13 @@ TEST(ProtectionManagerTests, GuardPageTriggersVEHOnAccess) {
     uint8_t value = *ptr; // This will trigger the guard page
     (void)value;
     
-    // Give time for callback to execute
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    // Poll for callback completion with timeout
+    for (int i = 0; i < 100 && !callbackInvoked.load(std::memory_order_acquire); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
     
-    EXPECT_TRUE(callbackInvoked) << "Guard page callback should be invoked";
+    EXPECT_TRUE(callbackInvoked.load(std::memory_order_acquire)) 
+        << "Guard page callback should be invoked";
     EXPECT_EQ(manager.getAccessCount(), 1) << "Access count should be incremented";
     
     // Clean up

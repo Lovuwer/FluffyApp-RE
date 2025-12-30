@@ -151,7 +151,7 @@ public:
         access.isWrite = (exceptionInfo->ExceptionRecord->ExceptionInformation[0] == 1);
         access.isExecute = (exceptionInfo->ExceptionRecord->ExceptionInformation[0] == 8);
         access.threadId = GetCurrentThreadId();
-        access.timestamp = Clock::now();
+        access.timestamp = Sentinel::Clock::now();
         
         // Invoke callback if set
         std::lock_guard<std::mutex> lock(m_mutex);

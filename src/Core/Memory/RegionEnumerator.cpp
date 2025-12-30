@@ -297,9 +297,9 @@ RegionFilter RegionEnumerator::createModuleFilter(const std::string& moduleName)
         std::string targetName = moduleName;
         
         std::transform(regionName.begin(), regionName.end(), regionName.begin(),
-                      [](unsigned char c) { return std::tolower(c); });
+                      [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         std::transform(targetName.begin(), targetName.end(), targetName.begin(),
-                      [](unsigned char c) { return std::tolower(c); });
+                      [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         
         return regionName == targetName;
     };
