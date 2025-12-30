@@ -51,6 +51,7 @@ struct GlobalConfig {
     uint64_t exception_window_ms;   // Time window for exception counting
     uint64_t config_update_interval_ms;  // How often to check for config updates
     std::string server_endpoint;    // Configuration server endpoint
+    uint32_t exception_budget_per_scan;  // Maximum exceptions per scan before stopping
     
     GlobalConfig()
         : dry_run_mode(false)
@@ -58,6 +59,7 @@ struct GlobalConfig {
         , exception_threshold(5)
         , exception_window_ms(60000)  // 60 seconds
         , config_update_interval_ms(300000)  // 5 minutes
+        , exception_budget_per_scan(10)  // Stop scan after 10 exceptions
     {}
 };
 
