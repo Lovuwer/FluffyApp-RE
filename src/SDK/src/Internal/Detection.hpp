@@ -10,6 +10,7 @@
 #include "Context.hpp"
 #include "Whitelist.hpp"
 #include "JITSignature.hpp"
+#include "EnvironmentDetection.hpp"
 
 #include <vector>
 #include <cstdint>
@@ -239,7 +240,7 @@ private:
     bool hypervisor_detected_ = false;
     
     // Environment detection for adaptive thresholds
-    class EnvironmentDetector* env_detector_ = nullptr;
+    std::unique_ptr<EnvironmentDetector> env_detector_;
     
     // Cloud gaming timing anomaly tracking
     uint64_t last_timing_anomaly_time_ = 0;
