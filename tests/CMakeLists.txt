@@ -62,6 +62,7 @@ add_executable(SDKTests
     SDK/test_overlay_verifier.cpp
     SDK/test_telemetry_config.cpp
     SDK/test_handle_generation.cpp
+    SDK/test_watchdog.cpp
 )
 
 target_include_directories(SDKTests

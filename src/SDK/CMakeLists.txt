@@ -34,6 +34,7 @@ set(SDK_SOURCES
     src/Internal/JITSignature.cpp
     src/Internal/TelemetryEmitter.cpp
     src/Internal/RuntimeConfig.cpp
+    src/Internal/Watchdog.cpp
     src/Core/Heartbeat.cpp
     src/Core/MemoryProtection.cpp
     src/Core/FunctionProtection.cpp
@@ -66,6 +67,7 @@ set(SDK_HEADERS
     src/Internal/EnvironmentDetection.hpp
     src/Internal/TelemetryEmitter.hpp
     src/Internal/RuntimeConfig.hpp
+    src/Internal/Watchdog.hpp
 )
 
 # Header files for IDE organization only (not compiled)
