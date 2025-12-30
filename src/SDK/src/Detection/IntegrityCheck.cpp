@@ -16,6 +16,7 @@
 #include <mutex>
 #include <algorithm>
 #include <cstring>
+#include <chrono>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -23,6 +24,13 @@
 
 namespace Sentinel {
 namespace SDK {
+
+// Helper function to get current time in milliseconds
+static inline uint64_t GetCurrentTimeMs() {
+    auto now = std::chrono::steady_clock::now();
+    auto duration = now.time_since_epoch();
+    return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+}
 
 void IntegrityChecker::Initialize() {
 #ifdef _WIN32
@@ -124,15 +132,16 @@ void IntegrityChecker::Initialize() {
         const char* moduleName = (const char*)((BYTE*)hModule + importDesc->Name);
         
         // Verify module name is readable and null-terminated within reasonable bounds
-        // PE module names should be short (< 256 chars)
-        if (!SafeMemory::IsReadable((void*)moduleName, 256)) {
+        // PE module names are typically short (e.g., "kernel32.dll" = 12 chars)
+        const size_t MAX_MODULE_NAME = 64;
+        if (!SafeMemory::IsReadable((void*)moduleName, MAX_MODULE_NAME)) {
             importDesc++;
             continue;
         }
         
         // Safely read module name with strnlen to ensure null-termination
-        size_t moduleNameLen = strnlen(moduleName, 256);
-        if (moduleNameLen == 0 || moduleNameLen >= 256) {
+        size_t moduleNameLen = strnlen(moduleName, MAX_MODULE_NAME);
+        if (moduleNameLen == 0 || moduleNameLen >= MAX_MODULE_NAME) {
             importDesc++;
             continue;
         }
@@ -176,11 +185,13 @@ void IntegrityChecker::Initialize() {
                 PIMAGE_IMPORT_BY_NAME importByName = 
                     (PIMAGE_IMPORT_BY_NAME)((BYTE*)hModule + originalThunk->u1.AddressOfData);
                 
+                // API function names are typically short (e.g., "NtQueryInformationProcess" = 26 chars)
+                const size_t MAX_FUNCTION_NAME = 128;
                 // Verify import name structure is readable
-                if (SafeMemory::IsReadable(importByName, sizeof(IMAGE_IMPORT_BY_NAME) + 256)) {
+                if (SafeMemory::IsReadable(importByName, sizeof(IMAGE_IMPORT_BY_NAME) + MAX_FUNCTION_NAME)) {
                     // Safely read function name with strnlen
-                    size_t funcNameLen = strnlen((const char*)importByName->Name, 256);
-                    if (funcNameLen > 0 && funcNameLen < 256) {
+                    size_t funcNameLen = strnlen((const char*)importByName->Name, MAX_FUNCTION_NAME);
+                    if (funcNameLen > 0 && funcNameLen < MAX_FUNCTION_NAME) {
                         functionName.assign((const char*)importByName->Name, funcNameLen);
                     }
                 }
@@ -275,21 +286,22 @@ std::vector<ViolationEvent> IntegrityChecker::QuickCheck() {
         ev.address = code_section_base_;
         ev.details = "Code section hash mismatch";
         ev.module_name = "";
-        ev.timestamp = 0;
-        ev.detection_id = 0;
+        ev.timestamp = GetCurrentTimeMs();
+        ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
         violations.push_back(ev);
     }
     
     // Task 08: Check IAT integrity
     if (!VerifyImportTable()) {
+        uint64_t timestamp = GetCurrentTimeMs();
         ViolationEvent ev;
         ev.type = ViolationType::IATHook;
         ev.severity = Severity::Critical;
         ev.address = 0;
         ev.details = "IAT modification detected";
         ev.module_name = "";
-        ev.timestamp = 0;
-        ev.detection_id = 0;
+        ev.timestamp = timestamp;
+        ev.detection_id = static_cast<uint32_t>(timestamp ^ 0x1A700000);  // IAT marker
         violations.push_back(ev);
     }
     
@@ -299,14 +311,15 @@ std::vector<ViolationEvent> IntegrityChecker::QuickCheck() {
         size_t checkCount = std::min(registered_regions_.size(), size_t(10));
         for (size_t i = 0; i < checkCount; i++) {
             if (!VerifyRegion(registered_regions_[i])) {
+                uint64_t timestamp = GetCurrentTimeMs();
                 ViolationEvent ev;
                 ev.type = ViolationType::MemoryWrite;
                 ev.severity = Severity::High;
                 ev.address = registered_regions_[i].address;
                 ev.details = "Protected region modified";
                 ev.module_name = "";
-                ev.timestamp = 0;
-                ev.detection_id = 0;
+                ev.timestamp = timestamp;
+                ev.detection_id = static_cast<uint32_t>(ev.address ^ timestamp);
                 violations.push_back(ev);
             }
         }
@@ -325,21 +338,22 @@ std::vector<ViolationEvent> IntegrityChecker::FullScan() {
         ev.address = code_section_base_;
         ev.details = "Code section hash mismatch";
         ev.module_name = "";
-        ev.timestamp = 0;
-        ev.detection_id = 0;
+        ev.timestamp = GetCurrentTimeMs();
+        ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
         violations.push_back(ev);
     }
     
     // Task 08: Check IAT integrity
     if (!VerifyImportTable()) {
+        uint64_t timestamp = GetCurrentTimeMs();
         ViolationEvent ev;
         ev.type = ViolationType::IATHook;
         ev.severity = Severity::Critical;
         ev.address = 0;
         ev.details = "IAT modification detected";
         ev.module_name = "";
-        ev.timestamp = 0;
-        ev.detection_id = 0;
+        ev.timestamp = timestamp;
+        ev.detection_id = static_cast<uint32_t>(timestamp ^ 0x1A700000);  // IAT marker
         violations.push_back(ev);
     }
     
@@ -348,14 +362,15 @@ std::vector<ViolationEvent> IntegrityChecker::FullScan() {
         std::lock_guard<std::mutex> lock(regions_mutex_);
         for (const auto& region : registered_regions_) {
             if (!VerifyRegion(region)) {
+                uint64_t timestamp = GetCurrentTimeMs();
                 ViolationEvent ev;
                 ev.type = ViolationType::MemoryWrite;
                 ev.severity = Severity::High;
                 ev.address = region.address;
                 ev.details = "Protected region modified";
                 ev.module_name = "";
-                ev.timestamp = 0;
-                ev.detection_id = 0;
+                ev.timestamp = timestamp;
+                ev.detection_id = static_cast<uint32_t>(ev.address ^ timestamp);
                 violations.push_back(ev);
             }
         }
