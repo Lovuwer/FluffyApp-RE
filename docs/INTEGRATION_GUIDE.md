@@ -515,7 +515,12 @@ class ProtectedInt {
     uint64_t handle_;
 public:
     explicit ProtectedInt(int64_t value) 
-        : handle_(Sentinel::SDK::CreateProtectedInt(value)) {}
+        : handle_(Sentinel::SDK::CreateProtectedInt(value)) {
+        // Check if creation succeeded
+        if (!handle_) {
+            throw std::runtime_error("Failed to create protected value");
+        }
+    }
     
     ~ProtectedInt() {
         if (handle_) {
@@ -532,19 +537,32 @@ public:
         other.handle_ = 0;
     }
     
+    // Check if valid
+    bool valid() const { return handle_ != 0; }
+    
     int64_t get() const {
+        if (!handle_) {
+            throw std::runtime_error("Invalid protected value handle");
+        }
         return Sentinel::SDK::GetProtectedInt(handle_);
     }
     
     void set(int64_t value) {
+        if (!handle_) {
+            throw std::runtime_error("Invalid protected value handle");
+        }
         Sentinel::SDK::SetProtectedInt(handle_, value);
     }
 };
 
 // Usage
-ProtectedInt gold(1000);
-gold.set(gold.get() + 100);
-// Automatically cleaned up on scope exit
+try {
+    ProtectedInt gold(1000);
+    gold.set(gold.get() + 100);
+    // Automatically cleaned up on scope exit
+} catch (const std::runtime_error& e) {
+    std::cerr << "Failed to create protected value: " << e.what() << std::endl;
+}
 ```
 
 ---

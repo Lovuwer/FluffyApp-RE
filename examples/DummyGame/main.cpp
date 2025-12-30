@@ -18,6 +18,7 @@
 #include <thread>
 #include <atomic>
 #include <cstring>
+#include <cmath>
 #include <random>
 #include <vector>
 #include <iomanip>
@@ -405,9 +406,11 @@ void SimulateCPULoad() {
 
 void SimulateHeavyCPULoad() {
     // Simulate extreme CPU contention (pathological case)
+    // RED-TEAM NOTE: This is intentionally heavy to test SDK behavior under stress
     std::cout << "  [SIMULATE] Heavy CPU contention..." << std::endl;
     volatile double result = 0.0;
-    for (int i = 0; i < 1000000; ++i) {
+    // Reduced from 1M to 100K to avoid severe frame drops while still creating load
+    for (int i = 0; i < 100000; ++i) {
         result += std::sin(i * 0.1) * std::cos(i * 0.2) * std::tan(i * 0.3);
     }
 }
