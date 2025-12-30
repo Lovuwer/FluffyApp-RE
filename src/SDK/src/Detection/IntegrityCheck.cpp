@@ -114,6 +114,9 @@ void IntegrityChecker::Initialize() {
         return;
     }
     
+    // Get module size for bounds checking
+    DWORD moduleSize = ntHeaders->OptionalHeader.SizeOfImage;
+    
     PIMAGE_IMPORT_DESCRIPTOR importDesc = (PIMAGE_IMPORT_DESCRIPTOR)((BYTE*)hModule + importDirRVA);
     
     // Verify import descriptor is readable
@@ -154,6 +157,12 @@ void IntegrityChecker::Initialize() {
             continue;
         }
         
+        // Validate FirstThunk and OriginalFirstThunk RVAs are within module bounds
+        if (importDesc->FirstThunk >= moduleSize || importDesc->OriginalFirstThunk >= moduleSize) {
+            importDesc++;
+            continue;
+        }
+        
         // Get the IAT (FirstThunk) and INT (OriginalFirstThunk)
         PIMAGE_THUNK_DATA thunk = (PIMAGE_THUNK_DATA)((BYTE*)hModule + importDesc->FirstThunk);
         PIMAGE_THUNK_DATA originalThunk = (PIMAGE_THUNK_DATA)((BYTE*)hModule + importDesc->OriginalFirstThunk);
@@ -181,18 +190,20 @@ void IntegrityChecker::Initialize() {
                 // Import by ordinal - store ordinal as function name
                 functionName = "Ordinal#" + std::to_string(IMAGE_ORDINAL(originalThunk->u1.Ordinal));
             } else {
-                // Import by name
-                PIMAGE_IMPORT_BY_NAME importByName = 
-                    (PIMAGE_IMPORT_BY_NAME)((BYTE*)hModule + originalThunk->u1.AddressOfData);
-                
-                // API function names are typically short (e.g., "NtQueryInformationProcess" = 26 chars)
-                const size_t MAX_FUNCTION_NAME = 128;
-                // Verify import name structure is readable
-                if (SafeMemory::IsReadable(importByName, sizeof(IMAGE_IMPORT_BY_NAME) + MAX_FUNCTION_NAME)) {
-                    // Safely read function name with strnlen
-                    size_t funcNameLen = strnlen((const char*)importByName->Name, MAX_FUNCTION_NAME);
-                    if (funcNameLen > 0 && funcNameLen < MAX_FUNCTION_NAME) {
-                        functionName.assign((const char*)importByName->Name, funcNameLen);
+                // Import by name - validate AddressOfData RVA is within bounds
+                if (originalThunk->u1.AddressOfData < moduleSize) {
+                    PIMAGE_IMPORT_BY_NAME importByName = 
+                        (PIMAGE_IMPORT_BY_NAME)((BYTE*)hModule + originalThunk->u1.AddressOfData);
+                    
+                    // API function names are typically short (e.g., "NtQueryInformationProcess" = 26 chars)
+                    const size_t MAX_FUNCTION_NAME = 128;
+                    // Verify import name structure is readable
+                    if (SafeMemory::IsReadable(importByName, sizeof(IMAGE_IMPORT_BY_NAME) + MAX_FUNCTION_NAME)) {
+                        // Safely read function name with strnlen
+                        size_t funcNameLen = strnlen((const char*)importByName->Name, MAX_FUNCTION_NAME);
+                        if (funcNameLen > 0 && funcNameLen < MAX_FUNCTION_NAME) {
+                            functionName.assign((const char*)importByName->Name, funcNameLen);
+                        }
                     }
                 }
             }
@@ -434,14 +445,12 @@ bool IntegrityChecker::VerifyImportTable() {
     
     // Check each IAT entry
     for (const auto& entry : iat_entries_) {
-        // Verify the IAT slot is still readable
-        if (!SafeMemory::IsReadable(entry.iat_slot_address, sizeof(uintptr_t))) {
-            // IAT slot is not readable - potential tampering
+        // Safely read current IAT value
+        uintptr_t currentAddress;
+        if (!SafeMemory::SafeRead(entry.iat_slot_address, &currentAddress, sizeof(uintptr_t))) {
+            // IAT slot is not readable - potential tampering or unmapped memory
             return false;
         }
-        
-        // Read current IAT value
-        uintptr_t currentAddress = *entry.iat_slot_address;
         
         // Compare against expected address
         if (currentAddress != entry.expected_address) {
