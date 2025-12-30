@@ -411,15 +411,10 @@ TEST_F(WhitelistTest, DiscordOverlayIntegrationTest) {
     };
     
     for (const auto& path : discordPaths) {
-        // Note: This test verifies the whitelisting logic works correctly.
-        // In a real scenario with actual Discord DLL and valid signature,
-        // the signature verification would also pass.
-        // Here we're testing that the module name matching works correctly.
+        // This test focuses on module name matching logic.
+        // Signature verification is tested separately and requires actual signed DLLs.
         bool isWhitelisted = manager.IsModuleWhitelisted(path.c_str());
         
-        // The module should be whitelisted by name
-        // Note: Actual signature verification would happen in production,
-        // but we can't test it here without real signed Discord DLL
         EXPECT_TRUE(isWhitelisted) 
             << "Discord overlay should be whitelisted: " 
             << std::string(path.begin(), path.end());
@@ -443,5 +438,3 @@ TEST_F(WhitelistTest, AllCommonOverlaysWhitelisted) {
             << std::string(overlayPath.begin(), overlayPath.end());
     }
 }
-
-
