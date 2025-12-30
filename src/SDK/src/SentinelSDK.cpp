@@ -53,7 +53,7 @@ struct SDKContext {
     std::unordered_map<uint64_t, MemoryRegion> protected_regions;
     std::unordered_map<uint64_t, FunctionProtection> protected_functions;
     std::unordered_map<uint64_t, ProtectedValue> protected_values;
-    uint64_t next_handle{1};
+    std::atomic<uint64_t> next_handle{1};
     
     // Timing
     std::chrono::steady_clock::time_point init_time;
@@ -102,7 +102,7 @@ void SetLastError(const std::string& error) {
 }
 
 uint64_t GenerateHandle() {
-    return g_context->next_handle++;
+    return g_context->next_handle.fetch_add(1, std::memory_order_relaxed);
 }
 
 // Task 14: Helper to emit telemetry for detections
