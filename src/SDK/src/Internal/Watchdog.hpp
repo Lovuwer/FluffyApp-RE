@@ -1,7 +1,7 @@
 /**
  * Sentinel SDK - Heartbeat Thread Watchdog
  * 
- * Copyright (c) 2024 Sentinel Security. All rights reserved.
+ * Copyright (c) 2025 Sentinel Security. All rights reserved.
  * 
  * TASK-07: Heartbeat Thread Watchdog
  * 

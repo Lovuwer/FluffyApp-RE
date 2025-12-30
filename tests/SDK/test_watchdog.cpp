@@ -9,12 +9,6 @@
 #include <gtest/gtest.h>
 #include "Internal/Watchdog.hpp"
 
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <unistd.h>
-#endif
-
 #include <thread>
 #include <chrono>
 

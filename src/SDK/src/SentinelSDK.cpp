@@ -520,6 +520,8 @@ SENTINEL_API ErrorCode SENTINEL_CALL Update() {
         uint64_t max_age_ms = g_context->config.heartbeat_interval_ms * 3;
         if (!g_context->watchdog->IsAlive(max_age_ms)) {
             // Heartbeat thread is dead - report critical violation
+            // Using HandleManipulation as the violation type since thread termination
+            // (e.g., via TerminateThread) is a form of thread handle manipulation
             ViolationEvent event{};
             event.type = ViolationType::HandleManipulation;
             event.severity = Severity::Critical;
