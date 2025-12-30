@@ -77,16 +77,16 @@ void IntegrityChecker::Initialize() {
                 code_section_size_ = 0;
                 code_section_hash_ = 0;
                 initialization_failed_ = true;
+                return;
             }
-            break;
+            // Successfully initialized
+            return;
         }
         section++;
     }
     
     // If we didn't find .text section at all, mark as initialization failed
-    if (code_section_base_ == 0 || code_section_size_ == 0) {
-        initialization_failed_ = true;
-    }
+    initialization_failed_ = true;
 #endif
 }
 
@@ -232,7 +232,13 @@ bool IntegrityChecker::VerifyCodeSection() {
         return false;
     }
     if (code_section_base_ == 0 || code_section_size_ == 0) {
-        return false;  // Not initialized = fail closed
+#ifdef _WIN32
+        // On Windows, this should have been initialized - fail closed
+        return false;
+#else
+        // On non-Windows platforms, code section verification is not supported
+        return true;
+#endif
     }
     
     // Verify memory is readable before hashing
