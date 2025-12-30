@@ -299,8 +299,9 @@ TEST(SpeedHackTests, CalibrationVariance) {
 
 /**
  * Test: No Memory Leaks - 100 Initialize/Shutdown cycles
- * This test verifies that repeated Initialize/Shutdown cycles don't leak memory.
+ * This test verifies that repeated Initialize/Shutdown cycles complete without crashing.
  * With the RAII fix (unique_ptr), env_detector_ is automatically cleaned up.
+ * Note: Full memory leak verification requires running with Valgrind or ASan.
  */
 TEST(SpeedHackTests, NoMemoryLeaksIn100Cycles) {
     SpeedHackDetector detector;
@@ -323,8 +324,8 @@ TEST(SpeedHackTests, NoMemoryLeaksIn100Cycles) {
     }
     
     // Test passes if it completes without crashing
-    // Memory leak detection requires Valgrind/ASan for verification
-    SUCCEED() << "Completed 100 init/shutdown cycles without issues";
+    // Full memory leak verification requires Valgrind/ASan
+    SUCCEED() << "Completed 100 init/shutdown cycles without crashing";
 }
 
 /**
