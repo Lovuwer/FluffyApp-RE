@@ -456,6 +456,9 @@ SENTINEL_API void SENTINEL_CALL Shutdown() {
     g_context->env_detector.reset();
     
     // Cleanup whitelist manager
+    if (g_whitelist) {
+        g_whitelist->Shutdown();
+    }
     g_whitelist.reset();
     
     // Clear protected items
