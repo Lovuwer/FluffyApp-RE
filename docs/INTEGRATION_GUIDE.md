@@ -385,6 +385,65 @@ void WorkerThread() {
 }
 ```
 
+#### Common Multi-Threading Mistakes
+
+**❌ WRONG - Calling Update() from Render Thread:**
+```cpp
+// Render thread (separate from game thread)
+void RenderThread() {
+    while (running) {
+        Update();  // 💥 CRASH - race condition with game thread
+        RenderFrame();
+    }
+}
+```
+
+**✓ CORRECT - Single Thread Updates:**
+```cpp
+// Main game thread
+void GameThread() {
+    while (running) {
+        Update();  // ✓ Only one thread calls this
+        DispatchRenderCommands();
+    }
+}
+
+// Render thread
+void RenderThread() {
+    while (running) {
+        ExecuteRenderCommands();  // No SDK calls
+    }
+}
+```
+
+#### Detecting Multi-Threading Issues
+
+> **Correct me if I'm wrong, but** the SDK has no built-in protection against multi-threaded access, making data races possible.
+
+**Add Runtime Detection (Debug Builds):**
+```cpp
+#ifdef DEBUG
+    static std::atomic<std::thread::id> sdk_thread_id{std::thread::id()};
+    
+    void CheckThreadSafety() {
+        auto current = std::this_thread::get_id();
+        auto expected = std::thread::id();
+        
+        if (sdk_thread_id.compare_exchange_strong(expected, current)) {
+            // First call - remember this thread
+            return;
+        }
+        
+        if (sdk_thread_id.load() != current) {
+            fprintf(stderr, "FATAL: SDK called from multiple threads!\n");
+            abort();
+        }
+    }
+#endif
+```
+
+**Recommendation:** Add this check to `Update()` and `FullScan()` in debug builds.
+
 ---
 
 ## Memory Management
@@ -436,6 +495,198 @@ Sentinel::SDK::UnprotectMemory(handle);
 - User-mode protection only
 - Can be bypassed with kernel access
 - TOCTOU vulnerability between checks
+
+### RAII Wrappers (Recommended)
+
+> **Correct me if I'm wrong, but** manual handle management is error-prone and leads to leaks.
+
+**Problem:**
+```cpp
+uint64_t handle = CreateProtectedInt(100);
+if (error_condition) {
+    return;  // 💥 Handle leaked!
+}
+DestroyProtectedValue(handle);
+```
+
+**Solution - RAII Wrapper:**
+```cpp
+class ProtectedInt {
+    uint64_t handle_;
+public:
+    explicit ProtectedInt(int64_t value) 
+        : handle_(Sentinel::SDK::CreateProtectedInt(value)) {
+        // Check if creation succeeded
+        if (!handle_) {
+            throw std::runtime_error("Failed to create protected value");
+        }
+    }
+    
+    ~ProtectedInt() {
+        if (handle_) {
+            Sentinel::SDK::DestroyProtectedValue(handle_);
+        }
+    }
+    
+    // Delete copy, allow move
+    ProtectedInt(const ProtectedInt&) = delete;
+    ProtectedInt& operator=(const ProtectedInt&) = delete;
+    
+    ProtectedInt(ProtectedInt&& other) noexcept 
+        : handle_(other.handle_) {
+        other.handle_ = 0;
+    }
+    
+    // Check if valid
+    bool valid() const { return handle_ != 0; }
+    
+    int64_t get() const {
+        if (!handle_) {
+            throw std::runtime_error("Invalid protected value handle");
+        }
+        return Sentinel::SDK::GetProtectedInt(handle_);
+    }
+    
+    void set(int64_t value) {
+        if (!handle_) {
+            throw std::runtime_error("Invalid protected value handle");
+        }
+        Sentinel::SDK::SetProtectedInt(handle_, value);
+    }
+};
+
+// Usage
+try {
+    ProtectedInt gold(1000);
+    gold.set(gold.get() + 100);
+    // Automatically cleaned up on scope exit
+} catch (const std::runtime_error& e) {
+    std::cerr << "Failed to create protected value: " << e.what() << std::endl;
+}
+```
+
+---
+
+## Crash Paths and How to Avoid Them
+
+### Crash Path 1: Use-After-Free
+
+**The Crash:**
+```cpp
+uint64_t handle = CreateProtectedInt(100);
+DestroyProtectedValue(handle);
+int64_t value = GetProtectedInt(handle);  // 💥 CRASH
+```
+
+**How It Happens:**
+- Handle points to freed memory
+- SDK dereferences invalid pointer
+- Segmentation fault or heap corruption
+
+**Prevention:**
+```cpp
+uint64_t handle = CreateProtectedInt(100);
+// ... use handle ...
+DestroyProtectedValue(handle);
+handle = 0;  // Mark as invalid
+// Any future use will use handle=0, which is safer
+```
+
+---
+
+### Crash Path 2: Double-Free
+
+**The Crash:**
+```cpp
+DestroyProtectedValue(handle);
+DestroyProtectedValue(handle);  // 💥 CRASH - double free
+```
+
+**How It Happens:**
+- Same handle destroyed twice
+- Heap corruption
+- Undefined behavior
+
+**Prevention:**
+```cpp
+if (handle != 0) {
+    DestroyProtectedValue(handle);
+    handle = 0;  // Prevent double-free
+}
+```
+
+---
+
+### Crash Path 3: Shutdown Order Violation
+
+**The Crash:**
+```cpp
+Shutdown();
+GetProtectedInt(handle);  // 💥 CRASH - SDK shut down
+```
+
+**How It Happens:**
+- SDK resources freed during Shutdown()
+- API functions access freed memory
+- Crash or corruption
+
+**Prevention:**
+```cpp
+// CORRECT ORDER:
+DestroyProtectedValue(handle);  // 1. Clean up handles
+UnprotectMemory(mem_handle);    // 2. Clean up memory protection
+Shutdown();                      // 3. Shutdown SDK last
+```
+
+---
+
+### Crash Path 4: Null Pointer Dereference
+
+**The Crash:**
+```cpp
+Configuration* config = nullptr;
+Initialize(config);  // 💥 CRASH - null pointer
+```
+
+**How It Happens:**
+- SDK dereferences null config
+- Segmentation fault
+
+**Prevention:**
+```cpp
+Configuration config = Configuration::Default();
+if (Initialize(&config) != ErrorCode::Success) {
+    fprintf(stderr, "Init failed\n");
+    return 1;
+}
+```
+
+---
+
+### Crash Path 5: Buffer Overflow
+
+**The Crash:**
+```cpp
+uint8_t buffer[32];
+size_t size = sizeof(buffer);
+EncryptPacket(large_data, 1024, buffer, &size);  // 💥 Overflow
+```
+
+**How It Happens:**
+- SDK writes beyond buffer bounds
+- Heap corruption
+- Possible code execution
+
+**Prevention:**
+```cpp
+// Always provide adequate buffer size
+uint8_t buffer[2048];  // Large enough for encrypted data + overhead
+size_t size = sizeof(buffer);
+ErrorCode result = EncryptPacket(data, data_size, buffer, &size);
+if (result == ErrorCode::BufferTooSmall) {
+    // Handle insufficient buffer
+}
+```
 
 ---
 
@@ -743,6 +994,168 @@ printf("Update took %lld µs\n", duration.count());
 ---
 
 ## Red-Team Observations
+
+### Critical Reality Checks
+
+> **This section uses honest, adversarial thinking to explain what the SDK can and cannot do. If you're integrating this SDK, you need to understand these limitations.**
+
+---
+
+#### Reality Check 1: User-Mode Limitations
+
+> **Correct me if I'm wrong, but** a user-mode SDK fundamentally cannot prevent a determined attacker with kernel-mode access.
+
+**Why This Matters:**
+- The SDK runs in Ring 3 (user-mode)
+- Attackers with kernel drivers run in Ring 0
+- Ring 0 has complete control over Ring 3
+
+**Attack Scenario:**
+```
+Kernel-mode driver can:
+1. Read/write any memory (including SDK state)
+2. Hide processes and modules
+3. Manipulate page tables
+4. Hook at kernel level
+5. Disable SDK monitoring threads
+
+The SDK has NO DEFENSE against this.
+```
+
+**What This Means for You:**
+- SDK is effective against **casual attackers**
+- SDK is ineffective against **dedicated attackers with kernel access**
+- You MUST combine with server-side validation
+- Do not market as "unbreakable" or "kernel-protected"
+
+---
+
+#### Reality Check 2: TOCTOU Is Unavoidable
+
+> **Correct me if I'm wrong, but** the periodic scanning model has inherent Time-of-Check-Time-of-Use vulnerabilities that cannot be eliminated.
+
+**The Problem:**
+```
+T=0.000s: SDK checks memory → All clean ✓
+T=0.001s: Attacker modifies memory
+T=0.002s: Cheat executes
+T=4.999s: Attacker restores memory
+T=5.000s: SDK checks memory → All clean ✓
+```
+
+**Attack Window:**
+- `Update()` called every ~16ms (60 FPS)
+- `FullScan()` called every 5-10 seconds
+- Between checks, attacker has free reign
+
+**Mitigation Attempts:**
+- ✅ Increase scan frequency (performance cost)
+- ✅ Randomize scan timing (small improvement)
+- ❌ Eliminate the vulnerability (impossible in user-mode)
+
+**What This Means for You:**
+- Accept that sophisticated attackers can bypass periodic checks
+- Use SDK for **deterrence and telemetry**, not prevention
+- Validate critical state server-side
+
+---
+
+#### Reality Check 3: Protected Values Are Obfuscation, Not Encryption
+
+> **Correct me if I'm wrong, but** the "protected value" system is XOR-based obfuscation that a skilled attacker can reverse in minutes.
+
+**How It (Probably) Works:**
+```cpp
+// Simplified model
+stored_value = actual_value ^ random_key
+```
+
+**How Attackers Break It:**
+```cpp
+// Step 1: Find protected value in memory
+uint64_t obfuscated = scan_memory_for_handle();
+
+// Step 2: Get actual value via API
+uint64_t actual = hook_GetProtectedInt(handle);
+
+// Step 3: Recover the key
+uint64_t key = obfuscated ^ actual;
+
+// Step 4: Modify at will
+set_memory(handle_address, new_value ^ key);
+```
+
+**Time to Break:** Minutes for a skilled attacker
+
+**What This Means for You:**
+- Use for **deterring casual attackers** (effective)
+- Do NOT use for **storing credentials** (insecure)
+- Do NOT market as "encrypted" (it's obfuscated)
+- Always validate critical values server-side
+
+---
+
+#### Reality Check 4: Speed Hack Detection Requires Server Validation
+
+> **Correct me if I'm wrong, but** client-side speed hack detection is fundamentally insufficient and creates a false sense of security.
+
+**The Problem:**
+- Client measures time using OS APIs
+- Attacker can hook those same APIs
+- Attacker returns fake time to both game and SDK
+- SDK thinks everything is normal
+
+**Attack Scenario:**
+```
+// Attacker's hook
+ULONGLONG WINAPI Hooked_GetTickCount64() {
+    static ULONGLONG fake_time = 0;
+    fake_time += 16;  // Pretend 16ms passed
+    return fake_time;  // Both game and SDK see this
+}
+```
+
+**Result:**
+- Game runs 10× faster
+- SDK's timing checks see "normal" timing
+- No detection occurs
+
+**What This Means for You:**
+- 🔴 **NEVER trust client-side timing alone**
+- 🔴 **ALWAYS validate movement/actions server-side**
+- Document clearly that speed detection is a hint, not proof
+- Consider removing client-side speedhack detection to avoid false confidence
+
+---
+
+#### Reality Check 5: Anti-Hook Detection Has Blind Spots
+
+> **Correct me if I'm wrong, but** the anti-hook detector scans only 15% of functions per cycle for performance reasons, creating predictable bypass windows.
+
+**The Tradeoff:**
+- Scanning 100% of functions: ~30ms per cycle (unacceptable)
+- Scanning 15% of functions: ~5ms per cycle (acceptable)
+
+**Attacker's Strategy:**
+```
+1. Hook a function
+2. Use it for several frames (85% chance not scanned each cycle)
+3. Remove hook before it gets scanned
+4. Re-hook later
+```
+
+**Statistical Analysis:**
+- Probability of detection in first cycle: 15%
+- Probability of detection in 5 cycles: ~56%
+- Probability of detection in 10 cycles: ~80%
+
+**What This Means for You:**
+- Anti-hook is probabilistic, not deterministic
+- Sophisticated attackers can time their hooks
+- Document this limitation clearly
+- Consider prioritizing critical functions for 100% scan rate
+
+---
 
 ### What the SDK CAN Detect
 
