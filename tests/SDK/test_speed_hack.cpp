@@ -338,6 +338,8 @@ TEST(SpeedHackTests, NoMemoryLeaksIn100Cycles) {
  */
 TEST(SpeedHackTests, SlowMotionDetectionExtreme) {
     // This test verifies the threshold logic for slow-motion detection
+    // Note: Constant duplicated here to explicitly document the expected behavior
+    // and ensure the test is self-contained and clear about the threshold being tested
     constexpr float MAX_TIME_SCALE_DEVIATION = 0.25f;
     constexpr double ratio_extreme = 0.5;  // 50% speed (extreme slow-motion)
     
@@ -363,6 +365,8 @@ TEST(SpeedHackTests, SlowMotionDetectionExtreme) {
  */
 TEST(SpeedHackTests, SlowMotionWithinTolerance) {
     // This test verifies the threshold logic for acceptable variance
+    // Note: Constant duplicated here to explicitly document the expected behavior
+    // and ensure the test is self-contained and clear about the threshold being tested
     constexpr float MAX_TIME_SCALE_DEVIATION = 0.25f;
     constexpr double ratio_within_tolerance = 0.8;  // 80% speed (within tolerance)
     
