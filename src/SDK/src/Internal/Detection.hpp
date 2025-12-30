@@ -15,12 +15,13 @@
 #include <cstdint>
 #include <mutex>
 #include <string>
+#include <memory>
 
 namespace Sentinel {
 namespace SDK {
 
 // Forward declaration of global whitelist manager
-extern WhitelistManager* g_whitelist;
+extern std::unique_ptr<WhitelistManager> g_whitelist;
 
 /**
  * Anti-debugging detection module

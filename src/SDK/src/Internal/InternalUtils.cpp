@@ -25,9 +25,6 @@
 namespace Sentinel {
 namespace SDK {
 
-// Global whitelist manager instance (initialized by SDK)
-WhitelistManager* g_whitelist = nullptr;
-
 namespace Internal {
 
 /**

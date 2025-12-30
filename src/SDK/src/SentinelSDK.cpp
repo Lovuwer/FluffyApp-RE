@@ -86,6 +86,7 @@ struct SDKContext {
 };
 
 static std::unique_ptr<SDKContext> g_context;
+std::unique_ptr<WhitelistManager> g_whitelist;
 
 // ==================== Internal Helpers ====================
 
@@ -395,6 +396,10 @@ SENTINEL_API ErrorCode SENTINEL_CALL Initialize(const Configuration* config) {
     g_context->correlation = std::make_unique<CorrelationEngine>();
     g_context->correlation->Initialize();
     
+    // Initialize whitelist manager
+    g_whitelist = std::make_unique<WhitelistManager>();
+    g_whitelist->Initialize();
+    
     // Task 14: Initialize telemetry and runtime configuration
     g_context->env_detector = std::make_unique<EnvironmentDetector>();
     g_context->env_detector->Initialize();
@@ -449,6 +454,12 @@ SENTINEL_API void SENTINEL_CALL Shutdown() {
     g_context->telemetry.reset();
     g_context->runtime_config.reset();
     g_context->env_detector.reset();
+    
+    // Cleanup whitelist manager
+    if (g_whitelist) {
+        g_whitelist->Shutdown();
+    }
+    g_whitelist.reset();
     
     // Clear protected items
     g_context->protected_regions.clear();
