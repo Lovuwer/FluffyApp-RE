@@ -403,6 +403,15 @@ void SimulateCPULoad() {
     }
 }
 
+void SimulateHeavyCPULoad() {
+    // Simulate extreme CPU contention (pathological case)
+    std::cout << "  [SIMULATE] Heavy CPU contention..." << std::endl;
+    volatile double result = 0.0;
+    for (int i = 0; i < 1000000; ++i) {
+        result += std::sin(i * 0.1) * std::cos(i * 0.2) * std::tan(i * 0.3);
+    }
+}
+
 void SimulateLagSpike(int duration_ms) {
     std::cout << "  [SIMULATE] Lag spike (" << duration_ms << "ms)..." << std::endl;
     std::this_thread::sleep_for(std::chrono::milliseconds(duration_ms));
@@ -505,6 +514,33 @@ int main(int /*argc*/, char** /*argv*/) {
     
     std::cout << "✓ SDK initialized successfully" << std::endl;
     std::cout << "✓ SDK version: " << GetVersion() << std::endl;
+    
+    // ========================================================================
+    // Report Detection Capabilities
+    // ========================================================================
+    
+    std::cout << "\n[SDK DETECTION CAPABILITIES]" << std::endl;
+    std::cout << "✓ Anti-Debug: ENABLED (user-mode checks)" << std::endl;
+    std::cout << "  - Checks for: debugger presence, debug registers, timing anomalies" << std::endl;
+    std::cout << "  - RED-TEAM NOTE: Bypassable with kernel-mode debuggers or anti-anti-debug" << std::endl;
+    std::cout << "\n✓ Anti-Hook: ENABLED (periodic scanning)" << std::endl;
+    std::cout << "  - Checks for: inline hooks, IAT hooks, VEH hooks" << std::endl;
+    std::cout << "  - RED-TEAM NOTE: TOCTOU vulnerability - hooks can be inserted/removed between scans" << std::endl;
+    std::cout << "\n✓ Integrity Checking: ENABLED (code section hashing)" << std::endl;
+    std::cout << "  - Checks for: code section modifications, executable patching" << std::endl;
+    std::cout << "  - RED-TEAM NOTE: Page table manipulation can bypass this" << std::endl;
+    std::cout << "\n✓ Injection Detection: ENABLED (DLL + manual mapping)" << std::endl;
+    std::cout << "  - Checks for: unauthorized DLLs, manual mapped modules" << std::endl;
+    std::cout << "  - RED-TEAM NOTE: Kernel-mode injections are invisible to this" << std::endl;
+    std::cout << "\n⚠ Speed Hack Detection: CLIENT-SIDE ONLY (requires server validation)" << std::endl;
+    std::cout << "  - Checks for: time manipulation, speedhack tools" << std::endl;
+    std::cout << "  - RED-TEAM NOTE: Client-side timing is INSUFFICIENT - MUST validate server-side" << std::endl;
+    std::cout << "\n🔴 Heartbeat/Cloud Reporting: STUB (not implemented)" << std::endl;
+    std::cout << "  - Production deployment requires cloud infrastructure" << std::endl;
+    std::cout << "\n⚠ Memory/Value Protection: OBFUSCATION ONLY" << std::endl;
+    std::cout << "  - Provides deterrence, not prevention" << std::endl;
+    std::cout << "  - RED-TEAM NOTE: Kernel-mode attackers can read obfuscated values directly" << std::endl;
+    std::cout << "============================================\n" << std::endl;
     
     // ========================================================================
     // Exercise Crypto Components
@@ -615,6 +651,11 @@ int main(int /*argc*/, char** /*argv*/) {
         // Simulate lag spike every 15 seconds
         if (elapsed > 0 && elapsed % 15 == 0 && g_game_state.frame_count % 60 == 30) {
             SimulateLagSpike(150);  // 150ms spike
+        }
+        
+        // Simulate heavy CPU contention every 20 seconds
+        if (elapsed > 0 && elapsed % 20 == 0 && g_game_state.frame_count % 60 == 45) {
+            SimulateHeavyCPULoad();
         }
         
         // Print stats every 5 seconds

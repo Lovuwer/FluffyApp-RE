@@ -48,11 +48,25 @@ The game automatically exercises the following scenarios:
 1. **Normal Gameplay** - 60 FPS game loop with realistic CPU load
 2. **Pause/Resume** - Simulated menu pauses every 10 seconds
 3. **Lag Spikes** - Intentional 150ms delays every 15 seconds
-4. **Protected Values** - Gold and level stored as protected integers
-5. **Memory Protection** - Critical game data under integrity monitoring
-6. **Secure Timing** - Speed hack detection via timing validation
-7. **Packet Encryption** - Simulated network packet encryption
-8. **Long Uptime** - Runs for 30 seconds to test stability
+4. **Heavy CPU Contention** - Extreme CPU load simulation every 20 seconds
+5. **Protected Values** - Gold and level stored as protected integers
+6. **Memory Protection** - Critical game data under integrity monitoring
+7. **Secure Timing** - Speed hack detection via timing validation
+8. **Packet Encryption** - Simulated network packet encryption
+9. **Long Uptime** - Runs for 30 seconds by default (configurable)
+
+### Detection Systems Exercised
+
+The DummyGame exercises these SDK detection systems:
+
+- ✅ **Anti-Debug** - Periodic checks for debugger presence
+- ✅ **Anti-Hook** - Scans for API hooks (inline, IAT, VEH)
+- ✅ **Integrity Checking** - Code section hash verification
+- ✅ **Injection Detection** - Detects unauthorized DLLs
+- ✅ **Speed Hack Detection** - Client-side timing validation (requires server validation)
+- ⚠️ **Heartbeat/Cloud Reporting** - Stub implementation only
+
+**Red-Team Note:** All detections are user-mode only and bypassable with kernel-mode access. This is documented as expected behavior.
 
 ## Building
 

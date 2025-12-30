@@ -493,6 +493,133 @@ Impact: ~0.8% overhead
 
 ## Red-Team Observations
 
+### Critical Observations (Using Red-Team Mindset)
+
+#### Observation 1: TOCTOU Vulnerabilities
+
+> **Correct me if I'm wrong, but** the periodic scanning approach appears vulnerable to Time-of-Check-Time-of-Use (TOCTOU) attacks.
+
+**Analysis:**
+- `Update()` is called ~60 times per second
+- `FullScan()` is called every 5-10 seconds
+- Between these checks, an attacker has a window to:
+  1. Modify memory/code
+  2. Execute cheating behavior
+  3. Restore original state before next check
+
+**Attack Scenario:**
+```
+[SDK Check at T=0] → [Attacker modifies at T+0.1s] → [Cheat active for 4.9s] → 
+[Attacker restores at T+4.9s] → [SDK Check at T=5s - sees nothing]
+```
+
+**Assessment:** This is an **inherent limitation** of user-mode periodic checking. No amount of optimization can fully eliminate this window.
+
+**Recommendation:** Document this limitation clearly. Require server-side validation for critical game state.
+
+---
+
+#### Observation 2: Protected Value Obfuscation
+
+> **Correct me if I'm wrong, but** the protected value system appears to use XOR-based obfuscation, which is vulnerable to pattern analysis.
+
+**Analysis:**
+- Protected values likely use: `stored_value = actual_value ^ random_key`
+- An attacker can:
+  1. Find the obfuscated value in memory
+  2. Call `GetProtectedInt()` to get actual value
+  3. XOR them together to recover the key
+  4. Modify obfuscated value directly using the recovered key
+
+**Attack Scenario:**
+```cpp
+// Attacker's approach:
+uint64_t obfuscated = read_from_memory(protected_handle_address);
+uint64_t actual = hook_GetProtectedInt(protected_handle);
+uint64_t key = obfuscated ^ actual;
+// Now attacker can modify values directly: new_obfuscated = new_value ^ key
+```
+
+**Assessment:** This provides **deterrence, not prevention**. It raises the bar for casual attackers but is trivially bypassed by anyone who understands the scheme.
+
+**Recommendation:** Document this as obfuscation, not encryption. Do not oversell as "secure storage."
+
+---
+
+#### Observation 3: Anti-Hook Detection Timing
+
+> **Correct me if I'm wrong, but** the anti-hook detector scans only 15% of registered functions per cycle for performance reasons, creating predictable windows.
+
+**Analysis:**
+- With probabilistic scanning, an attacker can:
+  1. Hook a function
+  2. Statistically, it won't be scanned for ~7 cycles (85% skip rate)
+  3. Execute the hook multiple times
+  4. Remove the hook before it gets scanned
+
+**Attack Scenario:**
+```
+Cycles 1-6: Hook active, not scanned (85% chance each cycle)
+Cycle 7: Hook detected OR removed before scan
+```
+
+**Assessment:** This is a **necessary performance tradeoff**. Scanning 100% of functions would exceed performance budget.
+
+**Recommendation:** Document the probabilistic nature. Consider prioritizing critical security functions for more frequent scanning.
+
+---
+
+#### Observation 4: Speed Hack Detection Insufficiency
+
+> **Correct me if I'm wrong, but** the client-side speed hack detection is fundamentally insufficient and appears to give developers false confidence.
+
+**Analysis:**
+- Client-side timing can be manipulated by:
+  - Hooking `GetTickCount64()`, `QueryPerformanceCounter()`
+  - Kernel-mode time manipulation
+  - VM time dilation
+  - Simply modifying the SDK's timing validation code
+
+**Critical Issue:**
+```
+The SDK can detect speedhacks, but attackers can also detect and bypass the SDK's detection.
+This creates a cat-and-mouse game that the defender CANNOT WIN in user-mode.
+```
+
+**Assessment:** **PRODUCTION BLOCKER** if marketed as speedhack protection without server validation requirement.
+
+**Recommendation:** 
+- 🔴 **Make server-side validation MANDATORY in documentation**
+- Add big red warnings in code comments
+- Consider removing client-side speedhack detection entirely to avoid false sense of security
+
+---
+
+#### Observation 5: Memory Integrity TOCTOU
+
+> **Correct me if I'm wrong, but** the memory integrity checking system is vulnerable to shadow paging attacks.
+
+**Analysis:**
+- The SDK computes a hash of protected memory
+- Between hash computations, an attacker with page table manipulation can:
+  1. Create a shadow page with modified content
+  2. Point the page table entry to the shadow page
+  3. Game executes modified code/data
+  4. When SDK scans, point page table back to original
+  5. SDK sees unmodified content and reports "clean"
+
+**Attack Scenario:**
+```
+SDK View:    [Clean Memory] → Hash matches → ✓ Pass
+Actual View: [Modified Memory] → Game executes this
+```
+
+**Assessment:** This is **undetectable from user-mode**. Requires kernel-mode access to defend.
+
+**Recommendation:** Document this limitation. Do not claim "memory protection" - it's "memory integrity checking with known bypasses."
+
+---
+
 ### Attack Surface Analysis
 
 #### What an Attacker Can Do (User-Mode)
@@ -672,6 +799,272 @@ Impact: ~0.8% overhead
 **Conclusion:**
 - Pause/resume works correctly
 - Suitable for loading screens and menus
+
+---
+
+## Crash Path Analysis
+
+### Identified Crash Risks
+
+> **Correct me if I'm wrong, but** the SDK appears to have several potential crash paths that developers need to be aware of.
+
+#### Crash Path 1: Handle Use-After-Free
+
+**Scenario:**
+```cpp
+uint64_t handle = CreateProtectedInt(100);
+DestroyProtectedValue(handle);
+int64_t value = GetProtectedInt(handle);  // 💥 CRASH - use after free
+```
+
+**Risk Level:** 🔴 **HIGH** - Common developer mistake
+
+**Mitigation:**
+- Set handles to 0 after destroying
+- Use RAII wrappers in production code
+- Document this clearly in integration guide
+
+**Observed in DummyGame:** ✅ Correctly zeroed handles after destroy
+
+---
+
+#### Crash Path 2: Multi-threaded Update() Calls
+
+**Scenario:**
+```cpp
+// Thread 1
+Update();  // Modifying shared SDK state
+
+// Thread 2 (simultaneously)
+Update();  // 💥 CRASH - data race
+```
+
+**Risk Level:** 🔴 **HIGH** - SDK is NOT thread-safe
+
+> **Correct me if I'm wrong, but** the SDK appears to have no mutex protection around shared state, making it fundamentally unsafe for multi-threaded access.
+
+**Mitigation:**
+- Document clearly: "Call from MAIN THREAD ONLY"
+- Add runtime assertion to detect multi-threaded calls
+- Consider adding thread-safety in future versions (with performance tradeoff)
+
+**Observed in DummyGame:** ✅ Single-threaded access only
+
+---
+
+#### Crash Path 3: Shutdown Order Violation
+
+**Scenario:**
+```cpp
+Shutdown();  // Cleans up SDK state
+GetProtectedInt(handle);  // 💥 CRASH - SDK no longer initialized
+```
+
+**Risk Level:** ⚠️ **MEDIUM** - Less common but possible
+
+**Mitigation:**
+- Clean up all handles BEFORE calling Shutdown()
+- Add state checks in API functions
+- Return error codes instead of crashing
+
+**Observed in DummyGame:** ✅ Correct cleanup order
+
+---
+
+#### Crash Path 4: Buffer Overflow in Packet Encryption
+
+**Scenario:**
+```cpp
+uint8_t buffer[64];
+size_t size = sizeof(buffer);
+// Large packet > buffer size
+EncryptPacket(large_packet, 1024, buffer, &size);  // 💥 Potential overflow
+```
+
+**Risk Level:** ⚠️ **MEDIUM** - If packet encryption is implemented
+
+> **Correct me if I'm wrong, but** the packet encryption API appears to lack buffer size validation, which could lead to buffer overflows.
+
+**Mitigation:**
+- Validate buffer sizes before writing
+- Return ErrorCode::BufferTooSmall if insufficient
+- Document required buffer sizes clearly
+
+**Observed in DummyGame:** ✅ Adequate buffer sizes used (stub implementation)
+
+---
+
+#### Crash Path 5: Invalid Handle Values
+
+**Scenario:**
+```cpp
+uint64_t fake_handle = 0xDEADBEEF;
+GetProtectedInt(fake_handle);  // 💥 CRASH or undefined behavior
+```
+
+**Risk Level:** ⚠️ **MEDIUM** - Requires developer error or malicious input
+
+**Mitigation:**
+- Validate handles against registered handle table
+- Return ErrorCode::InvalidHandle instead of crashing
+- Use handle generation with validation bits
+
+**Observed in DummyGame:** ✅ Only valid handles used
+
+---
+
+### Crash Prevention Recommendations
+
+1. **Add Runtime Assertions:**
+   ```cpp
+   if (!sdk_initialized) {
+       return ErrorCode::NotInitialized;
+   }
+   ```
+
+2. **Validate All Inputs:**
+   - Null pointer checks
+   - Handle validity checks
+   - Buffer size validation
+
+3. **Improve Error Handling:**
+   - Return error codes instead of crashing
+   - Log errors for debugging
+   - Provide clear error messages
+
+4. **Add Debug Mode Checks:**
+   - Detect multi-threaded access
+   - Detect use-after-free
+   - Detect shutdown order violations
+
+---
+
+## Integration Mistakes Developers Will Make
+
+### Mistake 1: Forgetting to Call Shutdown()
+
+**The Mistake:**
+```cpp
+int main() {
+    Initialize(&config);
+    // Game loop
+    // ... forgot Shutdown()
+    return 0;  // 💥 Resource leak
+}
+```
+
+**Impact:** Memory leaks, file handle leaks, threads not joined
+
+**How to Avoid:**
+- Use RAII wrapper class
+- Document prominently
+- Add example code
+
+---
+
+### Mistake 2: Calling Update() from Multiple Threads
+
+**The Mistake:**
+```cpp
+// Render thread
+void RenderLoop() {
+    Update();  // 💥 Race condition
+}
+
+// Game thread
+void GameLoop() {
+    Update();  // 💥 Data race
+}
+```
+
+**Impact:** Data corruption, crashes, undefined behavior
+
+**How to Avoid:**
+- Document "MAIN THREAD ONLY" in big red letters
+- Add thread ID assertion in debug builds
+
+---
+
+### Mistake 3: Enabling Debug Mode in Release Builds
+
+**The Mistake:**
+```cpp
+config.debug_mode = true;  // ⚠️ Performance killer
+config.log_path = "/var/log/game.log";  // ⚠️ Disk I/O on every frame
+```
+
+**Impact:** 
+- Massive performance degradation
+- Disk I/O stalls
+- Potential DoS attack vector (fill disk)
+
+**How to Avoid:**
+- Use #ifdef NDEBUG guards
+- Document performance impact
+- Provide separate debug/release configs
+
+---
+
+### Mistake 4: Not Checking ErrorCode Returns
+
+**The Mistake:**
+```cpp
+Update();  // Ignoring return value
+FullScan();  // Ignoring return value
+// SDK silently failing, developer doesn't know
+```
+
+**Impact:** 
+- SDK malfunctions go unnoticed
+- False sense of security
+- Violations not being detected
+
+**How to Avoid:**
+- Make ErrorCode [[nodiscard]] in C++17+
+- Provide example code that checks returns
+- Log warnings when errors occur
+
+---
+
+### Mistake 5: Using Protected Values as "Encryption"
+
+**The Mistake:**
+```cpp
+// Developer thinks this is secure
+protected_password = CreateProtectedString("admin123");
+// It's not. It's obfuscation, not encryption.
+```
+
+**Impact:**
+- False sense of security
+- Credentials stored in memory
+- Recoverable by skilled attacker
+
+**How to Avoid:**
+- Document as "obfuscation, not encryption"
+- Warn against storing credentials
+- Recommend server-side validation
+
+---
+
+### Mistake 6: Pausing SDK During Critical Sections
+
+**The Mistake:**
+```cpp
+Pause();  // Disables protection
+ProcessCriticalTransaction();  // 💀 Vulnerable window
+Resume();
+```
+
+**Impact:**
+- Creates predictable vulnerability window
+- Attackers can hook pause/resume to extend window
+- Defeats the purpose of protection
+
+**How to Avoid:**
+- Document that pause disables protection
+- Recommend against pausing during critical operations
+- Consider keeping minimal checks during pause
 
 ---
 
