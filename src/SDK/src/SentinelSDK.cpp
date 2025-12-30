@@ -521,7 +521,7 @@ SENTINEL_API ErrorCode SENTINEL_CALL Update() {
         if (!g_context->watchdog->IsAlive(max_age_ms)) {
             // Heartbeat thread is dead - report critical violation
             ViolationEvent event{};
-            event.type = ViolationType::TamperingDetected;
+            event.type = ViolationType::HandleManipulation;
             event.severity = Severity::Critical;
             event.timestamp = GetSecureTime();
             event.details = "Heartbeat thread terminated - thread watchdog detected death";
