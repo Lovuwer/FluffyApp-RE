@@ -159,11 +159,19 @@ cd build && ctest --output-on-failure
 
 ### SDK Integration Example
 
+**Quick Start:**
+
 ```cpp
-#include <Sentinel/SDK.hpp>
+#include <SentinelSDK.hpp>
 
 int main() {
-    using namespace Sentinel::SDK;
+    using Sentinel::SDK::ErrorCode;
+    using Sentinel::SDK::Configuration;
+    using Sentinel::SDK::DetectionFeatures;
+    using Sentinel::SDK::ResponseAction;
+    using Sentinel::SDK::Initialize;
+    using Sentinel::SDK::Update;
+    using Sentinel::SDK::Shutdown;
     
     // Configure SDK
     Configuration config = Configuration::Default();
@@ -194,11 +202,21 @@ int main() {
 }
 ```
 
+**Full Integration Example:**
+
+See [examples/DummyGame/](examples/DummyGame/) for a complete, realistic integration test that exercises:
+- All crypto components (SecureRandom, HashEngine, AESCipher, HMAC)
+- Protected values and memory protection
+- Secure timing and packet encryption
+- Violation callbacks and error handling
+- Proper initialization and shutdown
+
 **Integration Tips:**
-- Call `Update()` once per frame (< 0.1ms overhead)
-- Call `FullScan()` every 5-10 seconds (1-5ms budget)
-- Use `SENTINEL_PROTECTED_CALL` macro for critical functions
+- Call `Update()` once per frame (measured: ~0.46ms, target: <0.1ms ⚠️)
+- Call `FullScan()` every 5-10 seconds (measured: ~7-10ms, target: <5ms ⚠️)
+- Use explicit imports to avoid namespace conflicts
 - Configure violation callback for custom responses
+- See [docs/INTEGRATION_GUIDE.md](docs/INTEGRATION_GUIDE.md) for detailed guide
 
 ---
 
@@ -244,11 +262,16 @@ Sentinel SDK is **one layer** in a complete security architecture:
 - [SECURITY_INVARIANTS.md](docs/SECURITY_INVARIANTS.md) - Non-negotiable requirements
 - [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) - What's actually implemented
 
-### Architecture & Integration
+### Integration & Testing
+
+- [INTEGRATION_GUIDE.md](docs/INTEGRATION_GUIDE.md) - Complete integration guide with best practices
+- [DUMMY_GAME_VALIDATION.md](docs/DUMMY_GAME_VALIDATION.md) - Real-world testing results and red-team observations
+- [DummyGame Example](examples/DummyGame/) - Realistic integration test exercising all SDK features
+
+### Architecture & API
 
 - [ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) - System architecture with trust boundaries
 - [API Documentation](docs/api/) - Detailed API reference (generated with Doxygen)
-- [Integration Guide](docs/tutorials/) - Step-by-step integration
 
 ### Configuration
 
@@ -259,18 +282,32 @@ Sentinel SDK is **one layer** in a complete security architecture:
 
 ## Performance
 
-**Target:** < 0.1ms overhead per frame
-
-| Operation | Budget | Notes |
-|-----------|--------|-------|
-| `Update()` | < 0.1ms | Per-frame lightweight checks |
-| `FullScan()` | < 5ms | Periodic comprehensive scan |
-| Initialization | < 100ms | One-time startup cost |
-
-**Measured Performance:**
-- Update(): ~0.05ms (typical)
-- FullScan(): ~2ms (typical)
+**Targets:**
+- `Update()` per frame: < 0.1ms
+- `FullScan()` periodic: < 5ms
 - Memory overhead: ~2MB
+
+**Measured (DummyGame Test on Linux VM):**
+- `Update()`: ~0.46ms ⚠️ (4.6× over target - needs optimization)
+- `FullScan()`: ~7-10ms ⚠️ (1.4-2× over target)
+- Memory overhead: TBD
+
+📖 **See [DUMMY_GAME_VALIDATION.md](docs/DUMMY_GAME_VALIDATION.md) for detailed performance analysis**
+
+**Performance Notes:**
+- Current implementation exceeds performance targets
+- Measured on VM environment (GitHub Actions)
+- Real-world performance may vary by hardware
+- Consider increasing scan intervals if frame rate affected
+
+| Operation | Target | Measured (DummyGame) | Status |
+|-----------|--------|---------------------|--------|
+| `Update()` | < 0.1ms | ~0.46ms | ⚠️ Over budget |
+| `FullScan()` | < 5ms | ~7-10ms | ⚠️ Over budget |
+| Initialization | < 100ms | TBD | Not measured |
+| Memory overhead | ~2MB | TBD | Not measured |
+
+**Note:** Measured on Linux VM (GitHub Actions). Performance optimization needed before production use.
 
 ---
 
