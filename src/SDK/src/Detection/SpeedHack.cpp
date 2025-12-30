@@ -113,7 +113,7 @@ void SpeedHackDetector::Initialize() {
     hypervisor_detected_ = DetectHypervisor();
     
     // Initialize environment detector
-    env_detector_ = new EnvironmentDetector();
+    env_detector_ = std::make_unique<EnvironmentDetector>();
     env_detector_->Initialize();
     
     UpdateBaseline();
@@ -123,8 +123,7 @@ void SpeedHackDetector::Shutdown() {
     // Clean up environment detector
     if (env_detector_) {
         env_detector_->Shutdown();
-        delete env_detector_;
-        env_detector_ = nullptr;
+        env_detector_.reset();
     }
 }
 

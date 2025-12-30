@@ -298,6 +298,37 @@ TEST(SpeedHackTests, CalibrationVariance) {
 }
 
 /**
+ * Test: No Memory Leaks - 100 Initialize/Shutdown cycles
+ * This test verifies that repeated Initialize/Shutdown cycles complete without crashing.
+ * With the RAII fix (unique_ptr), env_detector_ is automatically cleaned up.
+ * Note: Full memory leak verification requires running with Valgrind or ASan.
+ */
+TEST(SpeedHackTests, NoMemoryLeaksIn100Cycles) {
+    SpeedHackDetector detector;
+    
+    // Run 100 init/shutdown cycles
+    for (int cycle = 0; cycle < 100; cycle++) {
+        detector.Initialize();
+        
+        // Run a few validation frames
+        for (int i = 0; i < 5; i++) {
+            detector.ValidateFrame();
+            #ifdef _WIN32
+            Sleep(5);
+            #else
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            #endif
+        }
+        
+        detector.Shutdown();
+    }
+    
+    // Test passes if it completes without crashing
+    // Full memory leak verification requires Valgrind/ASan
+    SUCCEED() << "Completed 100 init/shutdown cycles without crashing";
+}
+
+/**
  * Manual test instructions (not automated):
  * 
  * Adversarial Test - Simulated Speed Hack:
