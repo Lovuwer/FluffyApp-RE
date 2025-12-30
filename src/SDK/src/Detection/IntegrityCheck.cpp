@@ -15,6 +15,7 @@
 #include "Internal/SafeMemory.hpp"
 #include <mutex>
 #include <algorithm>
+#include <cstring>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -122,14 +123,22 @@ void IntegrityChecker::Initialize() {
         
         const char* moduleName = (const char*)((BYTE*)hModule + importDesc->Name);
         
-        // Verify module name is readable
-        if (!SafeMemory::IsReadable((void*)moduleName, 1)) {
+        // Verify module name is readable and null-terminated within reasonable bounds
+        // PE module names should be short (< 256 chars)
+        if (!SafeMemory::IsReadable((void*)moduleName, 256)) {
+            importDesc++;
+            continue;
+        }
+        
+        // Safely read module name with strnlen to ensure null-termination
+        size_t moduleNameLen = strnlen(moduleName, 256);
+        if (moduleNameLen == 0 || moduleNameLen >= 256) {
             importDesc++;
             continue;
         }
         
         // Skip JIT-compiled modules (clrjit.dll) to avoid false positives
-        std::string moduleNameStr = moduleName;
+        std::string moduleNameStr(moduleName, moduleNameLen);
         std::transform(moduleNameStr.begin(), moduleNameStr.end(), moduleNameStr.begin(), ::tolower);
         if (moduleNameStr.find("clrjit") != std::string::npos) {
             importDesc++;
@@ -148,6 +157,7 @@ void IntegrityChecker::Initialize() {
         }
         
         // Iterate through imports from this module
+        size_t thunkIndex = 0;
         while (originalThunk->u1.AddressOfData != 0) {
             // Verify we can still read the thunks
             if (!SafeMemory::IsReadable(thunk, sizeof(IMAGE_THUNK_DATA)) ||
@@ -167,18 +177,24 @@ void IntegrityChecker::Initialize() {
                     (PIMAGE_IMPORT_BY_NAME)((BYTE*)hModule + originalThunk->u1.AddressOfData);
                 
                 // Verify import name structure is readable
-                if (SafeMemory::IsReadable(importByName, sizeof(IMAGE_IMPORT_BY_NAME))) {
-                    functionName = (const char*)importByName->Name;
+                if (SafeMemory::IsReadable(importByName, sizeof(IMAGE_IMPORT_BY_NAME) + 256)) {
+                    // Safely read function name with strnlen
+                    size_t funcNameLen = strnlen((const char*)importByName->Name, 256);
+                    if (funcNameLen > 0 && funcNameLen < 256) {
+                        functionName.assign((const char*)importByName->Name, funcNameLen);
+                    }
                 }
             }
             
             // Only track if we have a valid function name
             if (!functionName.empty()) {
                 IATEntry entry;
-                entry.module_name = moduleName;
+                entry.module_name = moduleNameStr;
                 entry.function_name = functionName;
                 entry.expected_address = (uintptr_t)thunk->u1.Function;
-                entry.iat_slot_address = (uintptr_t*)&thunk->u1.Function;
+                // Store the actual IAT slot address using base + offset
+                entry.iat_slot_address = (uintptr_t*)((BYTE*)hModule + importDesc->FirstThunk + 
+                                                      (thunkIndex * sizeof(IMAGE_THUNK_DATA)));
                 
                 std::lock_guard<std::mutex> lock(iat_mutex_);
                 iat_entries_.push_back(entry);
@@ -186,6 +202,7 @@ void IntegrityChecker::Initialize() {
             
             thunk++;
             originalThunk++;
+            thunkIndex++;
         }
         
         importDesc++;
