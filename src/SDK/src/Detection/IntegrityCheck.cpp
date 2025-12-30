@@ -5,6 +5,9 @@
  * 
  * Task 10: Implement Code Section Integrity Verification
  * Detects modifications to the executable code section (.text) to identify inline hooks and patches.
+ * 
+ * Task 08: Implement IAT Integrity Verification
+ * Detects modifications to the Import Address Table (IAT) to identify IAT hooks.
  */
 
 #include "Internal/Detection.hpp"
