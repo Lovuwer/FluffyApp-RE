@@ -34,6 +34,7 @@ TEST_F(WhitelistTest, BuiltinEntriesLoaded) {
     bool foundDiscord = false;
     bool foundSteam = false;
     bool foundNvidia = false;
+    bool foundXboxGameBar = false;
     bool foundVMware = false;
     
     for (const auto& entry : entries) {
@@ -42,16 +43,30 @@ TEST_F(WhitelistTest, BuiltinEntriesLoaded) {
             EXPECT_EQ(entry.type, WhitelistType::Module);
             EXPECT_TRUE(entry.builtin);
             EXPECT_EQ(entry.reason, "Discord in-game overlay");
+            EXPECT_TRUE(entry.signer.has_value());
+            EXPECT_EQ(entry.signer.value(), "Discord Inc.");
         }
         if (entry.identifier == "GameOverlayRenderer64.dll") {
             foundSteam = true;
             EXPECT_EQ(entry.type, WhitelistType::Module);
             EXPECT_TRUE(entry.builtin);
+            EXPECT_TRUE(entry.signer.has_value());
+            EXPECT_EQ(entry.signer.value(), "Valve Corp.");
         }
         if (entry.identifier == "nvspcap64.dll") {
             foundNvidia = true;
             EXPECT_EQ(entry.type, WhitelistType::Module);
             EXPECT_TRUE(entry.builtin);
+            EXPECT_TRUE(entry.signer.has_value());
+            EXPECT_EQ(entry.signer.value(), "NVIDIA Corporation");
+        }
+        if (entry.identifier == "GameBar.dll") {
+            foundXboxGameBar = true;
+            EXPECT_EQ(entry.type, WhitelistType::Module);
+            EXPECT_TRUE(entry.builtin);
+            EXPECT_EQ(entry.reason, "Xbox Game Bar overlay");
+            EXPECT_TRUE(entry.signer.has_value());
+            EXPECT_EQ(entry.signer.value(), "Microsoft Corporation");
         }
         if (entry.identifier == "VMware") {
             foundVMware = true;
@@ -63,6 +78,7 @@ TEST_F(WhitelistTest, BuiltinEntriesLoaded) {
     EXPECT_TRUE(foundDiscord) << "Discord overlay entry not found";
     EXPECT_TRUE(foundSteam) << "Steam overlay entry not found";
     EXPECT_TRUE(foundNvidia) << "NVIDIA capture entry not found";
+    EXPECT_TRUE(foundXboxGameBar) << "Xbox Game Bar overlay entry not found";
     EXPECT_TRUE(foundVMware) << "VMware entry not found";
 }
 
@@ -347,4 +363,85 @@ TEST_F(WhitelistTest, CustomThreadOriginWhitelist) {
     }
     EXPECT_FALSE(found) << "Custom thread origin entry was not removed";
 }
+
+// Test 14: Overlay Signature Verification
+TEST_F(WhitelistTest, OverlaySignatureVerification) {
+    // Verify that all common overlay DLLs have signature verification enabled
+    auto entries = manager.GetEntries();
+    
+    struct OverlayEntry {
+        std::string identifier;
+        std::string expectedSigner;
+    };
+    
+    std::vector<OverlayEntry> expectedOverlays = {
+        {"DiscordHook64.dll", "Discord Inc."},
+        {"GameOverlayRenderer64.dll", "Valve Corp."},
+        {"nvspcap64.dll", "NVIDIA Corporation"},
+        {"GameBar.dll", "Microsoft Corporation"}
+    };
+    
+    for (const auto& expectedOverlay : expectedOverlays) {
+        bool found = false;
+        for (const auto& entry : entries) {
+            if (entry.identifier == expectedOverlay.identifier && 
+                entry.type == WhitelistType::Module) {
+                found = true;
+                EXPECT_TRUE(entry.builtin) << expectedOverlay.identifier << " should be builtin";
+                EXPECT_TRUE(entry.signer.has_value()) 
+                    << expectedOverlay.identifier << " should have signature verification";
+                if (entry.signer.has_value()) {
+                    EXPECT_EQ(entry.signer.value(), expectedOverlay.expectedSigner)
+                        << expectedOverlay.identifier << " has wrong expected signer";
+                }
+                break;
+            }
+        }
+        EXPECT_TRUE(found) << expectedOverlay.identifier << " not found in whitelist";
+    }
+}
+
+// Test 15: Discord Overlay Integration Test
+TEST_F(WhitelistTest, DiscordOverlayIntegrationTest) {
+    // Simulate Discord overlay DLL paths that should be whitelisted
+    std::vector<std::wstring> discordPaths = {
+        L"C:\\Users\\Player\\AppData\\Local\\Discord\\app-1.0.9015\\modules\\discord_hook\\DiscordHook64.dll",
+        L"C:\\Discord\\DiscordHook64.dll",
+        L"D:\\Programs\\Discord\\DiscordHook64.dll"
+    };
+    
+    for (const auto& path : discordPaths) {
+        // Note: This test verifies the whitelisting logic works correctly.
+        // In a real scenario with actual Discord DLL and valid signature,
+        // the signature verification would also pass.
+        // Here we're testing that the module name matching works correctly.
+        bool isWhitelisted = manager.IsModuleWhitelisted(path.c_str());
+        
+        // The module should be whitelisted by name
+        // Note: Actual signature verification would happen in production,
+        // but we can't test it here without real signed Discord DLL
+        EXPECT_TRUE(isWhitelisted) 
+            << "Discord overlay should be whitelisted: " 
+            << std::string(path.begin(), path.end());
+    }
+}
+
+// Test 16: All Common Overlays Whitelisted
+TEST_F(WhitelistTest, AllCommonOverlaysWhitelisted) {
+    // Test that all common overlay DLLs are whitelisted
+    std::vector<std::wstring> commonOverlays = {
+        L"C:\\Steam\\GameOverlayRenderer64.dll",
+        L"C:\\NVIDIA\\nvspcap64.dll",
+        L"C:\\Windows\\System32\\GameBar.dll",
+        L"C:\\Discord\\DiscordHook64.dll"
+    };
+    
+    for (const auto& overlayPath : commonOverlays) {
+        bool isWhitelisted = manager.IsModuleWhitelisted(overlayPath.c_str());
+        EXPECT_TRUE(isWhitelisted) 
+            << "Common overlay should be whitelisted: " 
+            << std::string(overlayPath.begin(), overlayPath.end());
+    }
+}
+
 

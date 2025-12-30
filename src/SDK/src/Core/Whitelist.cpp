@@ -37,7 +37,14 @@ void WhitelistManager::Shutdown() {
 }
 
 void WhitelistManager::LoadBuiltinWhitelist() {
-    // Discord overlay
+    // Common overlay DLLs - these are legitimate overlays that inject into games
+    // for legitimate purposes (social features, recording, etc.) and should not
+    // trigger injection detection. All require valid code signatures from their
+    // respective vendors to prevent spoofing.
+    
+    // Discord overlay - Whitelisted to prevent false positives from Discord's
+    // in-game overlay feature which provides chat, voice, and social features.
+    // Requires valid "Discord Inc." signature to prevent malware spoofing.
     entries_.push_back({
         WhitelistType::Module,
         "DiscordHook64.dll",
@@ -47,7 +54,9 @@ void WhitelistManager::LoadBuiltinWhitelist() {
         "Discord Inc."  // Code signing check
     });
     
-    // NVIDIA GeForce Experience
+    // NVIDIA GeForce Experience - Whitelisted to prevent false positives from
+    // NVIDIA ShadowPlay/Share overlay which provides game recording and streaming.
+    // Requires valid "NVIDIA Corporation" signature to prevent malware spoofing.
     entries_.push_back({
         WhitelistType::Module,
         "nvspcap64.dll",
@@ -57,7 +66,9 @@ void WhitelistManager::LoadBuiltinWhitelist() {
         "NVIDIA Corporation"
     });
     
-    // Steam overlay
+    // Steam overlay - Whitelisted to prevent false positives from Steam's
+    // in-game overlay which provides friends list, achievements, and browser.
+    // Requires valid "Valve Corp." signature to prevent malware spoofing.
     entries_.push_back({
         WhitelistType::Module,
         "GameOverlayRenderer64.dll",
@@ -65,6 +76,18 @@ void WhitelistManager::LoadBuiltinWhitelist() {
         true,
         std::nullopt,
         "Valve Corp."
+    });
+    
+    // Xbox Game Bar - Whitelisted to prevent false positives from Windows 10/11
+    // Xbox Game Bar overlay which provides recording, screenshots, and performance.
+    // Requires valid "Microsoft Corporation" signature to prevent malware spoofing.
+    entries_.push_back({
+        WhitelistType::Module,
+        "GameBar.dll",
+        "Xbox Game Bar overlay",
+        true,
+        std::nullopt,
+        "Microsoft Corporation"
     });
     
     // AMD Radeon overlay
