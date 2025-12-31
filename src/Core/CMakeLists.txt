@@ -30,6 +30,7 @@ target_sources(SentinelCore
         
         # Network operations
         Network/HttpClient.cpp
+        Network/HttpClientImpl.cpp
         Network/TlsContext.cpp
         Network/CertPinner.cpp
         Network/RequestSigner.cpp
@@ -71,6 +72,18 @@ if(OpenSSL_FOUND)
     target_compile_definitions(SentinelCore
         PRIVATE
             SENTINEL_USE_OPENSSL
+    )
+endif()
+
+# Link CURL if available (required for HTTP client)
+if(CURL_FOUND)
+    target_link_libraries(SentinelCore
+        PRIVATE
+            CURL::libcurl
+    )
+    target_compile_definitions(SentinelCore
+        PRIVATE
+            SENTINEL_USE_CURL
     )
 endif()
 

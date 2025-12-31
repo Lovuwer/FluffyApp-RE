@@ -1,18 +1,13 @@
 /**
- * Sentinel Core Library - Stub Implementation
+ * @file HttpClient.cpp
+ * @brief HTTP Client implementation entry point
+ * @author Sentinel Security Team
+ * @version 1.0.0
+ * @date 2025
  * 
- * Copyright (c) 2025 Sentinel Security. All rights reserved.
- * 
- * This is a stub implementation created as part of Phase 1: Foundation Setup
- * TODO: Implement actual functionality according to production readiness plan
+ * @copyright Copyright (c) 2025 Sentinel Security. All rights reserved.
  */
 
-namespace Sentinel {
-namespace Core {
-namespace Network {
+// The actual implementation is in HttpClientImpl.cpp
+// This file exists for CMake compatibility
 
-// Stub implementation - To be implemented
-
-} // namespace Network
-} // namespace Core
-} // namespace Sentinel
