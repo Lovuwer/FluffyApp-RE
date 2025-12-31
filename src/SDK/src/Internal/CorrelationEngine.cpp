@@ -8,6 +8,7 @@
 #include "OverlayVerifier.hpp"
 #include <cmath>
 #include <algorithm>
+#include <cctype>
 
 #ifdef _WIN32
 #include <Windows.h>
