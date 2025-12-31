@@ -2,6 +2,7 @@
  * Sentinel SDK - Telemetry and Runtime Config Tests
  * 
  * Tests for production telemetry and graceful degradation features (Task 14).
+ * Tests for exception budget enforcement (Task 09).
  * 
  * Copyright (c) 2025 Sentinel Security. All rights reserved.
  */
@@ -10,6 +11,7 @@
 #include "Internal/TelemetryEmitter.hpp"
 #include "Internal/RuntimeConfig.hpp"
 #include "Internal/EnvironmentDetection.hpp"
+#include "Internal/SafeMemory.hpp"  // Task 09: For exception budget tests
 #include <thread>
 #include <chrono>
 
@@ -437,4 +439,73 @@ TEST(TelemetryConfigIntegration, DryRunPreventsEnforcementButEmitsTelemetry) {
     
     emitter.Shutdown();
     config.Shutdown();
+}
+
+// ==================== Exception Budget Tests (Task 09) ====================
+
+TEST(ExceptionBudgetTest, DefaultBudgetConfiguration) {
+    RuntimeConfig config;
+    config.Initialize();
+    
+    auto global_config = config.GetGlobalConfig();
+    EXPECT_EQ(global_config.exception_budget_per_scan, 10u);
+    
+    config.Shutdown();
+}
+
+TEST(ExceptionBudgetTest, ExceptionStatsResetBetweenScans) {
+    SafeMemory::ResetExceptionStats();
+    
+    auto& stats1 = SafeMemory::GetExceptionStats();
+    EXPECT_EQ(stats1.GetTotalExceptions(), 0u);
+    
+    // Simulate some exceptions
+    stats1.access_violations = 5;
+    EXPECT_EQ(stats1.GetTotalExceptions(), 5u);
+    
+    // Reset for next scan
+    SafeMemory::ResetExceptionStats();
+    
+    auto& stats2 = SafeMemory::GetExceptionStats();
+    EXPECT_EQ(stats2.GetTotalExceptions(), 0u);
+}
+
+TEST(ExceptionBudgetTest, ExceptionLimitEnforcement) {
+    SafeMemory::ResetExceptionStats();
+    SafeMemory::SetExceptionBudget(10);
+    
+    auto& stats = SafeMemory::GetExceptionStats();
+    
+    // Under budget
+    stats.access_violations = 5;
+    EXPECT_FALSE(SafeMemory::IsExceptionLimitExceeded());
+    
+    // At budget
+    stats.access_violations = 10;
+    EXPECT_TRUE(SafeMemory::IsExceptionLimitExceeded());
+    
+    // Over budget
+    stats.access_violations = 15;
+    EXPECT_TRUE(SafeMemory::IsExceptionLimitExceeded());
+}
+
+TEST(ExceptionBudgetTest, BudgetUsesConfiguredValue) {
+    SafeMemory::ResetExceptionStats();
+    
+    // Set a custom budget of 5
+    SafeMemory::SetExceptionBudget(5);
+    
+    auto& stats = SafeMemory::GetExceptionStats();
+    stats.access_violations = 5;
+    
+    // Should be exceeded with budget of 5
+    EXPECT_TRUE(SafeMemory::IsExceptionLimitExceeded());
+    
+    // Reset and set a higher budget
+    SafeMemory::ResetExceptionStats();
+    SafeMemory::SetExceptionBudget(20);
+    
+    stats.access_violations = 5;
+    // Should not be exceeded with budget of 20
+    EXPECT_FALSE(SafeMemory::IsExceptionLimitExceeded());
 }
