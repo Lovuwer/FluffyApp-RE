@@ -43,11 +43,8 @@ namespace {
         });
     }
     
-    [[maybe_unused]] void cleanupCurl() {
-        if (g_curlInitialized) {
-            curl_global_cleanup();
-        }
-    }
+    // Note: curl_global_cleanup() is intentionally not called
+    // It's not thread-safe and cleanup happens automatically at process exit
 }
 
 // ============================================================================
@@ -246,7 +243,9 @@ public:
             // Check if error is transient (but not timeout - don't retry timeouts)
             bool isTransient = (res == CURLE_COULDNT_CONNECT ||
                               res == CURLE_RECV_ERROR ||
-                              res == CURLE_SEND_ERROR);
+                              res == CURLE_SEND_ERROR ||
+                              res == CURLE_PARTIAL_FILE ||
+                              res == CURLE_GOT_NOTHING);
             
             // Don't retry on non-transient errors or timeouts
             if (!isTransient || attempt == maxRetries - 1) {

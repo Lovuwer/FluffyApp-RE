@@ -228,7 +228,7 @@ enum class ErrorCode : uint16_t {
     /// Network unreachable
     NetworkUnreachable = 0x040A,
     
-    /// TLS version too old (minimum TLS 1.3 required)
+    /// TLS version too old (minimum TLS 1.2 required, TLS 1.3 preferred)
     TlsVersionTooOld = 0x040B,
     
     /// cURL initialization failed
