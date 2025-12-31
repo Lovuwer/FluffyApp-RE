@@ -59,6 +59,21 @@ public:
     void addPins(const PinningConfig& config);
     
     /**
+     * Update pins for a host (replaces existing pins)
+     */
+    void updatePins(const PinningConfig& config);
+    
+    /**
+     * Remove pins for a host
+     */
+    void removePins(const std::string& hostname);
+    
+    /**
+     * Clear all pins
+     */
+    void clearAllPins();
+    
+    /**
      * Verify certificate chain against pins
      * @param hostname The hostname being connected to
      * @param cert_chain DER-encoded certificate chain

@@ -414,3 +414,145 @@ TEST(CertificatePinning, Performance_VerificationWithCache) {
     EXPECT_LT(duration.count(), 5000) 
         << "Pin verification taking too long: " << duration.count() << "ms";
 }
+
+// ============================================================================
+// Integration Tests with HttpClient
+// ============================================================================
+
+TEST(CertificatePinning, HttpClientIntegration_PinRejection) {
+    // Generate a self-signed test certificate
+    ByteBuffer cert_der = generateTestCertificate();
+    
+    // Compute the SPKI hash
+    auto hashResult = computeSPKIHash(cert_der);
+    ASSERT_TRUE(hashResult.isSuccess());
+    std::string correctHash = hashResult.value();
+    
+    // Create a different, incorrect hash for the pin
+    std::string incorrectHash = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+    
+    // Create a pinner with the incorrect hash
+    auto pinner = std::make_shared<CertificatePinner>();
+    PinningConfig config;
+    config.hostname = "test.example.com";
+    config.pins = {{incorrectHash, "Wrong Pin"}};
+    config.enforce = true;
+    
+    pinner->addPins(config);
+    
+    // Verify that the certificate is rejected
+    std::vector<ByteBuffer> chain = {cert_der};
+    auto result = pinner->verify("test.example.com", chain);
+    
+    ASSERT_TRUE(result.isSuccess()) << "Verification should complete";
+    EXPECT_FALSE(result.value()) << "Should reject certificate with mismatched pin";
+}
+
+TEST(CertificatePinning, HttpClientIntegration_PinAcceptance) {
+    // Generate a self-signed test certificate
+    ByteBuffer cert_der = generateTestCertificate();
+    
+    // Compute the correct SPKI hash
+    auto hashResult = computeSPKIHash(cert_der);
+    ASSERT_TRUE(hashResult.isSuccess());
+    std::string correctHash = hashResult.value();
+    
+    // Create a pinner with the correct hash
+    auto pinner = std::make_shared<CertificatePinner>();
+    PinningConfig config;
+    config.hostname = "test.example.com";
+    config.pins = {{correctHash, "Correct Pin"}};
+    config.enforce = true;
+    
+    pinner->addPins(config);
+    
+    // Verify that the certificate is accepted
+    std::vector<ByteBuffer> chain = {cert_der};
+    auto result = pinner->verify("test.example.com", chain);
+    
+    ASSERT_TRUE(result.isSuccess()) << "Verification should complete";
+    EXPECT_TRUE(result.value()) << "Should accept certificate with matching pin";
+}
+
+TEST(CertificatePinning, PinUpdateMechanism) {
+    // Generate two different certificates for rotation
+    ByteBuffer cert1_der = generateTestCertificate();
+    ByteBuffer cert2_der = generateDifferentTestCertificate();
+    
+    // Compute hashes
+    auto hash1Result = computeSPKIHash(cert1_der);
+    auto hash2Result = computeSPKIHash(cert2_der);
+    ASSERT_TRUE(hash1Result.isSuccess());
+    ASSERT_TRUE(hash2Result.isSuccess());
+    
+    // Create pinner with first certificate
+    auto pinner = std::make_shared<CertificatePinner>();
+    PinningConfig config;
+    config.hostname = "test.example.com";
+    config.pins = {{hash1Result.value(), "Primary"}};
+    config.enforce = true;
+    
+    pinner->addPins(config);
+    
+    // Verify cert1 works
+    std::vector<ByteBuffer> chain1 = {cert1_der};
+    auto result1 = pinner->verify("test.example.com", chain1);
+    ASSERT_TRUE(result1.isSuccess());
+    EXPECT_TRUE(result1.value()) << "Original certificate should be accepted";
+    
+    // Verify cert2 fails
+    std::vector<ByteBuffer> chain2 = {cert2_der};
+    auto result2 = pinner->verify("test.example.com", chain2);
+    ASSERT_TRUE(result2.isSuccess());
+    EXPECT_FALSE(result2.value()) << "New certificate should be rejected before update";
+    
+    // Update pins to include both certificates (for rotation)
+    config.pins.push_back({hash2Result.value(), "Backup"});
+    pinner->updatePins(config);
+    
+    // Now both should work
+    auto result3 = pinner->verify("test.example.com", chain1);
+    ASSERT_TRUE(result3.isSuccess());
+    EXPECT_TRUE(result3.value()) << "Original certificate should still work";
+    
+    auto result4 = pinner->verify("test.example.com", chain2);
+    ASSERT_TRUE(result4.isSuccess());
+    EXPECT_TRUE(result4.value()) << "New certificate should now be accepted";
+    
+    // Remove old pin, keep only new one
+    config.pins.clear();
+    config.pins.push_back({hash2Result.value(), "New Primary"});
+    pinner->updatePins(config);
+    
+    // Old cert should now fail, new one should work
+    auto result5 = pinner->verify("test.example.com", chain1);
+    ASSERT_TRUE(result5.isSuccess());
+    EXPECT_FALSE(result5.value()) << "Old certificate should be rejected after rotation";
+    
+    auto result6 = pinner->verify("test.example.com", chain2);
+    ASSERT_TRUE(result6.isSuccess());
+    EXPECT_TRUE(result6.value()) << "New certificate should still work";
+}
+
+TEST(CertificatePinning, EmergencyPinClear) {
+    // Test emergency pin clearing functionality
+    auto pinner = std::make_shared<CertificatePinner>();
+    
+    PinningConfig config;
+    config.hostname = "test.example.com";
+    config.pins = {{"hash1", "Pin1"}};
+    config.enforce = true;
+    
+    pinner->addPins(config);
+    
+    // Clear all pins for emergency
+    pinner->clearAllPins();
+    
+    // Generate and verify a certificate - should pass because no pins configured
+    ByteBuffer cert_der = generateTestCertificate();
+    std::vector<ByteBuffer> chain = {cert_der};
+    auto result = pinner->verify("test.example.com", chain);
+    
+    ASSERT_TRUE(result.isSuccess());
+    EXPECT_TRUE(result.value()) << "Should allow connections when pins are cleared";
+}

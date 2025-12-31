@@ -11,14 +11,19 @@
 #include <Sentinel/Core/HttpClient.hpp>
 #include <Sentinel/Core/RequestSigner.hpp>
 #include <Sentinel/Core/ErrorCodes.hpp>
+#include <Sentinel/Core/Network.hpp>
+#include <Sentinel/Core/Crypto.hpp>
 
 #ifdef SENTINEL_USE_CURL
 #include <curl/curl.h>
+#include <openssl/ssl.h>
+#include <openssl/x509.h>
 #include <mutex>
 #include <thread>
 #include <chrono>
 #include <cstring>
 #include <algorithm>
+#include <iostream>
 #endif
 
 namespace Sentinel::Network {
@@ -111,6 +116,26 @@ namespace {
         
         return realsize;
     }
+    
+    // SSL context callback for certificate pinning
+    CURLcode sslContextCallback(CURL* curl, void* sslctx, void* userdata) {
+        (void)curl; // Unused
+        
+        auto* pinner = static_cast<CertificatePinner*>(userdata);
+        if (!pinner) {
+            return CURLE_OK; // No pinner configured
+        }
+        
+        SSL_CTX* ctx = static_cast<SSL_CTX*>(sslctx);
+        
+        // Set the pinner instance for callback use
+        CertificatePinner::setInstance(pinner);
+        
+        // Set up the certificate verification callback
+        SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, CertificatePinner::verifyCallback);
+        
+        return CURLE_OK;
+    }
 }
 
 // ============================================================================
@@ -174,6 +199,17 @@ public:
         }
         
         configureTlsVerification(curl, true, true);
+        
+        // Configure certificate pinning if enabled
+        if (signedRequest.enablePinning && m_pinningEnabled && m_certificatePinner) {
+            CURLcode res1 = curl_easy_setopt(curl, CURLOPT_SSL_CTX_FUNCTION, sslContextCallback);
+            CURLcode res2 = curl_easy_setopt(curl, CURLOPT_SSL_CTX_DATA, m_certificatePinner.get());
+            
+            if (res1 != CURLE_OK || res2 != CURLE_OK) {
+                std::cerr << "[SECURITY WARNING] Failed to configure SSL context callback for certificate pinning" << std::endl;
+                // Continue anyway - standard TLS verification will still occur
+            }
+        }
         
         // Set URL
         curl_easy_setopt(curl, CURLOPT_URL, signedRequest.url.c_str());
@@ -347,11 +383,28 @@ public:
         m_requestSigner.reset();
     }
     
+    void setCertificatePinner(std::shared_ptr<CertificatePinner> pinner) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_certificatePinner = std::move(pinner);
+    }
+    
+    void setPinningEnabled(bool enabled) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_pinningEnabled = enabled;
+    }
+    
+    std::shared_ptr<CertificatePinner> getCertificatePinner() const {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_certificatePinner;
+    }
+    
 private:
-    std::mutex m_mutex;
+    mutable std::mutex m_mutex;
     HttpHeaders m_defaultHeaders;
     Milliseconds m_defaultTimeout{30000};
     std::shared_ptr<RequestSigner> m_requestSigner;
+    std::shared_ptr<CertificatePinner> m_certificatePinner;
+    bool m_pinningEnabled{true};
 };
 
 #else // !SENTINEL_USE_CURL
@@ -369,6 +422,9 @@ public:
     Milliseconds getDefaultTimeout() const { return Milliseconds{30000}; }
     void setRequestSigner(std::shared_ptr<RequestSigner>) {}
     void clearRequestSigner() {}
+    void setCertificatePinner(std::shared_ptr<CertificatePinner>) {}
+    void setPinningEnabled(bool) {}
+    std::shared_ptr<CertificatePinner> getCertificatePinner() const { return nullptr; }
 };
 
 #endif // SENTINEL_USE_CURL
@@ -460,16 +516,53 @@ void HttpClient::setDefaultTimeout(Milliseconds timeout) {
     m_impl->setDefaultTimeout(timeout);
 }
 
-void HttpClient::addCertificatePin([[maybe_unused]] const CertificatePin& pin) {
-    // TODO: Implement certificate pinning
+void HttpClient::addCertificatePin(const CertificatePin& pin) {
+    // Convert CertificatePin to PinningConfig and add to internal pinner
+    auto pinner = m_impl->getCertificatePinner();
+    if (!pinner) {
+        pinner = std::make_shared<CertificatePinner>();
+        m_impl->setCertificatePinner(pinner);
+    }
+    
+    // Convert CertificatePin to PinningConfig format
+    PinningConfig config;
+    config.hostname = pin.hostname;
+    config.enforce = true;
+    
+    // Convert SHA256Hash to base64 strings
+    for (const auto& hash : pin.pins) {
+        std::string base64Hash = Crypto::toBase64(hash);
+        config.pins.push_back({base64Hash, "Pin"});
+    }
+    
+    pinner->addPins(config);
 }
 
-void HttpClient::setCertificatePinner([[maybe_unused]] std::shared_ptr<CertPinner> pinner) {
-    // TODO: Implement certificate pinning
+void HttpClient::setCertificatePinner(std::shared_ptr<CertPinner> pinner) {
+    // Create an internal CertificatePinner from CertPinner
+    auto internalPinner = std::make_shared<CertificatePinner>();
+    
+    if (pinner) {
+        // Convert all pins from CertPinner to CertificatePinner
+        for (const auto& pin : pinner->getPins()) {
+            PinningConfig config;
+            config.hostname = pin.hostname;
+            config.enforce = true;
+            
+            for (const auto& hash : pin.pins) {
+                std::string base64Hash = Crypto::toBase64(hash);
+                config.pins.push_back({base64Hash, "Pin"});
+            }
+            
+            internalPinner->addPins(config);
+        }
+    }
+    
+    m_impl->setCertificatePinner(internalPinner);
 }
 
-void HttpClient::setPinningEnabled([[maybe_unused]] bool enabled) {
-    // TODO: Implement certificate pinning
+void HttpClient::setPinningEnabled(bool enabled) {
+    m_impl->setPinningEnabled(enabled);
 }
 
 void HttpClient::setProxy([[maybe_unused]] const std::string& proxyUrl) {

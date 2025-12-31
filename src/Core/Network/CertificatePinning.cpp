@@ -17,6 +17,8 @@
 #include <openssl/ssl.h>
 #include <map>
 #include <mutex>
+#include <atomic>
+#include <iostream>
 
 namespace Sentinel::Network {
 
@@ -26,7 +28,7 @@ public:
     std::mutex mutex_;
 };
 
-static CertificatePinner* g_pinnerInstance = nullptr;
+static std::atomic<CertificatePinner*> g_pinnerInstance{nullptr};
 
 CertificatePinner::CertificatePinner() 
     : m_impl(std::make_unique<Impl>()) {}
@@ -34,12 +36,27 @@ CertificatePinner::CertificatePinner()
 CertificatePinner::~CertificatePinner() = default;
 
 void CertificatePinner::setInstance(CertificatePinner* instance) {
-    g_pinnerInstance = instance;
+    g_pinnerInstance.store(instance, std::memory_order_release);
 }
 
 void CertificatePinner::addPins(const PinningConfig& config) {
     std::lock_guard<std::mutex> lock(m_impl->mutex_);
     m_impl->configs_[config.hostname] = config;
+}
+
+void CertificatePinner::updatePins(const PinningConfig& config) {
+    std::lock_guard<std::mutex> lock(m_impl->mutex_);
+    m_impl->configs_[config.hostname] = config;
+}
+
+void CertificatePinner::removePins(const std::string& hostname) {
+    std::lock_guard<std::mutex> lock(m_impl->mutex_);
+    m_impl->configs_.erase(hostname);
+}
+
+void CertificatePinner::clearAllPins() {
+    std::lock_guard<std::mutex> lock(m_impl->mutex_);
+    m_impl->configs_.clear();
 }
 
 Result<bool> CertificatePinner::verify(
@@ -58,12 +75,18 @@ Result<bool> CertificatePinner::verify(
     const PinningConfig& config = it->second;
     
     if (cert_chain.empty()) {
+        std::cerr << "[SECURITY EVENT] Certificate pinning failed for host: " << hostname << std::endl;
+        std::cerr << "  Empty certificate chain received" << std::endl;
+        std::cerr << "  Connection REJECTED" << std::endl;
         return false;
     }
     
     // Compute SPKI hash of leaf certificate
     auto hashResult = computeSPKIHash(cert_chain[0]);
     if (hashResult.isFailure()) {
+        std::cerr << "[SECURITY EVENT] Certificate pinning failed for host: " << hostname << std::endl;
+        std::cerr << "  Failed to compute SPKI hash from certificate" << std::endl;
+        std::cerr << "  Connection REJECTED" << std::endl;
         return hashResult.error();
     }
     
@@ -76,12 +99,21 @@ Result<bool> CertificatePinner::verify(
         }
     }
     
-    // No pin matched
+    // No pin matched - log security event
+    std::cerr << "[SECURITY EVENT] Certificate pinning failed for host: " << hostname << std::endl;
+    std::cerr << "  Expected one of " << config.pins.size() << " pinned certificate(s)" << std::endl;
+    std::cerr << "  Received certificate SPKI hash: " << certHash << std::endl;
+    
+    for (size_t i = 0; i < config.pins.size(); ++i) {
+        std::cerr << "  Pin " << (i + 1) << " (" << config.pins[i].description << "): " 
+                  << config.pins[i].sha256_hash << std::endl;
+    }
+    
     if (config.enforce) {
+        std::cerr << "  Connection REJECTED (enforce=true)" << std::endl;
         return false;  // Reject connection
     } else {
-        // Log warning but allow
-        // TODO: Add logging
+        std::cerr << "  Connection ALLOWED (enforce=false - monitoring mode)" << std::endl;
         return true;
     }
 }
@@ -133,7 +165,8 @@ int CertificatePinner::verifyCallback(int preverify_ok, X509_STORE_CTX* ctx) {
         return 0;  // Standard verification failed
     }
     
-    if (!g_pinnerInstance) {
+    CertificatePinner* pinner = g_pinnerInstance.load(std::memory_order_acquire);
+    if (!pinner) {
         return preverify_ok;  // No pinner configured
     }
     
@@ -173,7 +206,7 @@ int CertificatePinner::verifyCallback(int preverify_ok, X509_STORE_CTX* ctx) {
     
     // Verify against pins
     std::vector<ByteBuffer> chain = {cert_der};
-    auto result = g_pinnerInstance->verify(hostname, chain);
+    auto result = pinner->verify(hostname, chain);
     
     if (result.isFailure() || !result.value()) {
         return 0;  // Pin verification failed
