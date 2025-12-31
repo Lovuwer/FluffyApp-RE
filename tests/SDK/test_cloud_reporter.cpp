@@ -48,7 +48,7 @@ protected:
     
     // Helper function to create test violation event
     ViolationEvent CreateTestEvent(
-        ViolationType type = ViolationType::DebuggerPresent,
+        ViolationType type = ViolationType::DebuggerAttached,
         Severity severity = Severity::High,
         const char* details = "Test violation"
     ) {
@@ -92,7 +92,7 @@ TEST_F(CloudReporterTest, QueueMultipleEvents) {
     // Queue multiple events
     for (int i = 0; i < 5; ++i) {
         auto event = CreateTestEvent(
-            ViolationType::DebuggerPresent,
+            ViolationType::DebuggerAttached,
             Severity::High,
             ("Test event " + std::to_string(i)).c_str()
         );
@@ -177,7 +177,7 @@ TEST_F(CloudReporterTest, CriticalEventImmediateFlush) {
     
     // Queue a critical event
     auto event = CreateTestEvent(
-        ViolationType::MemoryManipulation,
+        ViolationType::ModuleModified,
         Severity::Critical,
         "Critical violation detected"
     );
@@ -216,7 +216,7 @@ TEST_F(CloudReporterTest, QueueOverflowEviction) {
     // The implementation should handle queue depth limit (1000)
     for (int i = 0; i < 1100; ++i) {
         auto event = CreateTestEvent(
-            ViolationType::DebuggerPresent,
+            ViolationType::DebuggerAttached,
             Severity::Info,
             ("Event " + std::to_string(i)).c_str()
         );
@@ -265,7 +265,7 @@ TEST_F(CloudReporterTest, ConcurrentQueuing) {
         threads.emplace_back([this, &counter]() {
             for (int i = 0; i < 25; ++i) {
                 auto event = CreateTestEvent(
-                    ViolationType::DebuggerPresent,
+                    ViolationType::DebuggerAttached,
                     Severity::High,
                     ("Thread event " + std::to_string(counter++)).c_str()
                 );
@@ -326,7 +326,7 @@ TEST_F(CloudReporterTest, EndToEndFlow) {
     // Queue some normal events
     for (int i = 0; i < 3; ++i) {
         auto event = CreateTestEvent(
-            ViolationType::DebuggerPresent,
+            ViolationType::DebuggerAttached,
             Severity::Warning,
             ("Normal event " + std::to_string(i)).c_str()
         );
@@ -337,7 +337,7 @@ TEST_F(CloudReporterTest, EndToEndFlow) {
     
     // Queue a critical event (should trigger immediate flush)
     auto critical = CreateTestEvent(
-        ViolationType::MemoryManipulation,
+        ViolationType::ModuleModified,
         Severity::Critical,
         "Critical memory manipulation detected"
     );
