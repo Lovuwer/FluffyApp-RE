@@ -13,6 +13,7 @@
 #include "Internal/TelemetryEmitter.hpp"
 #include "Internal/RuntimeConfig.hpp"
 #include "Internal/EnvironmentDetection.hpp"
+#include "Internal/Watchdog.hpp"
 #include "Internal/SafeMemory.hpp"  // Task 09: For exception budget tracking
 
 #include <atomic>
@@ -80,6 +81,9 @@ struct SDKContext {
     std::unique_ptr<TelemetryEmitter> telemetry;
     std::unique_ptr<RuntimeConfig> runtime_config;
     std::unique_ptr<EnvironmentDetector> env_detector;
+    
+    // Task 07: Heartbeat thread watchdog
+    std::unique_ptr<Watchdog> watchdog;
     
     // Session info
     std::string session_token;
@@ -255,6 +259,11 @@ void HeartbeatThreadFunc() {
     
     while (g_context && !g_context->shutdown_requested.load()) {
         if (g_context->active.load()) {
+            // Task 07: Ping watchdog to indicate thread is alive
+            if (g_context->watchdog) {
+                g_context->watchdog->Ping();
+            }
+            
             // Task 14: Check for runtime config updates periodically
             if (g_context->runtime_config && heartbeat_counter % 300 == 0) {  // Every 5 minutes at 1s intervals
                 g_context->runtime_config->CheckForUpdates();
@@ -441,6 +450,9 @@ SENTINEL_API ErrorCode SENTINEL_CALL Initialize(const Configuration* config) {
     g_context->runtime_config = std::make_unique<RuntimeConfig>();
     g_context->runtime_config->Initialize();
     
+    // Task 07: Initialize heartbeat thread watchdog
+    g_context->watchdog = std::make_unique<Watchdog>();
+    
     // Initialize network if cloud endpoint provided
     if (config->cloud_endpoint && strlen(config->cloud_endpoint) > 0) {
         g_context->packet_crypto = std::make_unique<PacketEncryption>();
@@ -483,6 +495,9 @@ SENTINEL_API void SENTINEL_CALL Shutdown() {
     g_context->telemetry.reset();
     g_context->runtime_config.reset();
     g_context->env_detector.reset();
+    
+    // Task 07: Cleanup watchdog
+    g_context->watchdog.reset();
     
     // Cleanup whitelist manager
     if (g_whitelist) {
@@ -528,6 +543,24 @@ SENTINEL_API ErrorCode SENTINEL_CALL Update() {
     auto start = std::chrono::high_resolution_clock::now();
     
     ErrorCode result = ErrorCode::Success;
+    
+    // Task 07: Check if heartbeat thread is alive
+    if (g_context->watchdog) {
+        uint64_t max_age_ms = g_context->config.heartbeat_interval_ms * 3;
+        if (!g_context->watchdog->IsAlive(max_age_ms)) {
+            // Heartbeat thread is dead - report critical violation
+            // Using HandleManipulation as the violation type since thread termination
+            // (e.g., via TerminateThread) is a form of thread handle manipulation
+            ViolationEvent event{};
+            event.type = ViolationType::HandleManipulation;
+            event.severity = Severity::Critical;
+            event.timestamp = GetSecureTime();
+            event.details = "Heartbeat thread terminated - thread watchdog detected death";
+            
+            ReportViolation(event);
+            result = ErrorCode::TamperingDetected;
+        }
+    }
     
     // Quick integrity check
     if (g_context->integrity) {
