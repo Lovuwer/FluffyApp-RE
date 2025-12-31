@@ -8,6 +8,9 @@
 #include "Internal/CorrelationEngine.hpp"
 #include <thread>
 #include <chrono>
+#include <numeric>
+#include <algorithm>
+#include <iostream>
 
 using namespace Sentinel::SDK;
 
@@ -408,4 +411,252 @@ TEST_F(CorrelationEngineTest, KickRequiresTwoSignals) {
     // Now with 2 persistent signals, Kick should be allowed
     EXPECT_TRUE(engine_->ShouldAllowAction(ResponseAction::Kick))
         << "Kick should be allowed with 2+ persistent signals";
+}
+
+/**
+ * Test: Empty module name handling
+ * Verifies defensive normalization replaces empty strings with "unknown-module"
+ */
+TEST_F(CorrelationEngineTest, EmptyModuleNameHandling) {
+    Severity severity_out;
+    bool should_report;
+    
+    // Create event with empty module name
+    auto event = CreateEvent(ViolationType::MemoryWrite, Severity::High);
+    event.module_name = "";  // Explicitly empty
+    
+    // Process the event
+    EXPECT_TRUE(engine_->ProcessViolation(event, severity_out, should_report))
+        << "Empty module name should not crash";
+    
+    // Verify processing succeeded
+    EXPECT_GT(engine_->GetCorrelationScore(), 0.0)
+        << "Signal should have been processed despite empty module name";
+}
+
+/**
+ * Test: Whitespace-only module name handling
+ * Verifies whitespace-only strings are normalized to "unknown-module"
+ */
+TEST_F(CorrelationEngineTest, WhitespaceOnlyModuleNameHandling) {
+    Severity severity_out;
+    bool should_report;
+    
+    // Test various whitespace-only patterns
+    std::vector<std::string> whitespace_patterns = {
+        " ",           // Single space
+        "   ",         // Multiple spaces
+        "\t",          // Tab
+        "\n",          // Newline
+        " \t\n ",      // Mixed whitespace
+        "          "   // Many spaces
+    };
+    
+    for (const auto& pattern : whitespace_patterns) {
+        engine_->Reset();
+        
+        auto event = CreateEvent(ViolationType::InlineHook, Severity::High);
+        event.module_name = pattern;
+        
+        // Should not crash or cause undefined behavior
+        EXPECT_TRUE(engine_->ProcessViolation(event, severity_out, should_report))
+            << "Whitespace-only module name should not crash: [" << pattern << "]";
+        
+        EXPECT_GT(engine_->GetCorrelationScore(), 0.0)
+            << "Signal should be processed despite whitespace module name";
+    }
+}
+
+/**
+ * Test: Module name with leading/trailing whitespace
+ * Verifies trimming behavior
+ */
+TEST_F(CorrelationEngineTest, ModuleNameWithWhitespace) {
+    Severity severity_out;
+    bool should_report;
+    
+    // Test module names with surrounding whitespace
+    std::vector<std::string> test_cases = {
+        " kernel32.dll",       // Leading space
+        "kernel32.dll ",       // Trailing space
+        " kernel32.dll ",      // Both
+        "\tkernel32.dll\t",    // Tabs
+        "  kernel32.dll  "     // Multiple spaces
+    };
+    
+    for (const auto& test_name : test_cases) {
+        engine_->Reset();
+        
+        auto event = CreateEvent(ViolationType::IATHook, Severity::High);
+        event.module_name = test_name;
+        
+        // Should not crash
+        EXPECT_TRUE(engine_->ProcessViolation(event, severity_out, should_report))
+            << "Module name with whitespace should not crash: [" << test_name << "]";
+        
+        EXPECT_GT(engine_->GetCorrelationScore(), 0.0)
+            << "Signal should be processed";
+    }
+}
+
+/**
+ * Test: Very long module name
+ * Verifies no buffer overflow or performance issues with long strings
+ */
+TEST_F(CorrelationEngineTest, VeryLongModuleName) {
+    Severity severity_out;
+    bool should_report;
+    
+    // Create a very long module name (10KB)
+    std::string long_name(10000, 'A');
+    long_name += ".dll";
+    
+    auto event = CreateEvent(ViolationType::ModuleModified, Severity::High);
+    event.module_name = long_name;
+    
+    // Should handle gracefully without crash or excessive memory use
+    EXPECT_TRUE(engine_->ProcessViolation(event, severity_out, should_report))
+        << "Very long module name should not crash";
+    
+    EXPECT_GT(engine_->GetCorrelationScore(), 0.0)
+        << "Signal should be processed despite long module name";
+}
+
+/**
+ * Test: Module name with special characters
+ * Verifies handling of various special characters
+ */
+TEST_F(CorrelationEngineTest, ModuleNameWithSpecialCharacters) {
+    Severity severity_out;
+    bool should_report;
+    
+    std::vector<std::string> special_names = {
+        "module!@#$%.dll",              // Special chars
+        "module\x00with\x00nulls.dll",  // Embedded nulls (will be truncated by std::string)
+        "módulo_español.dll",           // UTF-8 characters
+        "..\\..\\..\\evil.dll",         // Path traversal attempt
+        "C:\\Windows\\System32\\kernel32.dll"  // Full path
+    };
+    
+    for (const auto& special_name : special_names) {
+        engine_->Reset();
+        
+        auto event = CreateEvent(ViolationType::CodeInjection, Severity::Critical);
+        event.module_name = special_name;
+        
+        // Should not crash or cause security issues
+        EXPECT_TRUE(engine_->ProcessViolation(event, severity_out, should_report))
+            << "Special character module name should not crash: [" << special_name << "]";
+    }
+}
+
+/**
+ * Test: Multiple events with different module name edge cases
+ * Verifies no memory leaks or corruption when processing many edge case events
+ */
+TEST_F(CorrelationEngineTest, MultipleEdgeCaseModuleNames) {
+    Severity severity_out;
+    bool should_report;
+    
+    // Process 100 events with various edge case module names
+    for (int i = 0; i < 100; ++i) {
+        auto event = CreateEvent(ViolationType::MemoryWrite, Severity::High);
+        
+        // Vary the module name pattern
+        switch (i % 5) {
+            case 0: event.module_name = ""; break;
+            case 1: event.module_name = "   "; break;
+            case 2: event.module_name = std::string(1000, 'X'); break;
+            case 3: event.module_name = " valid.dll "; break;
+            case 4: event.module_name = "normal.dll"; break;
+        }
+        
+        // Should handle all cases without crash
+        EXPECT_TRUE(engine_->ProcessViolation(event, severity_out, should_report))
+            << "Iteration " << i << " should not crash";
+    }
+    
+    // Verify engine is still functional
+    EXPECT_GT(engine_->GetCorrelationScore(), 0.0)
+        << "Engine should still be functional after processing edge cases";
+}
+
+/**
+ * Test: ProcessViolation performance (P95 latency < 100 microseconds)
+ * Measures performance to ensure no regression from string handling
+ */
+TEST_F(CorrelationEngineTest, ProcessViolationPerformance) {
+    Severity severity_out;
+    bool should_report;
+    
+    // Warm up
+    for (int i = 0; i < 100; ++i) {
+        auto event = CreateEvent(ViolationType::MemoryWrite, Severity::High);
+        event.module_name = "test.dll";
+        engine_->ProcessViolation(event, severity_out, should_report);
+    }
+    
+    engine_->Reset();
+    
+    // Measure latencies
+    std::vector<double> latencies;
+    latencies.reserve(1000);
+    
+    // Use specific valid violation types
+    ViolationType test_types[] = {
+        ViolationType::MemoryWrite,
+        ViolationType::InlineHook,
+        ViolationType::DebuggerAttached,
+        ViolationType::MemoryExecute,
+        ViolationType::IATHook
+    };
+    
+    Severity test_severities[] = {
+        Severity::Info,
+        Severity::Warning,
+        Severity::High,
+        Severity::Critical
+    };
+    
+    for (int i = 0; i < 1000; ++i) {
+        auto event = CreateEvent(
+            test_types[i % 5], 
+            test_severities[i % 4]
+        );
+        
+        // Vary module names to test different patterns
+        switch (i % 5) {
+            case 0: event.module_name = "kernel32.dll"; break;
+            case 1: event.module_name = ""; break;  // Empty
+            case 2: event.module_name = "   "; break;  // Whitespace
+            case 3: event.module_name = " ntdll.dll "; break;  // Needs trimming
+            case 4: event.module_name = std::string(100, 'X') + ".dll"; break;  // Long
+        }
+        
+        auto start = std::chrono::high_resolution_clock::now();
+        engine_->ProcessViolation(event, severity_out, should_report);
+        auto end = std::chrono::high_resolution_clock::now();
+        
+        double microseconds = std::chrono::duration<double, std::micro>(end - start).count();
+        latencies.push_back(microseconds);
+    }
+    
+    // Calculate P95 (95th percentile)
+    std::sort(latencies.begin(), latencies.end());
+    size_t p95_index = static_cast<size_t>(latencies.size() * 0.95);
+    double p95_latency = latencies[p95_index];
+    
+    // Calculate average and max for reporting
+    double avg_latency = std::accumulate(latencies.begin(), latencies.end(), 0.0) / latencies.size();
+    double max_latency = latencies.back();
+    
+    // Log results
+    std::cout << "\nProcessViolation Performance Results:\n";
+    std::cout << "  Average: " << avg_latency << " µs\n";
+    std::cout << "  P95:     " << p95_latency << " µs\n";
+    std::cout << "  Max:     " << max_latency << " µs\n";
+    
+    // Verify P95 is under 100 microseconds
+    EXPECT_LT(p95_latency, 100.0)
+        << "P95 latency should be under 100 microseconds, got " << p95_latency << " µs";
 }

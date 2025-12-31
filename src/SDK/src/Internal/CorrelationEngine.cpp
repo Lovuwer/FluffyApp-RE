@@ -8,6 +8,7 @@
 #include "OverlayVerifier.hpp"
 #include <cmath>
 #include <algorithm>
+#include <cctype>
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -38,6 +39,39 @@ namespace {
         }
         return count;
 #endif
+    }
+    
+    /**
+     * Normalize module name to prevent use-after-free and handle edge cases
+     * - Empty strings → "unknown-module"
+     * - Whitespace-only → "unknown-module"
+     * - Valid strings → trimmed and returned
+     */
+    std::string NormalizeModuleName(const std::string& module_name) {
+        // Handle empty string
+        if (module_name.empty()) {
+            return "unknown-module";
+        }
+        
+        // Find first non-whitespace character
+        size_t start = 0;
+        while (start < module_name.size() && std::isspace(static_cast<unsigned char>(module_name[start]))) {
+            ++start;
+        }
+        
+        // If all whitespace, treat as empty
+        if (start == module_name.size()) {
+            return "unknown-module";
+        }
+        
+        // Find last non-whitespace character
+        size_t end = module_name.size();
+        while (end > start && std::isspace(static_cast<unsigned char>(module_name[end - 1]))) {
+            --end;
+        }
+        
+        // Return trimmed string
+        return module_name.substr(start, end - start);
     }
 }
 
@@ -111,7 +145,7 @@ bool CorrelationEngine::ProcessViolation(
     signal.timestamp = now;
     signal.details = event.details;
     signal.address = event.address;
-    signal.module_name = event.module_name.empty() ? "<unknown>" : event.module_name;
+    signal.module_name = NormalizeModuleName(event.module_name);
     signal.scan_cycle = state_.current_scan_cycle;
     signal.persistence_count = 1;  // Initial persistence
     
