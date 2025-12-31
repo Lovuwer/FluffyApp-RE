@@ -1265,3 +1265,506 @@ Verify all cryptographic material is securely zeroed on destruction.
 
 ---
 
+
+
+### PHASE 2: Architectural Diversification
+
+**Timeline:** Q2 2026 (12 weeks)  
+**Primary Objective:** Eliminate "bypass once, win forever" conditions through redundancy, distributed decision points, and runtime variability infrastructure.
+
+**Exit Criteria Summary:**
+- [ ] No single function hook can suppress all violation reporting
+- [ ] Memory layout differs measurably between sessions
+- [ ] 3+ independent validation paths for critical integrity decisions
+- [ ] Static analysis cannot enumerate all protection targets
+- [ ] Server attestation protocol designed and documented
+
+---
+
+### Phase 2 Tasks (Streamlined Format)
+
+Due to space constraints, Phase 2-4 tasks are presented in streamlined format. Full expansion follows Phase 1 pattern.
+
+---
+
+#### 🧩 **P2-A1: Refactor Check() into Distributed Reporters**
+**Goal:** Split monolithic Check() into independent reporter modules with separate output channels.  
+**Files:** `src/SDK/src/Detection/*.cpp`, `src/SDK/src/Internal/` (new reporter infrastructure)  
+**Risk:** 🔴 CRITICAL — Phase gate, blocks other Phase 2 tasks  
+**DoD:** No single hook suppresses all reporters; 2+ independent channels; tests verify isolation  
+**Parallel:** P2-B1, P2-B2 | **Serial before:** P2-A2, P2-A4, P2-C2
+
+---
+
+#### 🧩 **P2-A2: Multi-Path Violation Reporting**
+**Goal:** Implement 2+ independent violation delivery paths to server.  
+**Files:** `src/SDK/src/Network/`, detection modules  
+**Depends:** P2-A1  
+**DoD:** 2+ network channels; fallback if primary fails; tests verify both paths  
+**Parallel:** P2-B1, P2-B2, P2-C1
+
+---
+
+#### 🧩 **P2-A3: Server-Side Aggregation Endpoint Design**
+**Goal:** Define API contract for server violation ingestion.  
+**Files:** **NEW:** `docs/api/violation_ingestion.md`  
+**DoD:** API spec complete; request/response schemas; authentication documented  
+**Parallel:** All Phase 2 (documentation only, no conflicts)
+
+---
+
+#### 🧩 **P2-A4: Redundant Integrity Validators**
+**Goal:** Implement 2+ independent code integrity verification paths.  
+**Files:** `src/SDK/src/Detection/IntegrityCheck.cpp`  
+**Depends:** P2-A1  
+**DoD:** 2+ validators; different algorithms; both must agree for Critical severity  
+**Parallel:** P2-B1, P2-C1
+
+---
+
+#### 🧩 **P2-B1: Structure Field Shuffling**
+**Goal:** Implement compile/load-time field order randomization for critical structures.  
+**Files:** `src/SDK/src/Internal/*.hpp`  
+**Feature Flag:** `SENTINEL_RANDOMIZE_LAYOUT` (default: OFF)  
+**DoD:** Struct layouts differ between sessions; verification test; feature flag works  
+**Parallel:** P2-A1, P2-A2, P2-C1
+
+---
+
+#### 🧩 **P2-B2: Pointer Obfuscation Layer**
+**Goal:** XOR internal pointers with session-derived key.  
+**Files:** **NEW:** `src/SDK/src/Internal/PointerGuard.hpp`  
+**Feature Flag:** `SENTINEL_OBFUSCATE_POINTERS` (default: OFF)  
+**DoD:** All critical pointers obfuscated; performance < 2%; tests verify correctness  
+**Depends:** P2-B1  
+**Parallel:** P2-A1, P2-A2, P2-C1, P2-C2
+
+---
+
+#### 🧩 **P2-B3: Randomized Allocation Order**
+**Goal:** Shuffle initialization order of internal structures at startup.  
+**Files:** `src/SDK/src/SentinelSDK.cpp`  
+**DoD:** Allocation order randomized; deterministic with fixed seed; tests verify  
+**Depends:** P2-B1  
+**Parallel:** P2-C1, P2-C2
+
+---
+
+#### 🧩 **P2-B4: Session-Unique Structure Layouts**
+**Goal:** Generate per-session layout parameters from secure random.  
+**Files:** `src/SDK/src/Internal/`, `src/Core/Crypto/SecureRandom.cpp`  
+**DoD:** Layout params unique per session; automated verification; debug mode  
+**Depends:** P2-B1, P2-B2  
+**Parallel:** P2-C1
+
+---
+
+#### 🧩 **P2-C1: Hash Chain Validation**
+**Goal:** Implement chained integrity hashes where each section includes previous hash.  
+**Files:** `src/SDK/src/Detection/IntegrityCheck.cpp`  
+**DoD:** Hash chain implemented; tampering detection improved; overhead < 5%  
+**Depends:** Phase 1 complete  
+**Parallel:** P2-A1, P2-B1, P2-B2
+
+---
+
+#### 🧩 **P2-C2: Cross-Subsystem Correlation**
+**Goal:** Require multiple detector agreement before Critical severity.  
+**Files:** **NEW:** `src/SDK/src/Internal/ViolationAggregator.cpp/.hpp`  
+**DoD:** Critical requires 2+ detectors; configurable thresholds; telemetry  
+**Depends:** P2-A1  
+**Parallel:** P2-A2, P2-B2
+
+---
+
+#### 🧩 **P2-C3: Inline Integrity Macros**
+**Goal:** Create SENTINEL_PROTECTED_CALL macro for call-site validation.  
+**Files:** **NEW:** `include/Sentinel/SentinelMacros.hpp`  
+**DoD:** Macro implemented; example usage documented; tests verify  
+**Depends:** P2-C1  
+**Parallel:** P2-A1, P2-B1
+
+---
+
+#### 🧩 **P2-C4: Server Attestation Protocol Design**
+**Goal:** Document challenge-response attestation protocol.  
+**Files:** **NEW:** `docs/protocols/attestation.md`  
+**DoD:** Protocol documented; challenge generation; response validation; crypto specified  
+**Parallel:** All Phase 2 (documentation only)
+
+---
+
+### PHASE 3: Runtime Variability
+
+**Timeline:** Q3 2026 (12 weeks)  
+**Primary Objective:** Make static analysis insufficient via polymorphic detection, server-controlled parameters, per-session uniqueness.
+
+**Exit Criteria Summary:**
+- [ ] Same check implemented via 3+ distinct code paths
+- [ ] Server can remotely select implementation variant
+- [ ] No two sessions produce identical check sequences
+- [ ] Static memory dump analysis incomplete/incorrect
+- [ ] Remote configuration download operational
+
+---
+
+#### 🧩 **P3-A1: IsDebuggerPresent Variants**
+**Goal:** Implement 3+ detection methods for same logical check.  
+**Files:** `src/SDK/src/Detection/AntiDebug.cpp`  
+**DoD:** 3+ independent implementations; runtime selection; all detect; performance similar  
+**Depends:** Phase 2 complete  
+**Parallel:** P3-B1, P3-C1
+
+---
+
+#### 🧩 **P3-A2: Multiple Hook Detection Algorithms**
+**Goal:** Implement alternative hook detection approaches.  
+**Files:** `src/SDK/src/Detection/AntiHook.cpp`  
+**DoD:** 3+ algorithms; runtime selection; all detect common hooks; performance acceptable  
+**Depends:** Phase 2 complete  
+**Parallel:** P3-B1, P3-C1
+
+---
+
+#### 🧩 **P3-A3: Randomized Check Ordering**
+**Goal:** Shuffle detection check sequence per-frame using secure RNG.  
+**Files:** `src/SDK/src/SentinelSDK.cpp`, detection orchestration  
+**Feature Flag:** `SENTINEL_RANDOMIZE_CHECKS` (default: OFF)  
+**DoD:** Check order randomized; no two sessions identical; deterministic debug mode  
+**Depends:** P3-A1, P3-A2  
+**Parallel:** P3-B1, P3-C1, P3-C2
+
+---
+
+#### 🧩 **P3-A4: Server-Controlled Variant Selection**
+**Goal:** Server config determines which implementation variant executes.  
+**Files:** Network layer, detection modules  
+**Feature Flag:** `SENTINEL_SERVER_VARIANT_CONTROL` (default: OFF)  
+**DoD:** Server can select variants; client applies config; telemetry on active variants  
+**Depends:** P3-A1, P3-A2, P3-A3  
+**Parallel:** P3-C1, P3-C2
+
+---
+
+#### 🧩 **P3-B1: Instruction Substitution Evaluation**
+**Goal:** Research and document instruction substitution feasibility.  
+**Files:** **NEW:** `docs/research/instruction_substitution.md`  
+**DoD:** Feasibility assessment; implementation complexity; security benefit; recommendation  
+**Parallel:** P3-A1, P3-A2, P3-C1
+
+---
+
+#### 🧩 **P3-B2: Control Flow Flattening Evaluation**
+**Goal:** Research CFG flattening applicability, document findings.  
+**Files:** **NEW:** `docs/research/cfg_flattening.md`  
+**DoD:** Tool evaluation; overhead analysis; security benefit; integration recommendation  
+**Parallel:** P3-A1, P3-A2, P3-C1
+
+---
+
+#### 🧩 **P3-B3: Build-Time Diversification**
+**Goal:** Implement build variants with different internal constants.  
+**Files:** `CMakeLists.txt`, build system  
+**DoD:** Multiple build configs; different constants per build; automated testing  
+**Depends:** P3-B1, P3-B2 (inform approach)  
+**Parallel:** P3-A3, P3-C2
+
+---
+
+#### 🧩 **P3-C1: Attestation Challenge Protocol**
+**Goal:** Implement server-to-client challenge-response for memory attestation.  
+**Files:** **NEW:** `src/SDK/src/Network/Attestation.cpp/.hpp`  
+**DoD:** Challenge-response implemented; crypto correct; protocol matches P2-C4 design  
+**Depends:** P2-C4 (design)  
+**Parallel:** P3-A1, P3-A2, P3-B1
+
+---
+
+#### 🧩 **P3-C2: Remote Configuration Download**
+**Goal:** Client fetches detection parameters from server at session start.  
+**Files:** **NEW:** `src/SDK/src/Network/RemoteConfig.cpp/.hpp`  
+**DoD:** Config download at startup; fallback to defaults; signature verification; applied correctly  
+**Depends:** P3-C1  
+**Parallel:** P3-A3, P3-B3
+
+---
+
+#### 🧩 **P3-C3: Behavioral Baseline Collection**
+**Goal:** Collect timing/input patterns for server-side analysis.  
+**Files:** **NEW:** `src/SDK/src/Telemetry/BehaviorMetrics.cpp/.hpp`  
+**DoD:** Metrics collected; sent to server; overhead < 0.5ms; privacy-preserving  
+**Depends:** Phase 2 telemetry  
+**Parallel:** P3-C1, P3-C2
+
+---
+
+#### 🧩 **P3-C4: Server-Side Anomaly Detection Foundation** *(OUT OF SCOPE)*
+**Note:** Backend task for separate repository.
+
+---
+
+### PHASE 4: Telemetry & Server-Side Adjudication
+
+**Timeline:** Q4 2026 (12 weeks)  
+**Primary Objective:** Move all enforcement to server; behavioral analysis, delayed ban waves, economic disincentives.
+
+**Exit Criteria Summary:**
+- [ ] Client contains no ban-triggering logic
+- [ ] Ban decisions require 3+ correlated signals
+- [ ] Ban waves delayed minimum 7 days
+- [ ] HWID fingerprinting operational
+- [ ] Appeal workflow functional
+
+**Note:** P4-A* (server infrastructure) and P4-C* (server analysis) are OUT OF SCOPE for Sentiel-RE. Only client tasks (P4-B*, P4-D1) included.
+
+---
+
+#### 🧩 **P4-B1: Comprehensive Event Capture**
+**Goal:** Expand client telemetry to capture all detection events.  
+**Files:** `src/SDK/src/Telemetry/`  
+**DoD:** All detector events captured; structured format; sent to server; privacy-compliant  
+**Depends:** Phase 3 complete
+
+---
+
+#### 🧩 **P4-B2: Behavioral Metric Collection**
+**Goal:** Client collects and reports behavioral patterns.  
+**Files:** `src/SDK/src/Telemetry/BehaviorMetrics.cpp` (expand from P3-C3)  
+**DoD:** Enhanced metrics; timing/input patterns; anonymized; sent to server  
+**Depends:** P4-B1
+
+---
+
+#### 🧩 **P4-B3: Hardware Fingerprinting**
+**Goal:** Collect HWID components for ban persistence.  
+**Files:** **NEW:** `src/SDK/src/Telemetry/HWID.cpp/.hpp`  
+**Feature Flag:** `SENTINEL_COLLECT_HWID` (default: OFF)  
+**Privacy:** 🔴 **REQUIRES LEGAL REVIEW BEFORE ENABLING**  
+**DoD:** HWID collected; hashed; sent to server; privacy disclosure documented; legal review complete  
+**Depends:** P4-B1
+
+---
+
+#### 🧩 **P4-B4: Encrypted Telemetry Channel**
+**Goal:** End-to-end encryption for all telemetry data.  
+**Files:** `src/SDK/src/Network/`, `src/Core/Crypto/`  
+**DoD:** All telemetry encrypted; perfect forward secrecy; key rotation; verified  
+**Depends:** Phase 1 crypto
+
+---
+
+#### 🧩 **P4-D1: Remove Client-Side Ban Logic**
+**Goal:** Audit and remove any client enforcement code.  
+**Files:** All SDK modules  
+**DoD:** No ban logic in client; violations reported only; audit doc; tests verify no enforcement  
+**Depends:** P4-A4 (server ban system operational — coordinate with backend)  
+**Risk:** 🔴 CRITICAL — Do not merge until server operational
+
+---
+
+### Backend Tasks (OUT OF SCOPE for Sentiel-RE)
+
+**P4-A1:** Event Ingestion Pipeline  
+**P4-A2:** Real-Time Correlation Engine  
+**P4-A3:** Historical Pattern Storage  
+**P4-A4:** Ban Adjudication Service  
+**P4-C1:** Statistical Anomaly Detection  
+**P4-C2:** Player Behavior Modeling  
+**P4-C3:** Cheat Signature Clustering  
+**P4-C4:** Ban Wave Scheduler  
+**P4-D2:** Appeal Submission Workflow
+
+---
+
+## SECTION C — PARALLEL EXECUTION MAP
+
+### Agent View: Parallelization Strategy
+
+#### Phase 1: Four Independent Lanes
+
+```
+Lane A (Performance):  P1-A1 → P1-A2 ⊕ P1-A3 ⊕ P1-A4
+Lane B (Telemetry):    P1-B1 → P1-B2 → P1-B3 → P1-B4
+Lane C (Testing):      P1-C1 ⊕ P1-C2 → P1-C3 → P1-C4
+Lane D (Security):     P1-D1 ⊕ P1-D2
+```
+
+**Fully Independent (Zero Conflicts):** Lanes A, B, C, D proceed simultaneously
+
+#### Phase 2: Phase Gate + Three Lanes
+
+```
+🚨 PHASE GATE: P2-A1 (must complete first)
+
+After P2-A1:
+Lane A: P2-A2 → P2-A4
+Lane B: P2-B1 → P2-B2 → P2-B3 → P2-B4
+Lane C: P2-C1 ⊕ P2-C4 → P2-C2 → P2-C3
+Lane D: P2-A3 (anytime)
+```
+
+#### Phase 3: Three Parallel Streams
+
+```
+Lane A: P3-A1 ⊕ P3-A2 → P3-A3 → P3-A4
+Lane B: P3-B1 ⊕ P3-B2 → P3-B3
+Lane C: P3-C1 → P3-C2 → P3-C3
+```
+
+#### Phase 4: Client + Backend Parallel
+
+```
+Backend (Separate Repo): P4-A*, P4-C*, P4-D2
+Client (Sentiel-RE): P4-B1 → P4-B2 ⊕ P4-B3 ⊕ P4-B4 → P4-D1
+```
+
+**Critical:** P4-D1 only after backend P4-A4 operational
+
+### Serial Bottlenecks
+
+1. **P2-A1** — Phase gate, blocks Phase 2 tasks
+2. **P4-A4 → P4-D1** — Cross-repo dependency
+3. **P1-C4** — Assign senior engineer
+
+### Requires Senior Engineer
+
+- P1-C4 (Bypass Simulation)
+- P1-D1 (Security Invariants)
+- P2-A1 (Architecture Refactor)
+- P4-D1 (Remove Ban Logic)
+
+---
+
+## SECTION D — RISK & VALIDATION FLAGS
+
+### Tasks Requiring Validation
+
+| Task | Assumption | Validation | Risk if Wrong |
+|------|------------|------------|---------------|
+| P1-A1 | 0.1ms achievable | Profile actual HW | May need relaxed target |
+| P1-A3 | SIMD ≥2x speedup | Benchmark target CPU | May reject SIMD |
+| P1-B2 | Cert pinning compatible | Platform testing | May need alternative |
+| P1-C2 | GH Actions supports VM | Research docs | May need self-hosted |
+| P4-B3 | HWID legal | **LEGAL REVIEW** | 🔴 Privacy violation |
+
+### Legal / Compliance Review
+
+| Task | Review Type | Risk Level |
+|------|-------------|------------|
+| P4-B3 | Privacy / GDPR | 🔴 CRITICAL |
+| P4-B1 | Data minimization | 🟡 MEDIUM |
+| P4-B2 | Behavioral tracking | 🟡 MEDIUM |
+
+**Required:** Privacy policy, data retention policy, user consent, deletion procedure
+
+### Feature Flag Requirements
+
+All flagged tasks MUST:
+- Default OFF for initial merge
+- Runtime toggle (no recompilation)
+- Zero impact when disabled
+- Telemetry on usage
+- Documented in RuntimeConfig
+
+**Flags:**
+- Phase 2: `SENTINEL_RANDOMIZE_LAYOUT`, `SENTINEL_OBFUSCATE_POINTERS`
+- Phase 3: `SENTINEL_RANDOMIZE_CHECKS`, `SENTINEL_SERVER_VARIANT_CONTROL`
+- Phase 4: `SENTINEL_COLLECT_HWID` (**LEGAL REVIEW REQUIRED**)
+
+### Sign-Off Requirements
+
+| Phase | Required Sign-Offs |
+|-------|-------------------|
+| Phase 1 | Performance, QA, Security |
+| Phase 2 | Architecture, Security, Performance |
+| Phase 3 | Security, Backend lead |
+| Phase 4 | **Legal**, Privacy, Security, Product |
+
+**Special:**
+- **P4-B3:** Legal, Privacy Officer, GDPR consultant REQUIRED
+- **P4-D1:** Backend confirmation, Product, Security
+- **P1-C4:** Security review, internal-only
+
+---
+
+## DELIVERABLES CHECKLIST
+
+### Documentation
+- [ ] `docs/architecture/ARCHITECTURE.md` — Updated
+- [ ] `docs/protocols/attestation.md` — Protocol spec
+- [ ] `docs/api/violation_ingestion.md` — API contract
+- [ ] `docs/integration/release_notes.md` — Release notes
+- [ ] `docs/operations/runbook.md` — Runbooks
+- [ ] `docs/performance/` — Profiling reports
+- [ ] `docs/research/` — Evaluations
+
+### SDK Artifacts
+- [ ] SentinelSDK v2.0 (static, dynamic libs)
+- [ ] Updated `include/Sentinel/SentinelSDK.hpp`
+- [ ] CMake integration package
+- [ ] Updated examples
+
+### Testing
+- [ ] Expanded DummyGame scenarios
+- [ ] VM-based CI
+- [ ] Bypass simulation (internal)
+- [ ] Performance benchmarks
+
+### Infrastructure
+- [ ] Feature flag system
+- [ ] Telemetry pipeline
+- [ ] Remote config download
+- [ ] Attestation protocol
+
+### Compliance
+- [ ] Privacy policy template
+- [ ] GDPR/CCPA docs
+- [ ] Data retention policy
+- [ ] HWID disclosure
+
+---
+
+## INTENTIONALLY OUT OF SCOPE
+
+### Backend Services (Separate Repository)
+- Event ingestion (P4-A1)
+- Correlation engine (P4-A2)
+- Pattern storage (P4-A3)
+- Ban adjudication (P4-A4)
+- Anomaly detection (P4-C1)
+- Behavior modeling (P4-C2)
+- Signature clustering (P4-C3)
+- Ban wave scheduler (P4-C4)
+- Appeal workflow (P4-D2)
+
+### Advanced Techniques (Deferred)
+- Kernel-mode driver
+- Hypervisor protection
+- Code virtualization
+- ML-based detection
+- Automated appeals
+- Multi-region infrastructure
+- Third-party intelligence
+
+---
+
+## END OF TASK EXECUTION PACK
+
+**Total Tasks:** 45 (14 Phase 1 + 11 Phase 2 + 10 Phase 3 + 10 Phase 4)  
+**Client SDK Tasks:** 35 (10 backend excluded)  
+**Timeline:** 48 weeks (Q1-Q4 2026)  
+**Phase Gates:** 2 critical (P2-A1, P4-A4→P4-D1)
+
+**Usage:**
+1. Convert tasks to GitHub Issues (task ID as title)
+2. Assign per parallelization map
+3. Use feature flags for architectural changes
+4. Require sign-offs per Section D
+5. Validate assumptions first
+
+**Version:** 1.0  
+**Date:** 2025-12-31  
+**Maintained By:** Engineering Program Management
+
+---
+*This document operationalizes the Sentinel Anti-Cheat SDK Production Execution Plan into execution-ready, agent-assignable tasks suitable for parallel development with minimal merge conflicts.*
