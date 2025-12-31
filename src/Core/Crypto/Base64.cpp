@@ -64,4 +64,55 @@ Result<ByteBuffer> fromBase64(const std::string& base64) {
     return buffer;
 }
 
+std::string toHex(ByteSpan data) {
+    if (data.empty()) {
+        return "";
+    }
+    
+    static const char hexChars[] = "0123456789abcdef";
+    std::string result;
+    result.reserve(data.size() * 2);
+    
+    for (Byte b : data) {
+        result.push_back(hexChars[(b >> 4) & 0x0F]);
+        result.push_back(hexChars[b & 0x0F]);
+    }
+    
+    return result;
+}
+
+Result<ByteBuffer> fromHex(const std::string& hex) {
+    if (hex.empty()) {
+        return ByteBuffer{};
+    }
+    
+    // Hex string must have even length
+    if (hex.length() % 2 != 0) {
+        return ErrorCode::InvalidHexString;
+    }
+    
+    ByteBuffer result;
+    result.reserve(hex.length() / 2);
+    
+    auto hexCharToNibble = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
+    
+    for (size_t i = 0; i < hex.length(); i += 2) {
+        int high = hexCharToNibble(hex[i]);
+        int low = hexCharToNibble(hex[i + 1]);
+        
+        if (high < 0 || low < 0) {
+            return ErrorCode::InvalidHexString;
+        }
+        
+        result.push_back(static_cast<Byte>((high << 4) | low));
+    }
+    
+    return result;
+}
+
 } // namespace Sentinel::Crypto

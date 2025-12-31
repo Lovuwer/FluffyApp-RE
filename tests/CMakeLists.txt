@@ -53,6 +53,30 @@ if(CURL_FOUND)
             gtest
             gtest_main
     )
+    
+    # Request Signer tests (depends on crypto)
+    add_executable(RequestSignerTests
+        Core/test_request_signer.cpp
+    )
+    
+    target_link_libraries(RequestSignerTests
+        PRIVATE
+            SentinelCore
+            gtest
+            gtest_main
+    )
+    
+    # Request Signing Integration tests
+    add_executable(RequestSigningIntegrationTests
+        Core/test_request_signing_integration.cpp
+    )
+    
+    target_link_libraries(RequestSigningIntegrationTests
+        PRIVATE
+            SentinelCore
+            gtest
+            gtest_main
+    )
 endif()
 
 # SDK tests
@@ -169,6 +193,8 @@ gtest_discover_tests(VMDeobfuscatorTests)
 
 if(CURL_FOUND)
     gtest_discover_tests(HttpClientTests)
+    gtest_discover_tests(RequestSignerTests)
+    gtest_discover_tests(RequestSigningIntegrationTests)
 endif()
 
 if(SENTINEL_BUILD_CORTEX)
