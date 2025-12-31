@@ -24,7 +24,9 @@ jobs:
           cmake \
           build-essential \
           ninja-build \
-          libssl-dev
+          libssl-dev \
+          libcurl4-openssl-dev \
+          valgrind
     
     - name: Configure CMake
       run: |
@@ -33,10 +35,22 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release \
           -DSENTINEL_BUILD_CORTEX=OFF \
           -DSENTINEL_BUILD_WATCHTOWER=OFF \
-          -DSENTINEL_BUILD_TESTS=OFF
+          -DSENTINEL_BUILD_TESTS=ON
     
     - name: Build
       run: cmake --build build --config Release
+    
+    - name: Run Tests
+      run: |
+        cd build
+        ctest --output-on-failure
+    
+    - name: Run HTTP Client Tests with Valgrind
+      if: success()
+      run: |
+        cd build/bin
+        valgrind --leak-check=full --error-exitcode=1 --errors-for-leak-kinds=definite \
+          ./HttpClientTests --gtest_filter=HttpClientTest.BasicGetRequest
     
     - name: Upload artifacts
       uses: actions/upload-artifact@v4

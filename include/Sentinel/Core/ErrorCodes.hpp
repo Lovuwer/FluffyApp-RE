@@ -225,6 +225,15 @@ enum class ErrorCode : uint16_t {
     /// Request rate limited
     RateLimited = 0x0409,
     
+    /// Network unreachable
+    NetworkUnreachable = 0x040A,
+    
+    /// TLS version too old (minimum TLS 1.3 required)
+    TlsVersionTooOld = 0x040B,
+    
+    /// cURL initialization failed
+    CurlInitFailed = 0x040C,
+    
     // ========================================================================
     // Analysis Errors (0x0500-0x05FF)
     // ========================================================================

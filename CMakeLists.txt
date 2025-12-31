@@ -228,6 +228,12 @@ if(NOT OpenSSL_FOUND)
     message(WARNING "OpenSSL not found. Using Windows BCrypt instead.")
 endif()
 
+# Find CURL
+find_package(CURL QUIET)
+if(NOT CURL_FOUND)
+    message(WARNING "libcurl not found. HTTP client will not be built.")
+endif()
+
 # ============================================================================
 # Third-Party Libraries (vendored or fetched)
 # ============================================================================
@@ -432,6 +438,7 @@ message(STATUS "")
 message(STATUS "Dependencies:")
 message(STATUS "  Qt6 Found:        ${Qt6_FOUND}")
 message(STATUS "  OpenSSL Found:    ${OpenSSL_FOUND}")
+message(STATUS "  CURL Found:       ${CURL_FOUND}")
 message(STATUS "  Doxygen Found:    ${DOXYGEN_FOUND}")
 message(STATUS "")
 message(STATUS "============================================")

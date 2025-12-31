@@ -41,6 +41,20 @@ target_link_libraries(CoreTests
         gtest_main
 )
 
+# HTTP Client integration tests (separate executable)
+if(CURL_FOUND)
+    add_executable(HttpClientTests
+        Core/test_http_client.cpp
+    )
+    
+    target_link_libraries(HttpClientTests
+        PRIVATE
+            SentinelCore
+            gtest
+            gtest_main
+    )
+endif()
+
 # SDK tests
 add_executable(SDKTests
     SDK/test_main.cpp
@@ -152,6 +166,10 @@ gtest_discover_tests(CoreTests)
 gtest_discover_tests(SDKTests)
 gtest_discover_tests(PatchGeneratorTests)
 gtest_discover_tests(VMDeobfuscatorTests)
+
+if(CURL_FOUND)
+    gtest_discover_tests(HttpClientTests)
+endif()
 
 if(SENTINEL_BUILD_CORTEX)
     gtest_discover_tests(CortexTests)
