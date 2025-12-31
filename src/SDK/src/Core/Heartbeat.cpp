@@ -13,6 +13,8 @@ namespace Sentinel {
 namespace SDK {
 
 // Stub implementation - To be implemented
+// Heartbeat functionality is implemented in Core library (Network/Heartbeat.cpp)
+// and can be used via Sentinel::Network::Heartbeat class
 
 } // namespace SDK
 } // namespace Sentinel
