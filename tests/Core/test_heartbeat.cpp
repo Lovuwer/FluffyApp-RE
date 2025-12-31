@@ -189,7 +189,7 @@ TEST_F(HeartbeatTest, DISABLED_Callbacks) {
     // Should have received failure callback (server unreachable)
     EXPECT_EQ(failureCallbackCount.load(), 1);
     EXPECT_EQ(successCallbackCount.load(), 0);
-    EXPECT_EQ(lastSequence.load(), 0);
+    EXPECT_EQ(lastSequence.load(), 1);  // Sequence starts at 0, increments to 1 after first heartbeat
 }
 
 // Test graceful shutdown

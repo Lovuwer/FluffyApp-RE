@@ -160,14 +160,14 @@ private:
     }
     
     Result<void> sendHeartbeatInternal() {
-        // Get current sequence number
-        uint64_t sequence = m_sequenceNumber.fetch_add(1);
+        // Get current sequence number (incremented after heartbeat attempt)
+        uint64_t sequence = m_sequenceNumber.load();
         
         // Build heartbeat payload
         std::string payload = buildHeartbeatPayload(sequence);
         
         // Send with retries
-        Result<void> result = ErrorCode::NetworkError;
+        Result<void> result = ErrorCode::InternalError;
         int retries = 0;
         int maxRetries = m_config.maxRetries;
         
@@ -184,7 +184,8 @@ private:
                 auto response = m_httpClient->send(request);
                 
                 if (response.isSuccess() && response.value().isSuccess()) {
-                    // Success
+                    // Success - increment sequence number
+                    m_sequenceNumber.fetch_add(1);
                     m_successCount.fetch_add(1);
                     m_lastSuccess = Clock::now();
                     m_lastError = ErrorCode::Success;
@@ -197,7 +198,8 @@ private:
                     }
                     
                     if (m_config.enableLogging) {
-                        logHeartbeat(sequence, true, ErrorCode::Success);
+                        // TODO: Add proper logging using spdlog or similar
+                        // logHeartbeat(sequence, true, ErrorCode::Success);
                     }
                     
                     break;
@@ -213,7 +215,8 @@ private:
                         std::this_thread::sleep_for(m_config.retryDelay);
                         continue;
                     } else {
-                        // Max retries exceeded
+                        // Max retries exceeded - increment sequence number
+                        m_sequenceNumber.fetch_add(1);
                         m_failureCount.fetch_add(1);
                         m_lastFailure = Clock::now();
                         m_lastError = errorCode;
@@ -226,7 +229,8 @@ private:
                         }
                         
                         if (m_config.enableLogging) {
-                            logHeartbeat(sequence, false, errorCode);
+                            // TODO: Add proper logging using spdlog or similar
+                            // logHeartbeat(sequence, false, errorCode);
                         }
                     }
                 }
@@ -237,6 +241,7 @@ private:
                     std::this_thread::sleep_for(m_config.retryDelay);
                     continue;
                 } else {
+                    m_sequenceNumber.fetch_add(1);
                     m_failureCount.fetch_add(1);
                     m_lastFailure = Clock::now();
                     m_lastError = ErrorCode::NetworkError;
@@ -248,7 +253,8 @@ private:
                     }
                     
                     if (m_config.enableLogging) {
-                        logHeartbeat(sequence, false, ErrorCode::NetworkError);
+                        // TODO: Add proper logging using spdlog or similar
+                        // logHeartbeat(sequence, false, ErrorCode::NetworkError);
                     }
                 }
             }
@@ -304,15 +310,6 @@ private:
         
         // Return base interval + jitter
         return Milliseconds(m_config.interval.count() + jitter);
-    }
-    
-    void logHeartbeat(uint64_t sequence, bool success, ErrorCode error) {
-        // Simple logging - in production, use proper logging framework
-        // This is just for debugging
-        (void)sequence;
-        (void)success;
-        (void)error;
-        // No actual logging to avoid dependencies
     }
 
 private:
