@@ -347,10 +347,6 @@ private:
 
     class Impl;
     std::unique_ptr<Impl> m_impl;
-    
-    // Static assertion to prevent accidental re-exposure of nonce-controlled API
-    // This will cause a compile error if someone tries to make these methods public
-    static_assert(std::is_class_v<Impl>, "AESCipher implementation must remain encapsulated");
 };
 
 // ============================================================================

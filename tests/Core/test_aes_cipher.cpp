@@ -560,10 +560,13 @@ TEST(AESCipher, NonceUniqueness_10000Encryptions_AllUnique) {
     // Plaintext for testing
     ByteBuffer plaintext = {0x01, 0x02, 0x03, 0x04, 0x05};
     
-    // Set to track unique nonces
-    std::set<std::string> uniqueNonces;
+    // Set to track unique nonces using hash of nonce bytes
+    std::set<ByteBuffer> uniqueNonces;
     
     // Perform 10,000 encryptions
+    // This number is intentionally high to provide strong statistical confidence
+    // that nonce generation is truly random and collision-free under normal operation.
+    // Even a single collision in 10K iterations would be a critical security vulnerability.
     constexpr size_t iterations = 10000;
     for (size_t i = 0; i < iterations; ++i) {
         auto encryptResult = cipher.encrypt(plaintext);
@@ -573,10 +576,10 @@ TEST(AESCipher, NonceUniqueness_10000Encryptions_AllUnique) {
         const auto& ciphertext = encryptResult.value();
         ASSERT_GE(ciphertext.size(), 12u) << "Ciphertext too short at iteration " << i;
         
-        std::string nonceStr(ciphertext.begin(), ciphertext.begin() + 12);
+        ByteBuffer nonce(ciphertext.begin(), ciphertext.begin() + 12);
         
         // Verify this nonce hasn't been used before
-        auto insertResult = uniqueNonces.insert(nonceStr);
+        auto insertResult = uniqueNonces.insert(nonce);
         EXPECT_TRUE(insertResult.second) 
             << "Nonce reuse detected at iteration " << i 
             << " - this is a critical security vulnerability!";
