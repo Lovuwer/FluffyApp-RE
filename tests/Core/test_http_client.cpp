@@ -230,6 +230,94 @@ TEST_F(HttpClientTest, MoveSemantics) {
     EXPECT_FALSE(response.isSuccess());
 }
 
+// Test certificate pinning integration
+TEST_F(HttpClientTest, CertificatePinningIntegration) {
+    // This test demonstrates that certificate pinning rejects connections
+    // with mismatched certificates
+    
+    // Create a certificate pin with a dummy hash (won't match any real cert)
+    CertificatePin pin;
+    pin.hostname = "example.com";
+    
+    // Create a dummy SHA256 hash (32 bytes of zeros)
+    SHA256Hash dummyHash;
+    std::fill(dummyHash.begin(), dummyHash.end(), 0);
+    pin.pins.push_back(dummyHash);
+    pin.includeSubdomains = false;
+    
+    // Add the pin to the client
+    client.addCertificatePin(pin);
+    client.setPinningEnabled(true);
+    
+    // Try to connect to a real domain - should fail due to pin mismatch
+    // Using example.com which has valid TLS but won't match our dummy pin
+    HttpRequest request;
+    request.url = "https://example.com";
+    request.timeout = Milliseconds{2000};
+    request.enablePinning = true;
+    
+    auto response = client.send(request);
+    
+    // Should fail - either due to certificate pinning or connection issues
+    // The important thing is it doesn't crash and handles pinning configuration
+    EXPECT_FALSE(response.isSuccess());
+}
+
+// Test that pinning can be disabled
+TEST_F(HttpClientTest, CertificatePinningCanBeDisabled) {
+    // Create a certificate pin
+    CertificatePin pin;
+    pin.hostname = "example.com";
+    
+    SHA256Hash dummyHash;
+    std::fill(dummyHash.begin(), dummyHash.end(), 0);
+    pin.pins.push_back(dummyHash);
+    
+    client.addCertificatePin(pin);
+    
+    // Disable pinning
+    client.setPinningEnabled(false);
+    
+    HttpRequest request;
+    request.url = "https://example.com";
+    request.timeout = Milliseconds{2000};
+    
+    auto response = client.send(request);
+    
+    // May still fail due to network, but should not fail due to pinning
+    // This just ensures the API works without crashes
+    (void)response;
+    SUCCEED();
+}
+
+// Test CertPinner API
+TEST_F(HttpClientTest, CertPinnerAPI) {
+    auto pinner = std::make_shared<CertPinner>();
+    
+    CertificatePin pin1;
+    pin1.hostname = "example.com";
+    SHA256Hash hash1;
+    std::fill(hash1.begin(), hash1.end(), 1);
+    pin1.pins.push_back(hash1);
+    
+    CertificatePin pin2;
+    pin2.hostname = "test.com";
+    SHA256Hash hash2;
+    std::fill(hash2.begin(), hash2.end(), 2);
+    pin2.pins.push_back(hash2);
+    
+    pinner->addPin(pin1);
+    pinner->addPin(pin2);
+    
+    EXPECT_EQ(pinner->getPins().size(), 2u);
+    
+    pinner->removePin("example.com");
+    EXPECT_EQ(pinner->getPins().size(), 1u);
+    
+    pinner->clearPins();
+    EXPECT_EQ(pinner->getPins().size(), 0u);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

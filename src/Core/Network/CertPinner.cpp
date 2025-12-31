@@ -1,18 +1,105 @@
 /**
- * Sentinel Core Library - Stub Implementation
+ * @file CertPinner.cpp
+ * @brief Certificate pinner implementation for HttpClient
+ * @author Sentinel Security Team
+ * @version 1.0.0
+ * @date 2025
  * 
- * Copyright (c) 2025 Sentinel Security. All rights reserved.
- * 
- * This is a stub implementation created as part of Phase 1: Foundation Setup
- * TODO: Implement actual functionality according to production readiness plan
+ * @copyright Copyright (c) 2025 Sentinel Security. All rights reserved.
  */
 
-namespace Sentinel {
-namespace Core {
-namespace Network {
+#include <Sentinel/Core/HttpClient.hpp>
+#include <Sentinel/Core/Network.hpp>
+#include <vector>
+#include <algorithm>
 
-// Stub implementation - To be implemented
+namespace Sentinel::Network {
 
-} // namespace Network
-} // namespace Core
-} // namespace Sentinel
+class CertPinner::Impl {
+public:
+    std::vector<CertificatePin> pins_;
+};
+
+CertPinner::CertPinner() : m_impl(std::make_unique<Impl>()) {}
+
+CertPinner::~CertPinner() = default;
+
+void CertPinner::addPin(const CertificatePin& pin) {
+    m_impl->pins_.push_back(pin);
+}
+
+void CertPinner::addPins(const std::vector<CertificatePin>& pins) {
+    m_impl->pins_.insert(m_impl->pins_.end(), pins.begin(), pins.end());
+}
+
+void CertPinner::removePin(const std::string& hostname) {
+    auto it = std::remove_if(m_impl->pins_.begin(), m_impl->pins_.end(),
+        [&hostname](const CertificatePin& pin) {
+            return pin.hostname == hostname;
+        });
+    m_impl->pins_.erase(it, m_impl->pins_.end());
+}
+
+void CertPinner::clearPins() {
+    m_impl->pins_.clear();
+}
+
+bool CertPinner::verify(
+    const std::string& hostname,
+    const std::vector<ByteBuffer>& certChain
+) const {
+    // Find pins for this hostname
+    std::vector<const CertificatePin*> matchingPins;
+    
+    for (const auto& pin : m_impl->pins_) {
+        if (pin.hostname == hostname) {
+            matchingPins.push_back(&pin);
+        } else if (pin.includeSubdomains && hostname.size() > pin.hostname.size()) {
+            // Check if hostname is a subdomain
+            std::string suffix = hostname.substr(hostname.size() - pin.hostname.size());
+            if (suffix == pin.hostname && 
+                hostname[hostname.size() - pin.hostname.size() - 1] == '.') {
+                matchingPins.push_back(&pin);
+            }
+        }
+    }
+    
+    // If no pins configured for this hostname, allow by default
+    if (matchingPins.empty()) {
+        return true;
+    }
+    
+    // Check if any certificate in the chain matches any pin
+    for (const auto& cert : certChain) {
+        auto hashResult = computeSPKIHash(cert);
+        if (hashResult.isFailure()) {
+            continue; // Skip invalid certificates
+        }
+        
+        std::string certHashBase64 = hashResult.value();
+        
+        // Convert to SHA256Hash format for comparison
+        auto sha256Result = Crypto::fromBase64(certHashBase64);
+        if (sha256Result.isFailure()) {
+            continue;
+        }
+        
+        // Check against all matching pins
+        for (const auto* pin : matchingPins) {
+            for (const auto& pinHash : pin->pins) {
+                if (sha256Result.value() == pinHash) {
+                    return true; // Pin matched
+                }
+            }
+        }
+    }
+    
+    // No pin matched - fail closed
+    return false;
+}
+
+const std::vector<CertificatePin>& CertPinner::getPins() const {
+    return m_impl->pins_;
+}
+
+} // namespace Sentinel::Network
