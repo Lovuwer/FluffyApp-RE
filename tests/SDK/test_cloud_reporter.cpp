@@ -91,10 +91,11 @@ TEST_F(CloudReporterTest, QueueSingleEvent) {
 TEST_F(CloudReporterTest, QueueMultipleEvents) {
     // Queue multiple events
     for (int i = 0; i < 5; ++i) {
+        std::string details = "Test event " + std::to_string(i);
         auto event = CreateTestEvent(
             ViolationType::DebuggerAttached,
             Severity::High,
-            ("Test event " + std::to_string(i)).c_str()
+            details.c_str()
         );
         reporter->QueueEvent(event);
     }
@@ -215,10 +216,11 @@ TEST_F(CloudReporterTest, QueueOverflowEviction) {
     // Queue many events to test overflow handling
     // The implementation should handle queue depth limit (1000)
     for (int i = 0; i < 1100; ++i) {
+        std::string details = "Event " + std::to_string(i);
         auto event = CreateTestEvent(
             ViolationType::DebuggerAttached,
             Severity::Info,
-            ("Event " + std::to_string(i)).c_str()
+            details.c_str()
         );
         reporter->QueueEvent(event);
     }
@@ -264,10 +266,11 @@ TEST_F(CloudReporterTest, ConcurrentQueuing) {
     for (int t = 0; t < 4; ++t) {
         threads.emplace_back([this, &counter]() {
             for (int i = 0; i < 25; ++i) {
+                std::string details = "Thread event " + std::to_string(counter++);
                 auto event = CreateTestEvent(
                     ViolationType::DebuggerAttached,
                     Severity::High,
-                    ("Thread event " + std::to_string(counter++)).c_str()
+                    details.c_str()
                 );
                 reporter->QueueEvent(event);
             }
@@ -325,10 +328,11 @@ TEST_F(CloudReporterTest, EndToEndFlow) {
     
     // Queue some normal events
     for (int i = 0; i < 3; ++i) {
+        std::string details = "Normal event " + std::to_string(i);
         auto event = CreateTestEvent(
             ViolationType::DebuggerAttached,
             Severity::Warning,
-            ("Normal event " + std::to_string(i)).c_str()
+            details.c_str()
         );
         reporter->QueueEvent(event);
     }

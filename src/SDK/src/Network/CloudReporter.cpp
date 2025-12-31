@@ -51,7 +51,6 @@ public:
         , interval_ms_(30000)
         , max_queue_depth_(1000)
         , running_(false)
-        , retry_count_(0)
     {
         // Initialize HTTP client
         http_client_ = std::make_unique<HttpClient>();
@@ -139,7 +138,7 @@ public:
         
         // Create a custom violation event
         ViolationEvent event;
-        event.type = static_cast<ViolationType>(0x100000); // Custom event type
+        event.type = static_cast<ViolationType>(CUSTOM_EVENT_TYPE);
         event.severity = Severity::Info;
         event.timestamp = GetCurrentTimestamp();
         event.address = 0;
@@ -207,9 +206,6 @@ private:
                 lock.unlock();
                 
                 SaveToOfflineStorage(batch);
-            } else {
-                // Successfully sent - reset retry count
-                retry_count_ = 0;
             }
             
             last_batch_time = std::chrono::steady_clock::now();
@@ -502,9 +498,6 @@ private:
     
     std::thread reporter_thread_;
     bool running_;
-    
-    // Retry state
-    int retry_count_;
     
     // Offline storage
     std::string offline_storage_path_;
