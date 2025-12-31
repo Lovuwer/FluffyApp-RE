@@ -134,9 +134,18 @@ public:
     static void ResetExceptionStats();
     
     /**
-     * Check if exception limit has been exceeded
+     * Set the exception budget for the current scan
+     * Task 09: Allow runtime configuration of exception limit
      * 
-     * @param max_exceptions Maximum allowed exceptions (default: 10)
+     * @param budget Maximum exceptions allowed per scan
+     */
+    static void SetExceptionBudget(uint32_t budget);
+    
+    /**
+     * Check if exception limit has been exceeded
+     * Task 09: Now uses the configured budget if set, otherwise uses provided default
+     * 
+     * @param max_exceptions Default maximum allowed exceptions (used if budget not set)
      * @return true if limit exceeded
      */
     static bool IsExceptionLimitExceeded(uint32_t max_exceptions = 10);
@@ -145,6 +154,7 @@ private:
     static ExceptionStats exception_stats_;
     static uint8_t canary_buffer_[64];
     static bool canary_initialized_;
+    static uint32_t exception_budget_;  // Task 09: Configurable exception budget per scan
     
     static void InitializeCanary();
 };

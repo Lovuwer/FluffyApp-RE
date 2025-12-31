@@ -32,6 +32,7 @@ namespace SDK {
 ExceptionStats SafeMemory::exception_stats_;
 uint8_t SafeMemory::canary_buffer_[64];
 bool SafeMemory::canary_initialized_ = false;
+uint32_t SafeMemory::exception_budget_ = 0;  // Task 09: 0 means use default from parameter
 
 bool SafeMemory::IsReadable(const void* address, size_t size) {
     if (!address || size == 0) {
@@ -322,8 +323,14 @@ void SafeMemory::ResetExceptionStats() {
     exception_stats_.Reset();
 }
 
+void SafeMemory::SetExceptionBudget(uint32_t budget) {
+    exception_budget_ = budget;
+}
+
 bool SafeMemory::IsExceptionLimitExceeded(uint32_t max_exceptions) {
-    return exception_stats_.GetTotalExceptions() >= max_exceptions;
+    // Task 09: Use configured budget if set, otherwise use provided default
+    uint32_t limit = (exception_budget_ > 0) ? exception_budget_ : max_exceptions;
+    return exception_stats_.GetTotalExceptions() >= limit;
 }
 
 } // namespace SDK

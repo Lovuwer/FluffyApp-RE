@@ -30,6 +30,7 @@ add_executable(CoreTests
     Core/test_rsa_signer.cpp
     Core/test_certificate_pinning.cpp
     Core/test_config_loader.cpp
+    Core/test_memory.cpp
 )
 
 target_link_libraries(CoreTests
@@ -61,6 +62,7 @@ add_executable(SDKTests
     SDK/test_environment_detection.cpp
     SDK/test_overlay_verifier.cpp
     SDK/test_telemetry_config.cpp
+    SDK/test_exception_budget.cpp
     SDK/test_handle_generation.cpp
     SDK/test_watchdog.cpp
 )

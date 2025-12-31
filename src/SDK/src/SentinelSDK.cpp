@@ -14,6 +14,7 @@
 #include "Internal/RuntimeConfig.hpp"
 #include "Internal/EnvironmentDetection.hpp"
 #include "Internal/Watchdog.hpp"
+#include "Internal/SafeMemory.hpp"  // Task 09: For exception budget tracking
 
 #include <atomic>
 #include <chrono>
@@ -165,6 +166,7 @@ bool IsDetectionDryRun(DetectionType detection_type) {
 }
 
 // Task 14: Wrapper for detection execution with telemetry and exception handling
+// Task 09: Added exception budget enforcement per scan
 template<typename DetectionFunc>
 std::vector<ViolationEvent> RunDetectionWithTelemetry(
     DetectionType detection_type,
@@ -180,6 +182,13 @@ std::vector<ViolationEvent> RunDetectionWithTelemetry(
         return violations;
     }
     
+    // Task 09: Reset exception count at start of each scan and set budget
+    SafeMemory::ResetExceptionStats();
+    if (g_context->runtime_config) {
+        uint32_t budget = g_context->runtime_config->GetGlobalConfig().exception_budget_per_scan;
+        SafeMemory::SetExceptionBudget(budget);
+    }
+    
     auto start_time = std::chrono::high_resolution_clock::now();
     
     try {
@@ -193,6 +202,26 @@ std::vector<ViolationEvent> RunDetectionWithTelemetry(
         // Set performance metrics for telemetry
         if (g_context->telemetry) {
             g_context->telemetry->SetPerformanceMetrics(duration_us, 0);  // Memory scanned would be set by detector
+        }
+        
+        // Task 09: Check if exception budget was exceeded during scan
+        if (g_context->runtime_config) {
+            uint32_t budget = g_context->runtime_config->GetGlobalConfig().exception_budget_per_scan;
+            auto& stats = SafeMemory::GetExceptionStats();
+            if (stats.GetTotalExceptions() > budget) {
+                // Log budget exceeded event
+                ViolationEvent budget_event;
+                budget_event.type = ViolationType::None;  // Task 09: Informational event
+                budget_event.severity = Severity::Warning;  // Task 09: Budget exceeded is a warning
+                budget_event.timestamp = GetSecureTime();
+                budget_event.details = "Exception budget exceeded: " + 
+                                      std::to_string(stats.GetTotalExceptions()) + 
+                                      " > " + std::to_string(budget) + " (scan stopped, partial results returned)";
+                budget_event.detection_id = static_cast<uint32_t>(detection_type);
+                
+                // Emit telemetry for budget exceeded event
+                EmitDetectionTelemetry(budget_event, detection_type, base_confidence);
+            }
         }
         
         // Emit telemetry for each violation
