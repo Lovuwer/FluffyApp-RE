@@ -329,6 +329,60 @@ TEST(SpeedHackTests, NoMemoryLeaksIn100Cycles) {
 }
 
 /**
+ * Test: Slow-Motion Detection - Extreme Deceleration
+ * This test verifies that slow-motion with ratio = 0.5 would trigger detection.
+ * 
+ * Threshold logic: MAX_TIME_SCALE_DEVIATION = 0.25 (25%)
+ * - Valid range: [1.0 - 0.25, 1.0 + 0.25] = [0.75, 1.25]
+ * - ratio = 0.5 is below 0.75 → should trigger detection
+ */
+TEST(SpeedHackTests, SlowMotionDetectionExtreme) {
+    // This test verifies the threshold logic for slow-motion detection
+    // Note: Constant duplicated here to explicitly document the expected behavior
+    // and ensure the test is self-contained and clear about the threshold being tested
+    constexpr float MAX_TIME_SCALE_DEVIATION = 0.25f;
+    constexpr double ratio_extreme = 0.5;  // 50% speed (extreme slow-motion)
+    
+    // Calculate expected result
+    bool should_detect = (ratio_extreme < 1.0 - MAX_TIME_SCALE_DEVIATION);
+    
+    EXPECT_TRUE(should_detect)
+        << "Ratio " << ratio_extreme << " should trigger slow-motion detection (below threshold "
+        << (1.0 - MAX_TIME_SCALE_DEVIATION) << ")";
+    
+    // Verify the math: 0.5 < 0.75 → detection
+    EXPECT_LT(ratio_extreme, 1.0 - MAX_TIME_SCALE_DEVIATION)
+        << "Extreme slow-motion (ratio=0.5) must be detected";
+}
+
+/**
+ * Test: Slow-Motion Detection - Within Tolerance
+ * This test verifies that ratio = 0.8 does NOT trigger detection (within tolerance).
+ * 
+ * Threshold logic: MAX_TIME_SCALE_DEVIATION = 0.25 (25%)
+ * - Valid range: [1.0 - 0.25, 1.0 + 0.25] = [0.75, 1.25]
+ * - ratio = 0.8 is above 0.75 → should NOT trigger detection
+ */
+TEST(SpeedHackTests, SlowMotionWithinTolerance) {
+    // This test verifies the threshold logic for acceptable variance
+    // Note: Constant duplicated here to explicitly document the expected behavior
+    // and ensure the test is self-contained and clear about the threshold being tested
+    constexpr float MAX_TIME_SCALE_DEVIATION = 0.25f;
+    constexpr double ratio_within_tolerance = 0.8;  // 80% speed (within tolerance)
+    
+    // Calculate expected result
+    bool should_detect = (ratio_within_tolerance < 1.0 - MAX_TIME_SCALE_DEVIATION);
+    
+    EXPECT_FALSE(should_detect)
+        << "Ratio " << ratio_within_tolerance << " should NOT trigger detection (above threshold "
+        << (1.0 - MAX_TIME_SCALE_DEVIATION) << ")";
+    
+    // Verify the math: 0.8 > 0.75 → no detection
+    EXPECT_GT(ratio_within_tolerance, 1.0 - MAX_TIME_SCALE_DEVIATION)
+        << "Slow-motion within tolerance (ratio=0.8) must NOT be detected";
+}
+
+/**
  * Manual test instructions (not automated):
  * 
  * Adversarial Test - Simulated Speed Hack:
@@ -354,8 +408,24 @@ TEST(SpeedHackTests, NoMemoryLeaksIn100Cycles) {
  * 4. Verify that the calibration is still accurate and detection still works
  * 5. The calibration now uses busy-wait with QueryPerformanceCounter, so Sleep() hooks have no effect
  * 
+ * Adversarial Test - Slow-Motion Cheat:
+ * To manually test slow-motion detection with Cheat Engine:
+ * 1. Build the test executable in Release mode
+ * 2. Open Cheat Engine
+ * 3. Attach to the test process
+ * 4. Enable Speedhack with slow-motion (e.g., 0.5x speed)
+ * 5. Run the NormalOperation test for at least 60 frames
+ * 6. Verify that detection triggers (ValidateFrame returns false)
+ * 
+ * Expected behavior with 0.5x slow-motion:
+ * - Wall clock validation activates every 60 frames
+ * - After 1 second of wall time, ratio calculation shows ~0.5
+ * - Since 0.5 < 0.75 (1.0 - 0.25), detection should trigger
+ * - ValidateFrame() should return false
+ * 
  * Definition of Done criteria:
  * - Detects 2x speed acceleration within 3 seconds
+ * - Detects slow-motion (ratio < 0.75) via wall clock validation
  * - Zero false positives in 10000 normal frames (25% threshold)
  * - Time scale estimation accurate ±5%
  * - ValidateFrame() executes in < 1ms

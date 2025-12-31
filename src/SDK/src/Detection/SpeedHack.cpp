@@ -445,9 +445,13 @@ bool SpeedHackDetector::ValidateAgainstWallClock() {
     if (elapsedWall > 1000) {  // Only check after 1 second
         double ratio = elapsedQPCMs / (double)elapsedWall;
         
-        // Speed hack would cause ratio > 1.0 (QPC advancing faster than wall)
+        // Speed hack detection (acceleration)
         if (ratio > 1.0 + MAX_TIME_SCALE_DEVIATION) {
-            return false;  // Speed hack detected
+            return false;
+        }
+        // Slow-motion detection (deceleration) - commonly used for aim assist
+        if (ratio < 1.0 - MAX_TIME_SCALE_DEVIATION) {
+            return false;
         }
     }
     
