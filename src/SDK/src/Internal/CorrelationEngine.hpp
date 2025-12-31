@@ -41,7 +41,7 @@ struct DetectionSignal {
     std::chrono::steady_clock::time_point timestamp;
     std::string details;
     uint64_t address;
-    const char* module_name;
+    std::string module_name;  // Changed from const char* to prevent use-after-free
     uint32_t scan_cycle;  // Track which scan cycle detected this
     uint32_t persistence_count;  // How many consecutive scans this signal persisted
 };

@@ -111,7 +111,7 @@ bool CorrelationEngine::ProcessViolation(
     signal.timestamp = now;
     signal.details = event.details;
     signal.address = event.address;
-    signal.module_name = event.module_name.c_str();
+    signal.module_name = event.module_name.empty() ? "<unknown>" : event.module_name;
     signal.scan_cycle = state_.current_scan_cycle;
     signal.persistence_count = 1;  // Initial persistence
     
@@ -556,8 +556,8 @@ bool CorrelationEngine::IsFalsePositivePattern() const {
         if (signal.category == DetectionCategory::MemoryRWX) {
             has_rwx_detection = true;
         }
-        if (signal.category == DetectionCategory::Hooks && signal.module_name) {
-            std::string module(signal.module_name);  // Safe - checked for null above
+        if (signal.category == DetectionCategory::Hooks && !signal.module_name.empty()) {
+            std::string module = signal.module_name;
             std::transform(module.begin(), module.end(), module.begin(), ::tolower);
             if (module.find("overlay") != std::string::npos ||
                 module.find("discord") != std::string::npos) {
