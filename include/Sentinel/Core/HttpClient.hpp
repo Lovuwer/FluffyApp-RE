@@ -349,6 +349,23 @@ public:
      * @brief Clear proxy setting
      */
     void clearProxy();
+    
+    /**
+     * @brief Set request signer for automatic request authentication
+     * @param signer Shared pointer to RequestSigner instance
+     * 
+     * When a signer is set, all HTTP requests will automatically include
+     * X-Signature and X-Timestamp headers for authentication.
+     */
+    void setRequestSigner(std::shared_ptr<class RequestSigner> signer);
+    
+    /**
+     * @brief Clear request signer
+     * 
+     * Removes automatic request signing. Subsequent requests will not
+     * include authentication headers.
+     */
+    void clearRequestSigner();
 
 private:
     class Impl;

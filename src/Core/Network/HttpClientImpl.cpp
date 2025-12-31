@@ -9,6 +9,7 @@
  */
 
 #include <Sentinel/Core/HttpClient.hpp>
+#include <Sentinel/Core/RequestSigner.hpp>
 #include <Sentinel/Core/ErrorCodes.hpp>
 
 #ifdef SENTINEL_USE_CURL
@@ -131,6 +132,29 @@ public:
         
         std::lock_guard<std::mutex> lock(m_mutex);
         
+        // Create a mutable copy of the request to add signature headers
+        HttpRequest signedRequest = request;
+        
+        // Add signature headers if signer is configured
+        if (m_requestSigner) {
+            // Extract path from URL
+            std::string path = RequestSigner::extractPath(request.url);
+            
+            // Sign the request
+            auto signResult = m_requestSigner->sign(
+                request.method,
+                path,
+                ByteSpan(request.body.data(), request.body.size())
+            );
+            
+            if (signResult.isSuccess()) {
+                const auto& signedData = signResult.value();
+                signedRequest.headers["X-Signature"] = signedData.signature;
+                signedRequest.headers["X-Timestamp"] = std::to_string(signedData.timestamp);
+            }
+            // If signing fails, proceed without signature (could also return error)
+        }
+        
         // Create cURL handle
         CURL* curl = curl_easy_init();
         if (!curl) {
@@ -152,10 +176,10 @@ public:
         configureTlsVerification(curl, true, true);
         
         // Set URL
-        curl_easy_setopt(curl, CURLOPT_URL, request.url.c_str());
+        curl_easy_setopt(curl, CURLOPT_URL, signedRequest.url.c_str());
         
         // Set method
-        switch (request.method) {
+        switch (signedRequest.method) {
             case HttpMethod::GET:
                 curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
                 break;
@@ -182,7 +206,7 @@ public:
         // Set headers
         struct curl_slist* headerList = nullptr;
         auto allHeaders = m_defaultHeaders;
-        allHeaders.insert(request.headers.begin(), request.headers.end());
+        allHeaders.insert(signedRequest.headers.begin(), signedRequest.headers.end());
         
         for (const auto& [name, value] : allHeaders) {
             std::string header = name + ": " + value;
@@ -194,29 +218,29 @@ public:
         }
         
         // Set body for POST/PUT/PATCH
-        std::pair<const ByteBuffer*, size_t> readData{&request.body, 0};
-        if ((request.method == HttpMethod::POST || 
-             request.method == HttpMethod::PUT || 
-             request.method == HttpMethod::PATCH) && !request.body.empty()) {
-            curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(request.body.size()));
+        std::pair<const ByteBuffer*, size_t> readData{&signedRequest.body, 0};
+        if ((signedRequest.method == HttpMethod::POST || 
+             signedRequest.method == HttpMethod::PUT || 
+             signedRequest.method == HttpMethod::PATCH) && !signedRequest.body.empty()) {
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(signedRequest.body.size()));
             curl_easy_setopt(curl, CURLOPT_READFUNCTION, readCallback);
             curl_easy_setopt(curl, CURLOPT_READDATA, &readData);
         }
         
         // Set timeouts (in milliseconds)
         // Use the request timeout for both connection and total
-        long timeoutMs = request.timeout.count();
+        long timeoutMs = signedRequest.timeout.count();
         curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, timeoutMs);
         curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeoutMs);
         
         // Set follow redirects
-        if (request.followRedirects) {
+        if (signedRequest.followRedirects) {
             curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-            curl_easy_setopt(curl, CURLOPT_MAXREDIRS, static_cast<long>(request.maxRedirects));
+            curl_easy_setopt(curl, CURLOPT_MAXREDIRS, static_cast<long>(signedRequest.maxRedirects));
         }
         
         // Set user agent
-        curl_easy_setopt(curl, CURLOPT_USERAGENT, request.userAgent.c_str());
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, signedRequest.userAgent.c_str());
         
         // Prepare response
         HttpResponse response;
@@ -313,10 +337,21 @@ public:
         return m_defaultTimeout;
     }
     
+    void setRequestSigner(std::shared_ptr<RequestSigner> signer) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_requestSigner = std::move(signer);
+    }
+    
+    void clearRequestSigner() {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_requestSigner.reset();
+    }
+    
 private:
     std::mutex m_mutex;
     HttpHeaders m_defaultHeaders;
     Milliseconds m_defaultTimeout{30000};
+    std::shared_ptr<RequestSigner> m_requestSigner;
 };
 
 #else // !SENTINEL_USE_CURL
@@ -331,6 +366,9 @@ public:
     void setDefaultHeaders(const HttpHeaders&) {}
     void addDefaultHeader(const std::string&, const std::string&) {}
     void setDefaultTimeout(Milliseconds) {}
+    Milliseconds getDefaultTimeout() const { return Milliseconds{30000}; }
+    void setRequestSigner(std::shared_ptr<RequestSigner>) {}
+    void clearRequestSigner() {}
 };
 
 #endif // SENTINEL_USE_CURL
@@ -440,6 +478,14 @@ void HttpClient::setProxy([[maybe_unused]] const std::string& proxyUrl) {
 
 void HttpClient::clearProxy() {
     // TODO: Implement proxy support
+}
+
+void HttpClient::setRequestSigner(std::shared_ptr<RequestSigner> signer) {
+    m_impl->setRequestSigner(std::move(signer));
+}
+
+void HttpClient::clearRequestSigner() {
+    m_impl->clearRequestSigner();
 }
 
 // ============================================================================
