@@ -5,6 +5,9 @@
  * 
  * Task 10: Implement Code Section Integrity Verification
  * Detects modifications to the executable code section (.text) to identify inline hooks and patches.
+ * 
+ * Task 08: Implement IAT Integrity Verification
+ * Detects modifications to the Import Address Table (IAT) to identify IAT hooks.
  */
 
 #include "Internal/Detection.hpp"
@@ -12,6 +15,8 @@
 #include "Internal/SafeMemory.hpp"
 #include <mutex>
 #include <algorithm>
+#include <cstring>
+#include <chrono>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -19,6 +24,13 @@
 
 namespace Sentinel {
 namespace SDK {
+
+// Helper function to get current time in milliseconds
+static inline uint64_t GetCurrentTimeMs() {
+    auto now = std::chrono::steady_clock::now();
+    auto duration = now.time_since_epoch();
+    return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+}
 
 void IntegrityChecker::Initialize() {
 #ifdef _WIN32
@@ -49,6 +61,7 @@ void IntegrityChecker::Initialize() {
     
     // Find .text section
     PIMAGE_SECTION_HEADER section = IMAGE_FIRST_SECTION(ntHeaders);
+    bool textSectionFound = false;
     for (WORD i = 0; i < ntHeaders->FileHeader.NumberOfSections; i++) {
         // Verify section header is readable
         if (!SafeMemory::IsReadable(section, sizeof(IMAGE_SECTION_HEADER))) {
@@ -79,20 +92,155 @@ void IntegrityChecker::Initialize() {
                 initialization_failed_ = true;
                 return;
             }
-            // Successfully initialized
-            return;
+            textSectionFound = true;
+            break;
         }
         section++;
     }
     
     // If we didn't find .text section at all, mark as initialization failed
-    initialization_failed_ = true;
+    if (!textSectionFound) {
+        initialization_failed_ = true;
+        return;
+    }
+    
+    // Task 08: Walk IAT entries for main module
+    // Get import directory from data directory
+    DWORD importDirRVA = ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress;
+    DWORD importDirSize = ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].Size;
+    
+    if (importDirRVA == 0 || importDirSize == 0) {
+        // No import table - this is valid for some executables
+        return;
+    }
+    
+    // Get module size for bounds checking
+    DWORD moduleSize = ntHeaders->OptionalHeader.SizeOfImage;
+    
+    PIMAGE_IMPORT_DESCRIPTOR importDesc = (PIMAGE_IMPORT_DESCRIPTOR)((BYTE*)hModule + importDirRVA);
+    
+    // Verify import descriptor is readable
+    if (!SafeMemory::IsReadable(importDesc, sizeof(IMAGE_IMPORT_DESCRIPTOR))) {
+        // Cannot read IAT, but code section is initialized - continue without IAT tracking
+        return;
+    }
+    
+    // Iterate through imported modules
+    while (importDesc->Name != 0) {
+        // Verify this descriptor is still readable
+        if (!SafeMemory::IsReadable(importDesc, sizeof(IMAGE_IMPORT_DESCRIPTOR))) {
+            break;
+        }
+        
+        const char* moduleName = (const char*)((BYTE*)hModule + importDesc->Name);
+        
+        // Verify module name is readable and null-terminated within reasonable bounds
+        // PE module names are typically short (e.g., "kernel32.dll" = 12 chars)
+        const size_t MAX_MODULE_NAME = 64;
+        if (!SafeMemory::IsReadable((void*)moduleName, MAX_MODULE_NAME)) {
+            importDesc++;
+            continue;
+        }
+        
+        // Safely read module name with strnlen to ensure null-termination
+        size_t moduleNameLen = strnlen(moduleName, MAX_MODULE_NAME);
+        if (moduleNameLen == 0 || moduleNameLen >= MAX_MODULE_NAME) {
+            importDesc++;
+            continue;
+        }
+        
+        // Skip JIT-compiled modules (clrjit.dll) to avoid false positives
+        std::string moduleNameStr(moduleName, moduleNameLen);
+        std::transform(moduleNameStr.begin(), moduleNameStr.end(), moduleNameStr.begin(), ::tolower);
+        if (moduleNameStr.find("clrjit") != std::string::npos) {
+            importDesc++;
+            continue;
+        }
+        
+        // Validate FirstThunk and OriginalFirstThunk RVAs are within module bounds
+        if (importDesc->FirstThunk >= moduleSize || importDesc->OriginalFirstThunk >= moduleSize) {
+            importDesc++;
+            continue;
+        }
+        
+        // Get the IAT (FirstThunk) and INT (OriginalFirstThunk)
+        PIMAGE_THUNK_DATA thunk = (PIMAGE_THUNK_DATA)((BYTE*)hModule + importDesc->FirstThunk);
+        PIMAGE_THUNK_DATA originalThunk = (PIMAGE_THUNK_DATA)((BYTE*)hModule + importDesc->OriginalFirstThunk);
+        
+        // Verify thunks are readable
+        if (!SafeMemory::IsReadable(thunk, sizeof(IMAGE_THUNK_DATA)) ||
+            !SafeMemory::IsReadable(originalThunk, sizeof(IMAGE_THUNK_DATA))) {
+            importDesc++;
+            continue;
+        }
+        
+        // Iterate through imports from this module
+        size_t thunkIndex = 0;
+        while (originalThunk->u1.AddressOfData != 0) {
+            // Verify we can still read the thunks
+            if (!SafeMemory::IsReadable(thunk, sizeof(IMAGE_THUNK_DATA)) ||
+                !SafeMemory::IsReadable(originalThunk, sizeof(IMAGE_THUNK_DATA))) {
+                break;
+            }
+            
+            std::string functionName;
+            
+            // Check if import is by ordinal
+            if (IMAGE_SNAP_BY_ORDINAL(originalThunk->u1.Ordinal)) {
+                // Import by ordinal - store ordinal as function name
+                functionName = "Ordinal#" + std::to_string(IMAGE_ORDINAL(originalThunk->u1.Ordinal));
+            } else {
+                // Import by name - validate AddressOfData RVA is within bounds
+                if (originalThunk->u1.AddressOfData < moduleSize) {
+                    PIMAGE_IMPORT_BY_NAME importByName = 
+                        (PIMAGE_IMPORT_BY_NAME)((BYTE*)hModule + originalThunk->u1.AddressOfData);
+                    
+                    // API function names are typically short (e.g., "NtQueryInformationProcess" = 26 chars)
+                    const size_t MAX_FUNCTION_NAME = 128;
+                    // Verify import name structure is readable
+                    if (SafeMemory::IsReadable(importByName, sizeof(IMAGE_IMPORT_BY_NAME) + MAX_FUNCTION_NAME)) {
+                        // Safely read function name with strnlen
+                        size_t funcNameLen = strnlen((const char*)importByName->Name, MAX_FUNCTION_NAME);
+                        if (funcNameLen > 0 && funcNameLen < MAX_FUNCTION_NAME) {
+                            functionName.assign((const char*)importByName->Name, funcNameLen);
+                        }
+                    }
+                }
+            }
+            
+            // Only track if we have a valid function name
+            if (!functionName.empty()) {
+                IATEntry entry;
+                entry.module_name = moduleNameStr;
+                entry.function_name = functionName;
+                entry.expected_address = (uintptr_t)thunk->u1.Function;
+                // Store the actual IAT slot address using base + offset
+                entry.iat_slot_address = (uintptr_t*)((BYTE*)hModule + importDesc->FirstThunk + 
+                                                      (thunkIndex * sizeof(IMAGE_THUNK_DATA)));
+                
+                std::lock_guard<std::mutex> lock(iat_mutex_);
+                iat_entries_.push_back(entry);
+            }
+            
+            thunk++;
+            originalThunk++;
+            thunkIndex++;
+        }
+        
+        importDesc++;
+    }
 #endif
 }
 
 void IntegrityChecker::Shutdown() {
-    std::lock_guard<std::mutex> lock(regions_mutex_);
-    registered_regions_.clear();
+    {
+        std::lock_guard<std::mutex> lock(regions_mutex_);
+        registered_regions_.clear();
+    }
+    {
+        std::lock_guard<std::mutex> lock(iat_mutex_);
+        iat_entries_.clear();
+    }
 }
 
 void IntegrityChecker::RegisterRegion(const MemoryRegion& region) {
@@ -149,8 +297,22 @@ std::vector<ViolationEvent> IntegrityChecker::QuickCheck() {
         ev.address = code_section_base_;
         ev.details = "Code section hash mismatch";
         ev.module_name = "";
-        ev.timestamp = 0;
-        ev.detection_id = 0;
+        ev.timestamp = GetCurrentTimeMs();
+        ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
+        violations.push_back(ev);
+    }
+    
+    // Task 08: Check IAT integrity
+    if (!VerifyImportTable()) {
+        uint64_t timestamp = GetCurrentTimeMs();
+        ViolationEvent ev;
+        ev.type = ViolationType::IATHook;
+        ev.severity = Severity::Critical;
+        ev.address = 0;
+        ev.details = "IAT modification detected";
+        ev.module_name = "";
+        ev.timestamp = timestamp;
+        ev.detection_id = static_cast<uint32_t>(timestamp ^ 0x1A700000);  // IAT marker
         violations.push_back(ev);
     }
     
@@ -160,14 +322,15 @@ std::vector<ViolationEvent> IntegrityChecker::QuickCheck() {
         size_t checkCount = std::min(registered_regions_.size(), size_t(10));
         for (size_t i = 0; i < checkCount; i++) {
             if (!VerifyRegion(registered_regions_[i])) {
+                uint64_t timestamp = GetCurrentTimeMs();
                 ViolationEvent ev;
                 ev.type = ViolationType::MemoryWrite;
                 ev.severity = Severity::High;
                 ev.address = registered_regions_[i].address;
                 ev.details = "Protected region modified";
                 ev.module_name = "";
-                ev.timestamp = 0;
-                ev.detection_id = 0;
+                ev.timestamp = timestamp;
+                ev.detection_id = static_cast<uint32_t>(ev.address ^ timestamp);
                 violations.push_back(ev);
             }
         }
@@ -186,8 +349,22 @@ std::vector<ViolationEvent> IntegrityChecker::FullScan() {
         ev.address = code_section_base_;
         ev.details = "Code section hash mismatch";
         ev.module_name = "";
-        ev.timestamp = 0;
-        ev.detection_id = 0;
+        ev.timestamp = GetCurrentTimeMs();
+        ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
+        violations.push_back(ev);
+    }
+    
+    // Task 08: Check IAT integrity
+    if (!VerifyImportTable()) {
+        uint64_t timestamp = GetCurrentTimeMs();
+        ViolationEvent ev;
+        ev.type = ViolationType::IATHook;
+        ev.severity = Severity::Critical;
+        ev.address = 0;
+        ev.details = "IAT modification detected";
+        ev.module_name = "";
+        ev.timestamp = timestamp;
+        ev.detection_id = static_cast<uint32_t>(timestamp ^ 0x1A700000);  // IAT marker
         violations.push_back(ev);
     }
     
@@ -196,14 +373,15 @@ std::vector<ViolationEvent> IntegrityChecker::FullScan() {
         std::lock_guard<std::mutex> lock(regions_mutex_);
         for (const auto& region : registered_regions_) {
             if (!VerifyRegion(region)) {
+                uint64_t timestamp = GetCurrentTimeMs();
                 ViolationEvent ev;
                 ev.type = ViolationType::MemoryWrite;
                 ev.severity = Severity::High;
                 ev.address = region.address;
                 ev.details = "Protected region modified";
                 ev.module_name = "";
-                ev.timestamp = 0;
-                ev.detection_id = 0;
+                ev.timestamp = timestamp;
+                ev.detection_id = static_cast<uint32_t>(ev.address ^ timestamp);
                 violations.push_back(ev);
             }
         }
@@ -257,8 +435,36 @@ bool IntegrityChecker::VerifyCodeSection() {
 }
 
 bool IntegrityChecker::VerifyImportTable() {
-    // Stub implementation - out of scope for Task 10
+#ifdef _WIN32
+    std::lock_guard<std::mutex> lock(iat_mutex_);
+    
+    // If no IAT entries were stored, return true (no IAT to verify)
+    if (iat_entries_.empty()) {
+        return true;
+    }
+    
+    // Check each IAT entry
+    for (const auto& entry : iat_entries_) {
+        // Safely read current IAT value
+        uintptr_t currentAddress;
+        if (!SafeMemory::SafeRead(entry.iat_slot_address, &currentAddress, sizeof(uintptr_t))) {
+            // IAT slot is not readable - potential tampering or unmapped memory
+            return false;
+        }
+        
+        // Compare against expected address
+        if (currentAddress != entry.expected_address) {
+            // IAT hook detected - address has been modified
+            return false;
+        }
+    }
+    
+    // All IAT entries match expected values
     return true;
+#else
+    // IAT verification only supported on Windows
+    return true;
+#endif
 }
 
 } // namespace SDK

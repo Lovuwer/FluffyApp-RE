@@ -182,12 +182,24 @@ private:
     bool VerifyCodeSection();
     bool VerifyImportTable();
     
+    // IAT entry tracking (Task 08)
+    struct IATEntry {
+        std::string module_name;
+        std::string function_name;
+        uintptr_t expected_address;
+        uintptr_t* iat_slot_address;  // Pointer to the IAT entry
+    };
+    
     std::vector<MemoryRegion> registered_regions_;
     uint64_t code_section_hash_ = 0;
     uintptr_t code_section_base_ = 0;
     size_t code_section_size_ = 0;
     bool initialization_failed_ = false;
     std::mutex regions_mutex_;
+    
+    // IAT tracking members (Task 08)
+    std::vector<IATEntry> iat_entries_;
+    std::mutex iat_mutex_;
 };
 
 /**
