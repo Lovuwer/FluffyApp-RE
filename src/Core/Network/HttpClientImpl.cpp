@@ -202,8 +202,13 @@ public:
         
         // Configure certificate pinning if enabled
         if (signedRequest.enablePinning && m_pinningEnabled && m_certificatePinner) {
-            curl_easy_setopt(curl, CURLOPT_SSL_CTX_FUNCTION, sslContextCallback);
-            curl_easy_setopt(curl, CURLOPT_SSL_CTX_DATA, m_certificatePinner.get());
+            CURLcode res1 = curl_easy_setopt(curl, CURLOPT_SSL_CTX_FUNCTION, sslContextCallback);
+            CURLcode res2 = curl_easy_setopt(curl, CURLOPT_SSL_CTX_DATA, m_certificatePinner.get());
+            
+            if (res1 != CURLE_OK || res2 != CURLE_OK) {
+                std::cerr << "[SECURITY WARNING] Failed to configure SSL context callback for certificate pinning" << std::endl;
+                // Continue anyway - standard TLS verification will still occur
+            }
         }
         
         // Set URL
