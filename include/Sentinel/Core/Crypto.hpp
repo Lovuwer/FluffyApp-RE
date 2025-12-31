@@ -269,7 +269,55 @@ public:
     );
     
     /**
-     * @brief Encrypt with explicit nonce
+     * @brief Change the encryption key
+     * @param key New AES-256 key
+     */
+    void setKey(const AESKey& key);
+
+    /**
+     * @brief Test-only accessor for private encryption methods
+     * 
+     * This nested class provides controlled access to encryptWithNonce and
+     * decryptWithNonce for NIST test vectors and security testing.
+     * It is intentionally placed in the public section but clearly marked
+     * as test-only to prevent misuse in production code.
+     * 
+     * WARNING: DO NOT USE IN PRODUCTION CODE. Only for testing!
+     */
+    class TestAccess {
+    public:
+        static Result<ByteBuffer> encryptWithNonce(
+            AESCipher& cipher,
+            ByteSpan plaintext,
+            const AESNonce& nonce,
+            ByteSpan associatedData = {}
+        ) {
+            return cipher.encryptWithNonce(plaintext, nonce, associatedData);
+        }
+        
+        static Result<ByteBuffer> decryptWithNonce(
+            AESCipher& cipher,
+            ByteSpan ciphertext,
+            const AESNonce& nonce,
+            ByteSpan associatedData = {}
+        ) {
+            return cipher.decryptWithNonce(ciphertext, nonce, associatedData);
+        }
+    };
+
+private:
+    /**
+     * @brief Encrypt with explicit nonce (INTERNAL USE ONLY)
+     * 
+     * WARNING: This method is intentionally private to prevent nonce reuse attacks.
+     * AES-GCM with a repeated nonce under the same key completely breaks authentication
+     * and confidentiality. Public API users MUST use encrypt() which generates
+     * cryptographically secure random nonces automatically.
+     * 
+     * This method exists only for:
+     * - Internal use by the public encrypt() method
+     * - Testing with known NIST test vectors
+     * 
      * @param plaintext Data to encrypt
      * @param nonce 12-byte nonce (must be unique per encryption)
      * @param associatedData Additional authenticated data (optional)
@@ -282,7 +330,10 @@ public:
     );
     
     /**
-     * @brief Decrypt with explicit nonce
+     * @brief Decrypt with explicit nonce (INTERNAL USE ONLY)
+     * 
+     * Private counterpart to encryptWithNonce for internal use and testing.
+     * 
      * @param ciphertext Ciphertext + tag
      * @param nonce 12-byte nonce used for encryption
      * @param associatedData Additional authenticated data (optional)
@@ -293,14 +344,7 @@ public:
         const AESNonce& nonce,
         ByteSpan associatedData = {}
     );
-    
-    /**
-     * @brief Change the encryption key
-     * @param key New AES-256 key
-     */
-    void setKey(const AESKey& key);
 
-private:
     class Impl;
     std::unique_ptr<Impl> m_impl;
 };
