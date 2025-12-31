@@ -36,6 +36,9 @@ using json = nlohmann::json;
 using namespace Sentinel::Network;
 using namespace Sentinel::Crypto;
 
+// Custom event type constant
+constexpr uint32_t CUSTOM_EVENT_TYPE = 0x100000;
+
 // ============================================================================
 // CloudReporter Implementation
 // ============================================================================
