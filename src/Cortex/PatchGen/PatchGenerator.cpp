@@ -289,8 +289,15 @@ Sentinel::Result<PatchOperation> PatchGenerator::CreateReturnPatch(
     patch.arch = config_.default_arch;
     patch.target_address = address;
     
+    // Default to x64 for Auto architecture
+    PatchArchitecture arch = patch.arch;
+    if (arch == PatchArchitecture::Auto) {
+        arch = PatchArchitecture::x64;
+        patch.arch = arch;
+    }
+    
     // Generate return instruction based on architecture
-    if (patch.arch == PatchArchitecture::x64 || patch.arch == PatchArchitecture::x86) {
+    if (arch == PatchArchitecture::x64 || arch == PatchArchitecture::x86) {
         if (return_value.has_value()) {
             // mov rax/eax, value; ret
             patch.patch_bytes = {0xB8}; // MOV EAX, imm32
@@ -446,6 +453,11 @@ Sentinel::Result<std::vector<uint8_t>> PatchGenerator::GenerateJump(
     
     std::vector<uint8_t> jump;
     
+    // Default to x64 for Auto architecture
+    if (arch == PatchArchitecture::Auto) {
+        arch = PatchArchitecture::x64;
+    }
+    
     if (arch == PatchArchitecture::x64 || arch == PatchArchitecture::x86) {
         if (PatchUtils::IsRelativeJumpPossible(from, to)) {
             // Near jump (E9 rel32)
@@ -483,6 +495,11 @@ Sentinel::Result<std::vector<uint8_t>> PatchGenerator::GenerateCall(
     PatchArchitecture arch) {
     
     std::vector<uint8_t> call;
+    
+    // Default to x64 for Auto architecture
+    if (arch == PatchArchitecture::Auto) {
+        arch = PatchArchitecture::x64;
+    }
     
     if (arch == PatchArchitecture::x64 || arch == PatchArchitecture::x86) {
         if (PatchUtils::IsRelativeJumpPossible(from, to)) {
@@ -810,6 +827,11 @@ Sentinel::Result<std::vector<uint8_t>> PatchGenerator::AssembleX64(const std::st
 
 std::vector<uint8_t> PatchGenerator::GenerateNops(size_t count, PatchArchitecture arch) {
     std::vector<uint8_t> nops;
+    
+    // Default to x64 for Auto architecture
+    if (arch == PatchArchitecture::Auto) {
+        arch = PatchArchitecture::x64;
+    }
     
     if (arch == PatchArchitecture::x64 || arch == PatchArchitecture::x86) {
         nops.resize(count, 0x90); // NOP instruction

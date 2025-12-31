@@ -201,6 +201,11 @@ if(SENTINEL_BUILD_CORTEX)
     gtest_discover_tests(CortexTests)
 endif()
 
+# Add CI compile definition if running in CI environment
+if(CI)
+    target_compile_definitions(SDKTests PRIVATE CI=1)
+endif()
+
 # Add test target
 add_custom_target(run_tests
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure

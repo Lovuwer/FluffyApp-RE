@@ -283,6 +283,8 @@ TEST(ProtectionManagerTests, ResetAccessCount) {
 // RegionEnumerator Tests
 // ============================================================================
 
+#ifdef _WIN32
+// RegionEnumerator is only implemented on Windows
 TEST(RegionEnumeratorTests, ConstructionForCurrentProcess) {
     RegionEnumerator enumerator;
     
@@ -396,11 +398,14 @@ TEST(RegionEnumeratorTests, FilterFunctions) {
     EXPECT_GT(writeCount, 0) << "Should have writable regions";
     EXPECT_GT(readCount, 0) << "Should have readable regions";
 }
+#endif // _WIN32
 
 // ============================================================================
 // Integration Tests
 // ============================================================================
 
+#ifdef _WIN32
+// RegionEnumerator is only implemented on Windows
 TEST(MemoryIntegrationTests, PatternScanWithRegionEnumeration) {
     RegionEnumerator enumerator;
     
@@ -426,3 +431,4 @@ TEST(MemoryIntegrationTests, PatternScanWithRegionEnumeration) {
     // but the scan itself should not crash or fail
     EXPECT_TRUE(results.isSuccess());
 }
+#endif // _WIN32

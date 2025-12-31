@@ -35,7 +35,8 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release \
           -DSENTINEL_BUILD_CORTEX=OFF \
           -DSENTINEL_BUILD_WATCHTOWER=OFF \
-          -DSENTINEL_BUILD_TESTS=ON
+          -DSENTINEL_BUILD_TESTS=ON \
+          -DCI=ON
     
     - name: Build
       run: cmake --build build --config Release
