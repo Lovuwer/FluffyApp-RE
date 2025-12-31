@@ -10,6 +10,7 @@
 
 #include <Sentinel/Core/HttpClient.hpp>
 #include <Sentinel/Core/Network.hpp>
+#include <Sentinel/Core/Crypto.hpp>
 #include <vector>
 #include <algorithm>
 
@@ -78,16 +79,12 @@ bool CertPinner::verify(
         
         std::string certHashBase64 = hashResult.value();
         
-        // Convert to SHA256Hash format for comparison
-        auto sha256Result = Crypto::fromBase64(certHashBase64);
-        if (sha256Result.isFailure()) {
-            continue;
-        }
-        
         // Check against all matching pins
         for (const auto* pin : matchingPins) {
             for (const auto& pinHash : pin->pins) {
-                if (sha256Result.value() == pinHash) {
+                // Convert pin hash to base64 for comparison
+                std::string pinHashBase64 = Crypto::toBase64(pinHash);
+                if (pinHashBase64 == certHashBase64) {
                     return true; // Pin matched
                 }
             }

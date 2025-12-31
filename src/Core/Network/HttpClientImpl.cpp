@@ -12,6 +12,7 @@
 #include <Sentinel/Core/RequestSigner.hpp>
 #include <Sentinel/Core/ErrorCodes.hpp>
 #include <Sentinel/Core/Network.hpp>
+#include <Sentinel/Core/Crypto.hpp>
 
 #ifdef SENTINEL_USE_CURL
 #include <curl/curl.h>
@@ -511,17 +512,48 @@ void HttpClient::setDefaultTimeout(Milliseconds timeout) {
 }
 
 void HttpClient::addCertificatePin(const CertificatePin& pin) {
-    // Get or create the certificate pinner
+    // Convert CertificatePin to PinningConfig and add to internal pinner
     auto pinner = m_impl->getCertificatePinner();
     if (!pinner) {
-        pinner = std::make_shared<CertPinner>();
+        pinner = std::make_shared<CertificatePinner>();
         m_impl->setCertificatePinner(pinner);
     }
-    pinner->addPin(pin);
+    
+    // Convert CertificatePin to PinningConfig format
+    PinningConfig config;
+    config.hostname = pin.hostname;
+    config.enforce = true;
+    
+    // Convert SHA256Hash to base64 strings
+    for (const auto& hash : pin.pins) {
+        std::string base64Hash = Crypto::toBase64(hash);
+        config.pins.push_back({base64Hash, "Pin"});
+    }
+    
+    pinner->addPins(config);
 }
 
 void HttpClient::setCertificatePinner(std::shared_ptr<CertPinner> pinner) {
-    m_impl->setCertificatePinner(std::move(pinner));
+    // Create an internal CertificatePinner from CertPinner
+    auto internalPinner = std::make_shared<CertificatePinner>();
+    
+    if (pinner) {
+        // Convert all pins from CertPinner to CertificatePinner
+        for (const auto& pin : pinner->getPins()) {
+            PinningConfig config;
+            config.hostname = pin.hostname;
+            config.enforce = true;
+            
+            for (const auto& hash : pin.pins) {
+                std::string base64Hash = Crypto::toBase64(hash);
+                config.pins.push_back({base64Hash, "Pin"});
+            }
+            
+            internalPinner->addPins(config);
+        }
+    }
+    
+    m_impl->setCertificatePinner(internalPinner);
 }
 
 void HttpClient::setPinningEnabled(bool enabled) {
