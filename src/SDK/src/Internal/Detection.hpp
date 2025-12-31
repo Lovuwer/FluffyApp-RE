@@ -18,6 +18,13 @@
 #include <string>
 #include <memory>
 
+// Forward declarations for Sentinel::Network types
+namespace Sentinel {
+namespace Network {
+    class RequestSigner;
+}
+}
+
 namespace Sentinel {
 namespace SDK {
 
@@ -416,8 +423,14 @@ public:
     explicit CloudReporter(const char* endpoint);
     ~CloudReporter();
     
-    void SetBatchSize(uint32_t size) { batch_size_ = size; }
-    void SetInterval(uint32_t ms) { interval_ms_ = ms; }
+    void SetBatchSize(uint32_t size);
+    void SetInterval(uint32_t ms);
+    
+    /**
+     * Set request signer for authentication
+     * @param signer Shared pointer to RequestSigner instance
+     */
+    void SetRequestSigner(std::shared_ptr<Sentinel::Network::RequestSigner> signer);
     
     void QueueEvent(const ViolationEvent& event);
     ErrorCode ReportCustomEvent(const char* type, const char* data);
@@ -431,9 +444,10 @@ private:
     std::string endpoint_;
     uint32_t batch_size_ = 10;
     uint32_t interval_ms_ = 30000;
-    
-    std::vector<ViolationEvent> event_queue_;
     bool running_ = false;
+    
+    class Impl;
+    std::unique_ptr<Impl> impl_;
 };
 
 } // namespace SDK

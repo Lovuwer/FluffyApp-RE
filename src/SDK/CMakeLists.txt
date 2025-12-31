@@ -163,6 +163,7 @@ if(SENTINEL_SDK_BUILD_SHARED)
             $<INSTALL_INTERFACE:include>
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/src
+            ${CMAKE_SOURCE_DIR}/include
     )
     
     target_compile_definitions(SentinelSDK
@@ -173,7 +174,11 @@ if(SENTINEL_SDK_BUILD_SHARED)
     
     target_compile_options(SentinelSDK PRIVATE ${SDK_COMPILE_OPTIONS})
     target_link_options(SentinelSDK PRIVATE ${SDK_LINK_OPTIONS})
-    target_link_libraries(SentinelSDK PRIVATE ${SDK_PLATFORM_LIBS})
+    target_link_libraries(SentinelSDK 
+        PRIVATE 
+            ${SDK_PLATFORM_LIBS}
+            SentinelCore
+    )
     
     set_target_properties(SentinelSDK PROPERTIES
         VERSION ${PROJECT_VERSION}
@@ -200,6 +205,7 @@ if(SENTINEL_SDK_BUILD_STATIC)
             $<INSTALL_INTERFACE:include>
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/src
+            ${CMAKE_SOURCE_DIR}/include
     )
     
     target_compile_definitions(SentinelSDK_static
@@ -210,6 +216,10 @@ if(SENTINEL_SDK_BUILD_STATIC)
     )
     
     target_compile_options(SentinelSDK_static PRIVATE ${SDK_COMPILE_OPTIONS})
+    target_link_libraries(SentinelSDK_static
+        PRIVATE
+            SentinelCore
+    )
     
     set_target_properties(SentinelSDK_static PROPERTIES
         OUTPUT_NAME "SentinelSDK_static"
@@ -245,7 +255,6 @@ install(
 # Install libraries
 if(SENTINEL_SDK_BUILD_SHARED)
     install(TARGETS SentinelSDK
-        EXPORT SentinelSDKTargets
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
@@ -254,17 +263,16 @@ endif()
 
 if(SENTINEL_SDK_BUILD_STATIC)
     install(TARGETS SentinelSDK_static
-        EXPORT SentinelSDKTargets
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     )
 endif()
 
-# Export targets
-install(EXPORT SentinelSDKTargets
-    FILE SentinelSDKTargets.cmake
-    NAMESPACE Sentinel::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/SentinelSDK
-)
+# Export targets (commented out due to SentinelCore dependency)
+# install(EXPORT SentinelSDKTargets
+#     FILE SentinelSDKTargets.cmake
+#     NAMESPACE Sentinel::
+#     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/SentinelSDK
+# )
 
 # Package config
 configure_package_config_file(
