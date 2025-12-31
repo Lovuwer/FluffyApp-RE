@@ -224,7 +224,7 @@ TEST(CorrelationIntegrationTest, MixedSignalHandling) {
     ViolationEvent debugger{};
     debugger.type = ViolationType::DebuggerAttached;
     debugger.severity = Severity::Critical;
-    debugger.module_name = "";  // Empty string instead of nullptr
+    debugger.module_name = nullptr;
     engine.ProcessViolation(debugger, severity_out, should_report);
     
     // Suspicious memory modification

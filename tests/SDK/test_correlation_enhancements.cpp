@@ -38,7 +38,7 @@ protected:
         event.severity = severity;
         event.timestamp = 0;
         event.address = 0;
-        event.module_name = module ? module : "";  // Handle nullptr properly
+        event.module_name = module;
         event.details = "Test violation";
         event.detection_id = 0;
         return event;
