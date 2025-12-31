@@ -602,10 +602,26 @@ TEST_F(CorrelationEngineTest, ProcessViolationPerformance) {
     std::vector<double> latencies;
     latencies.reserve(1000);
     
+    // Use specific valid violation types
+    ViolationType test_types[] = {
+        ViolationType::MemoryWrite,
+        ViolationType::InlineHook,
+        ViolationType::DebuggerAttached,
+        ViolationType::MemoryExecute,
+        ViolationType::IATHook
+    };
+    
+    Severity test_severities[] = {
+        Severity::Info,
+        Severity::Warning,
+        Severity::High,
+        Severity::Critical
+    };
+    
     for (int i = 0; i < 1000; ++i) {
         auto event = CreateEvent(
-            static_cast<ViolationType>(i % 5 + 1), 
-            static_cast<Severity>(i % 4)
+            test_types[i % 5], 
+            test_severities[i % 4]
         );
         
         // Vary module names to test different patterns

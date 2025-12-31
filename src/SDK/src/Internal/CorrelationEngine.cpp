@@ -46,7 +46,7 @@ namespace {
      * - Whitespace-only → "unknown-module"
      * - Valid strings → trimmed and returned
      */
-    inline std::string NormalizeModuleName(const std::string& module_name) {
+    std::string NormalizeModuleName(const std::string& module_name) {
         // Handle empty string
         if (module_name.empty()) {
             return "unknown-module";
