@@ -1,5 +1,0 @@
-if(EXISTS "/home/runner/work/Sentiel-RE/Sentiel-RE/_codeql_build_dir/tests/PatchGeneratorTests[1]_tests.cmake")
-  include("/home/runner/work/Sentiel-RE/Sentiel-RE/_codeql_build_dir/tests/PatchGeneratorTests[1]_tests.cmake")
-else()
-  add_test(PatchGeneratorTests_NOT_BUILT PatchGeneratorTests_NOT_BUILT)
-endif()
