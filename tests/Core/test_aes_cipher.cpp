@@ -360,8 +360,8 @@ TEST(AESCipher, NIST_TestVector_1) {
     
     AESCipher cipher(key);
     
-    // Encrypt with nonce
-    auto encryptResult = cipher.encryptWithNonce(plaintext, iv);
+    // Encrypt with nonce using test accessor
+    auto encryptResult = AESCipher::TestAccess::encryptWithNonce(cipher, plaintext, iv);
     ASSERT_TRUE(encryptResult.isSuccess()) << "NIST test vector encryption failed";
     
     // Verify tag matches (ciphertext is empty, so result should be just the tag)
@@ -369,8 +369,8 @@ TEST(AESCipher, NIST_TestVector_1) {
     EXPECT_EQ(bytesToHex(encryptResult.value()), expectedTagHex)
         << "NIST test vector tag mismatch";
     
-    // Decrypt and verify
-    auto decryptResult = cipher.decryptWithNonce(encryptResult.value(), iv);
+    // Decrypt and verify using test accessor
+    auto decryptResult = AESCipher::TestAccess::decryptWithNonce(cipher, encryptResult.value(), iv);
     ASSERT_TRUE(decryptResult.isSuccess()) << "NIST test vector decryption failed";
     EXPECT_EQ(decryptResult.value().size(), 0u);
 }
@@ -403,8 +403,8 @@ TEST(AESCipher, NIST_TestVector_2_WithPlaintext) {
     
     AESCipher cipher(key);
     
-    // Encrypt with nonce
-    auto encryptResult = cipher.encryptWithNonce(plaintext, iv);
+    // Encrypt with nonce using test accessor
+    auto encryptResult = AESCipher::TestAccess::encryptWithNonce(cipher, plaintext, iv);
     ASSERT_TRUE(encryptResult.isSuccess()) << "NIST test vector encryption failed";
     
     // Verify ciphertext and tag
@@ -419,8 +419,8 @@ TEST(AESCipher, NIST_TestVector_2_WithPlaintext) {
     EXPECT_EQ(bytesToHex(actualTag), expectedTagHex)
         << "NIST test vector tag mismatch";
     
-    // Decrypt and verify
-    auto decryptResult = cipher.decryptWithNonce(encryptResult.value(), iv);
+    // Decrypt and verify using test accessor
+    auto decryptResult = AESCipher::TestAccess::decryptWithNonce(cipher, encryptResult.value(), iv);
     ASSERT_TRUE(decryptResult.isSuccess()) << "NIST test vector decryption failed";
     EXPECT_EQ(bytesToHex(decryptResult.value()), ptHex);
 }
@@ -443,9 +443,9 @@ TEST(AESCipher, EncryptWithNonce_SameNonce_ProducesSameCiphertext) {
     
     ByteBuffer plaintext = {0x01, 0x02, 0x03, 0x04};
     
-    // Encrypt twice with same nonce
-    auto encrypt1 = cipher.encryptWithNonce(plaintext, nonce);
-    auto encrypt2 = cipher.encryptWithNonce(plaintext, nonce);
+    // Encrypt twice with same nonce using test accessor
+    auto encrypt1 = AESCipher::TestAccess::encryptWithNonce(cipher, plaintext, nonce);
+    auto encrypt2 = AESCipher::TestAccess::encryptWithNonce(cipher, plaintext, nonce);
     
     ASSERT_TRUE(encrypt1.isSuccess());
     ASSERT_TRUE(encrypt2.isSuccess());
@@ -544,4 +544,45 @@ TEST(AESCipher, ConstructFromByteSpan_InvalidSize_Throws) {
     EXPECT_THROW({
         AESCipher cipher(shortKeySpan);
     }, std::invalid_argument);
+}
+
+// ============================================================================
+// Security Test: Nonce Uniqueness Across Many Encryptions
+// ============================================================================
+
+TEST(AESCipher, NonceUniqueness_10000Encryptions_AllUnique) {
+    SecureRandom rng;
+    auto keyResult = rng.generateAESKey();
+    ASSERT_TRUE(keyResult.isSuccess());
+    
+    AESCipher cipher(keyResult.value());
+    
+    // Plaintext for testing
+    ByteBuffer plaintext = {0x01, 0x02, 0x03, 0x04, 0x05};
+    
+    // Set to track unique nonces
+    std::set<std::string> uniqueNonces;
+    
+    // Perform 10,000 encryptions
+    constexpr size_t iterations = 10000;
+    for (size_t i = 0; i < iterations; ++i) {
+        auto encryptResult = cipher.encrypt(plaintext);
+        ASSERT_TRUE(encryptResult.isSuccess()) << "Encryption failed at iteration " << i;
+        
+        // Extract nonce (first 12 bytes)
+        const auto& ciphertext = encryptResult.value();
+        ASSERT_GE(ciphertext.size(), 12u) << "Ciphertext too short at iteration " << i;
+        
+        std::string nonceStr(ciphertext.begin(), ciphertext.begin() + 12);
+        
+        // Verify this nonce hasn't been used before
+        auto insertResult = uniqueNonces.insert(nonceStr);
+        EXPECT_TRUE(insertResult.second) 
+            << "Nonce reuse detected at iteration " << i 
+            << " - this is a critical security vulnerability!";
+    }
+    
+    // Verify we have exactly 10,000 unique nonces
+    EXPECT_EQ(uniqueNonces.size(), iterations)
+        << "Expected " << iterations << " unique nonces, but got " << uniqueNonces.size();
 }
