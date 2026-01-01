@@ -643,7 +643,7 @@ Result<std::string> SignatureManager::serializeSignatureSet(
         oss << "      \"id\": \"" << sig.id << "\",\n";
         oss << "      \"name\": \"" << sig.name << "\",\n";
         oss << "      \"version\": " << sig.version << ",\n";
-        oss << "      \"type\": \"memory_pattern\",\n";
+        oss << "      \"type\": \"" << sig.type << "\",\n";
         oss << "      \"threat_family\": \"" << sig.threat_family << "\",\n";
         oss << "      \"severity\": " << static_cast<int>(sig.severity) << ",\n";
         oss << "      \"pattern\": \"" << bytesToHex(sig.pattern_data) << "\",\n";
