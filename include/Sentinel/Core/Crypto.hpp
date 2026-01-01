@@ -32,13 +32,38 @@ namespace Sentinel::Crypto {
 // ============================================================================
 
 /**
+ * @brief Health status of the random number generator
+ */
+enum class RandomHealthStatus {
+    Healthy,           ///< RNG is functioning normally
+    Degraded,          ///< RNG is working but using fallback sources
+    Unhealthy,         ///< RNG has failed basic quality tests
+    Uninitialized      ///< RNG has not been initialized yet
+};
+
+/**
  * @brief Cryptographically secure random number generator
  * 
- * Uses Windows BCryptGenRandom for secure randomness.
+ * Platform-specific implementations:
+ * - Windows: BCryptGenRandom with BCRYPT_USE_SYSTEM_PREFERRED_RNG
+ *   Thread Safety: BCryptGenRandom is thread-safe per Microsoft documentation
+ *   (https://docs.microsoft.com/en-us/windows/win32/api/bcrypt/nf-bcrypt-bcryptgenrandom)
+ *   Multiple threads can safely call this function simultaneously.
+ * 
+ * - Linux: /dev/urandom with mutex protection
+ *   Thread Safety: File descriptor reads are protected by internal mutex.
+ *   Fallback to getrandom() syscall if available.
+ * 
+ * The constructor is noexcept - initialization is deferred to first use.
+ * A self-test runs on first generation to verify randomness quality.
  */
 class SecureRandom {
 public:
-    SecureRandom();
+    /**
+     * @brief Construct SecureRandom (noexcept, deferred initialization)
+     */
+    SecureRandom() noexcept;
+    
     ~SecureRandom();
     
     /**
@@ -46,6 +71,7 @@ public:
      * @param buffer Buffer to fill with random bytes
      * @param size Number of bytes to generate
      * @return Result indicating success or failure
+     * @note First call performs initialization and self-test
      */
     Result<void> generate(Byte* buffer, size_t size);
     
@@ -53,6 +79,7 @@ public:
      * @brief Generate random byte buffer
      * @param size Number of bytes to generate
      * @return Random bytes or error
+     * @note First call performs initialization and self-test
      */
     Result<ByteBuffer> generate(size_t size);
     
@@ -60,6 +87,7 @@ public:
      * @brief Generate random value of type T
      * @tparam T Type of value to generate
      * @return Random value or error
+     * @note First call performs initialization and self-test
      */
     template<typename T>
     Result<T> generateValue() {
@@ -80,6 +108,19 @@ public:
      * @return Random 12-byte nonce or error
      */
     Result<AESNonce> generateNonce();
+    
+    /**
+     * @brief Get health status of the RNG
+     * @return Current health status for monitoring
+     * @note This can be called before initialization to check readiness
+     */
+    RandomHealthStatus getHealthStatus() const noexcept;
+    
+    /**
+     * @brief Check if RNG is initialized and healthy
+     * @return true if ready to generate random numbers
+     */
+    bool isHealthy() const noexcept;
 
 private:
     class Impl;
