@@ -289,8 +289,14 @@ Sentinel::Result<PatchOperation> PatchGenerator::CreateReturnPatch(
     patch.arch = config_.default_arch;
     patch.target_address = address;
     
+    // Resolve Auto architecture to default x64
+    PatchArchitecture resolvedArch = patch.arch;
+    if (patch.arch == PatchArchitecture::Auto) {
+        resolvedArch = PatchArchitecture::x64;
+    }
+    
     // Generate return instruction based on architecture
-    if (patch.arch == PatchArchitecture::x64 || patch.arch == PatchArchitecture::x86) {
+    if (resolvedArch == PatchArchitecture::x64 || resolvedArch == PatchArchitecture::x86) {
         if (return_value.has_value()) {
             // mov rax/eax, value; ret
             patch.patch_bytes = {0xB8}; // MOV EAX, imm32
@@ -811,9 +817,15 @@ Sentinel::Result<std::vector<uint8_t>> PatchGenerator::AssembleX64(const std::st
 std::vector<uint8_t> PatchGenerator::GenerateNops(size_t count, PatchArchitecture arch) {
     std::vector<uint8_t> nops;
     
-    if (arch == PatchArchitecture::x64 || arch == PatchArchitecture::x86) {
+    // Resolve Auto architecture to default x64
+    PatchArchitecture resolvedArch = arch;
+    if (arch == PatchArchitecture::Auto) {
+        resolvedArch = PatchArchitecture::x64;
+    }
+    
+    if (resolvedArch == PatchArchitecture::x64 || resolvedArch == PatchArchitecture::x86) {
         nops.resize(count, 0x90); // NOP instruction
-    } else if (arch == PatchArchitecture::ARM32 || arch == PatchArchitecture::ARM64) {
+    } else if (resolvedArch == PatchArchitecture::ARM32 || resolvedArch == PatchArchitecture::ARM64) {
         // ARM NOP is typically MOV R0, R0 (0xE1A00000 for ARM32)
         for (size_t i = 0; i < count; i += 4) {
             nops.push_back(0x00);

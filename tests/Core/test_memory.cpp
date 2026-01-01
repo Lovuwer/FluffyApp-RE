@@ -283,6 +283,10 @@ TEST(ProtectionManagerTests, ResetAccessCount) {
 // RegionEnumerator Tests
 // ============================================================================
 
+// RegionEnumerator only has a functional implementation on Windows
+// On other platforms it returns stub/unsupported results
+#ifdef _WIN32
+
 TEST(RegionEnumeratorTests, ConstructionForCurrentProcess) {
     RegionEnumerator enumerator;
     
@@ -331,7 +335,6 @@ TEST(RegionEnumeratorTests, FindTextSection) {
     
     // Try to find .text section of current executable
     // On Windows, use the executable name
-#ifdef _WIN32
     char moduleName[MAX_PATH];
     GetModuleFileNameA(nullptr, moduleName, MAX_PATH);
     std::string exeName = moduleName;
@@ -348,7 +351,6 @@ TEST(RegionEnumeratorTests, FindTextSection) {
         EXPECT_FALSE(result.value().isWritable())
             << ".text section should not be writable";
     }
-#endif
 }
 
 TEST(RegionEnumeratorTests, GetImageRegions) {
@@ -397,10 +399,13 @@ TEST(RegionEnumeratorTests, FilterFunctions) {
     EXPECT_GT(readCount, 0) << "Should have readable regions";
 }
 
+#endif // _WIN32
+
 // ============================================================================
 // Integration Tests
 // ============================================================================
 
+#ifdef _WIN32
 TEST(MemoryIntegrationTests, PatternScanWithRegionEnumeration) {
     RegionEnumerator enumerator;
     
@@ -426,3 +431,4 @@ TEST(MemoryIntegrationTests, PatternScanWithRegionEnumeration) {
     // but the scan itself should not crash or fail
     EXPECT_TRUE(results.isSuccess());
 }
+#endif // _WIN32
