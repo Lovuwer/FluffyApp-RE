@@ -210,6 +210,17 @@ Result<SignatureSet> SignatureManager::loadSignaturesFromJson(
 {
     // Sandboxed parsing - malformed input cannot crash SDK
     try {
+        // Validate input is not empty
+        if (json_data.empty()) {
+            return ErrorCode::ParseError;
+        }
+        
+        // Validate basic JSON structure
+        if (json_data.find("version") == std::string::npos ||
+            json_data.find("signatures") == std::string::npos) {
+            return ErrorCode::ParseError;
+        }
+        
         SignatureSet sig_set;
         
         // Extract version
@@ -231,32 +242,41 @@ Result<SignatureSet> SignatureManager::loadSignaturesFromJson(
         
         // Parse signatures array
         size_t sig_start = json_data.find("\"signatures\":");
-        if (sig_start != std::string::npos) {
-            size_t array_start = json_data.find("[", sig_start);
-            size_t array_end = json_data.find("]", array_start);
-            
-            if (array_start != std::string::npos && array_end != std::string::npos) {
-                // Extract each signature object
-                size_t pos = array_start + 1;
-                while (pos < array_end) {
-                    size_t obj_start = json_data.find("{", pos);
-                    if (obj_start >= array_end) break;
-                    
-                    size_t obj_end = json_data.find("}", obj_start);
-                    if (obj_end >= array_end) break;
-                    
-                    std::string sig_obj = json_data.substr(obj_start, obj_end - obj_start + 1);
-                    auto sig_result = parseSignatureFromJson(sig_obj);
-                    
-                    if (sig_result.isSuccess()) {
-                        sig_set.signatures.push_back(sig_result.value());
-                    } else {
-                        // Log error but continue - don't let one bad signature fail everything
-                        // Production: proper logging here
-                    }
-                    
-                    pos = obj_end + 1;
+        if (sig_start == std::string::npos) {
+            return ErrorCode::ParseError;  // Required field missing
+        }
+        
+        size_t array_start = json_data.find("[", sig_start);
+        size_t array_end = json_data.find("]", array_start);
+        
+        if (array_start == std::string::npos || array_end == std::string::npos) {
+            return ErrorCode::ParseError;  // Malformed signatures array
+        }
+        
+        if (array_start != std::string::npos && array_end != std::string::npos) {
+            // Extract each signature object
+            size_t pos = array_start + 1;
+            while (pos < array_end) {
+                size_t obj_start = json_data.find("{", pos);
+                if (obj_start >= array_end) break;
+                
+                size_t obj_end = json_data.find("}", obj_start);
+                if (obj_end == std::string::npos || obj_end >= array_end) {
+                    // Incomplete object in array
+                    return ErrorCode::ParseError;
                 }
+                
+                std::string sig_obj = json_data.substr(obj_start, obj_end - obj_start + 1);
+                auto sig_result = parseSignatureFromJson(sig_obj);
+                
+                if (sig_result.isSuccess()) {
+                    sig_set.signatures.push_back(sig_result.value());
+                } else {
+                    // Log error but continue - don't let one bad signature fail everything
+                    // Production: proper logging here
+                }
+                
+                pos = obj_end + 1;
             }
         }
         
@@ -367,8 +387,10 @@ Result<void> SignatureManager::applySignatureSet(
         return ErrorCode::SignatureInvalid;
     }
     
-    // Save current set for rollback
-    m_previous_set = m_current_set;
+    // Save current set for rollback (only if it's not the initial empty set)
+    if (m_current_set.set_version > 0) {
+        m_previous_set = m_current_set;
+    }
     
     // Apply new set atomically
     m_current_set = sig_set;
@@ -489,7 +511,7 @@ Result<void> SignatureManager::saveToCache() {
 }
 
 Result<SignatureSet> SignatureManager::loadFromCache(int max_age_hours) {
-    if (!m_initialized) {
+    if (m_cache_dir.empty()) {
         return ErrorCode::InvalidState;
     }
     
