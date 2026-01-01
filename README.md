@@ -157,6 +157,29 @@ cmake --build build --config Release
 cd build && ctest --output-on-failure
 ```
 
+### Development Builds with Anti-Debug Disabled
+
+For game developers who need to debug their games without triggering anti-debug false positives, you can disable all anti-debug checks at compile time:
+
+```bash
+# Configure with anti-debug disabled
+cmake -B build -G "Ninja" \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DSENTINEL_DISABLE_ANTIDEBUG=ON \
+  -DSENTINEL_BUILD_TESTS=ON
+
+# Build
+cmake --build build --config Debug
+```
+
+This flag:
+- ✅ Allows "Just My Code" debugging in Visual Studio without false positives
+- ✅ Skips all anti-debug initialization and calibration for better performance
+- ✅ Returns empty violation lists from all anti-debug checks
+- ❌ Should **NEVER** be used in production/release builds
+
+**Important:** Always build production releases **without** this flag to maintain security.
+
 ### SDK Integration Example
 
 **Quick Start:**

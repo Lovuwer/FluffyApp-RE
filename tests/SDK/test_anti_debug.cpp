@@ -830,3 +830,148 @@ TEST(AntiDebugTests, SEHIntegrityCheckPerformance) {
  * 5. The test should still pass (exception is handled by __except block)
  * 6. But CheckSEHIntegrity may detect anomalies if debugger interferes with exception flow
  */
+
+/**
+ * Test: Task 10 - No honeypot triggers in normal operation
+ * This test verifies that the honeypot functions work correctly
+ * and don't produce false positives in a clean environment.
+ */
+TEST(AntiDebugTests, NoHoneypotTriggersInNormalOperation) {
+    AntiDebugDetector detector;
+    detector.Initialize();
+    
+    // Run full check which includes honeypot checks
+    std::vector<ViolationEvent> violations = detector.FullCheck();
+    
+    // In a clean environment, honeypots should not trigger
+    bool honeypotTriggered = false;
+    for (const auto& violation : violations) {
+        if (violation.type == ViolationType::DebuggerAttached &&
+            !violation.details.empty() && 
+            violation.details.find("Honeypot triggered") != std::string::npos) {
+            honeypotTriggered = true;
+            break;
+        }
+    }
+    
+    EXPECT_FALSE(honeypotTriggered)
+        << "Honeypots should not trigger in clean environment";
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test: Task 10 - Honeypot severity is High
+ * This test verifies that if a honeypot is triggered, it has High severity.
+ */
+TEST(AntiDebugTests, HoneypotSeverityIsHigh) {
+    AntiDebugDetector detector;
+    detector.Initialize();
+    
+    // Run full check
+    std::vector<ViolationEvent> violations = detector.FullCheck();
+    
+    // If honeypot is triggered, verify severity is High
+    for (const auto& violation : violations) {
+        if (violation.type == ViolationType::DebuggerAttached &&
+            !violation.details.empty() && 
+            violation.details.find("Honeypot triggered") != std::string::npos) {
+            // Must be High severity
+            EXPECT_EQ(violation.severity, Severity::High)
+                << "Honeypot detection must have High severity";
+        }
+    }
+    
+    detector.Shutdown();
+}
+
+/**
+ * Test: Task 10 - Honeypot performance
+ * This test verifies that honeypot checks complete quickly.
+ */
+TEST(AntiDebugTests, HoneypotCheckPerformance) {
+#ifdef _WIN32
+    AntiDebugDetector detector;
+    detector.Initialize();
+    
+    LARGE_INTEGER freq, start, end;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&start);
+    
+    // Run full check which includes honeypot checks
+    detector.FullCheck();
+    
+    QueryPerformanceCounter(&end);
+    
+    // Calculate elapsed time in milliseconds
+    double elapsed_ms = static_cast<double>(end.QuadPart - start.QuadPart) 
+                       * 1000.0 / static_cast<double>(freq.QuadPart);
+    
+    // Should complete quickly (< 10ms)
+    EXPECT_LT(elapsed_ms, 10.0)
+        << "Honeypot checks took " << elapsed_ms << "ms (expected < 10ms)";
+    
+    detector.Shutdown();
+#else
+    GTEST_SKIP() << "Honeypot checks only available on Windows";
+#endif
+}
+
+/**
+ * Manual test instructions for Task 10 Honeypot detection:
+ * 
+ * To manually test with honeypot:
+ * 1. Build the test executable in Debug mode
+ * 2. Attach a debugger (x64dbg, WinDbg, or Visual Studio)
+ * 3. Set breakpoints in the honeypot functions:
+ *    - DeriveEncryptionKey_Honeypot
+ *    - CheckCriticalVulnerability_Honeypot
+ *    - GrantAdminAccess_Honeypot
+ * 4. Run the NoHoneypotTriggersInNormalOperation test
+ * 5. Single-step through the honeypot functions
+ * 6. Verify that the honeypot triggers and reports a violation
+ * 
+ * Expected behavior with debugger:
+ * - Honeypot functions detect single-stepping through timing analysis
+ * - A ViolationEvent with details "Honeypot triggered" should be present
+ * - The violation should have type ViolationType::DebuggerAttached
+ * - The violation should have severity Severity::High
+ * 
+ * Honeypot functions that should attract attention:
+ * - DeriveEncryptionKey_Honeypot: Appears to derive an encryption key
+ * - CheckCriticalVulnerability_Honeypot: Appears to check for a vulnerability
+ * - GrantAdminAccess_Honeypot: Appears to have an authentication backdoor
+ */
+
+/**
+ * Test: Task 10 - Anti-debug can be disabled with compile flag
+ * This test verifies that when SENTINEL_DISABLE_ANTIDEBUG is defined,
+ * anti-debug checks return empty violation lists.
+ * 
+ * Note: To properly test this, build with -DSENTINEL_DISABLE_ANTIDEBUG=ON
+ */
+TEST(AntiDebugTests, DisableAntiDebugFlag) {
+    AntiDebugDetector detector;
+    detector.Initialize();
+    
+#ifdef SENTINEL_DISABLE_ANTIDEBUG
+    // When flag is set, all checks should return empty
+    std::vector<ViolationEvent> checkViolations = detector.Check();
+    std::vector<ViolationEvent> fullCheckViolations = detector.FullCheck();
+    
+    EXPECT_TRUE(checkViolations.empty())
+        << "Check() should return empty when SENTINEL_DISABLE_ANTIDEBUG is set";
+    EXPECT_TRUE(fullCheckViolations.empty())
+        << "FullCheck() should return empty when SENTINEL_DISABLE_ANTIDEBUG is set";
+#else
+    // When flag is not set, verify anti-debug is active
+    // We can't guarantee violations in CI, but verify methods work
+    detector.Check();  // Should not crash
+    detector.FullCheck();  // Should not crash
+    SUCCEED() << "Anti-debug checks are enabled (flag not set)";
+#endif
+    
+    detector.Shutdown();
+}
+
+

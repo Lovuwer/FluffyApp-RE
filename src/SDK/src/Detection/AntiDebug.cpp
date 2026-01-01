@@ -19,6 +19,25 @@
  * 
  * Severity Levels:
  * - All new checks return Severity::High (not Critical) as they can be bypassed by kernel-mode tools
+ * 
+ * Task 10: Anti-Debug Countermeasures
+ * 
+ * Compile-Time Disable Flag:
+ * Define SENTINEL_DISABLE_ANTIDEBUG to disable all anti-debug checks for development builds.
+ * This allows game developers to debug their games with "Just My Code" debugging without
+ * triggering false positives. The flag can be set via CMake:
+ * 
+ *   cmake -DSENTINEL_DISABLE_ANTIDEBUG=ON ..
+ * 
+ * When enabled, all anti-debug detection methods return empty violation lists and
+ * initialization/calibration is skipped for performance.
+ * 
+ * Honeypot Implementation:
+ * - DeriveEncryptionKey_Honeypot: Appears to derive encryption keys, detects single-stepping
+ * - CheckCriticalVulnerability_Honeypot: Appears to check vulnerabilities, detects timing anomalies
+ * - GrantAdminAccess_Honeypot: Appears to have authentication backdoor, attracts analysis
+ * 
+ * These honeypots use timing analysis to detect debugger presence during active code analysis.
  */
 
 #include "Internal/Detection.hpp"
@@ -209,6 +228,7 @@ static inline bool IsHardwareBreakpointSet(const CONTEXT& ctx) {
 
 // AntiDebugDetector implementation
 void AntiDebugDetector::Initialize() {
+#ifndef SENTINEL_DISABLE_ANTIDEBUG
 #ifdef _WIN32
     // Detect hypervisor environment
     hypervisor_detected_ = DetectHypervisor();
@@ -216,6 +236,7 @@ void AntiDebugDetector::Initialize() {
     // Calibrate timing baseline
     CalibrateTimingBaseline();
 #endif
+#endif // SENTINEL_DISABLE_ANTIDEBUG
 }
 
 void AntiDebugDetector::Shutdown() {
@@ -320,6 +341,10 @@ void AntiDebugDetector::CalibrateTimingBaseline() {
 
 
 std::vector<ViolationEvent> AntiDebugDetector::Check() {
+#ifdef SENTINEL_DISABLE_ANTIDEBUG
+    // Anti-debug checks disabled for development builds
+    return {};
+#else
 #ifdef _WIN32
     std::vector<ViolationEvent> violations;
     
@@ -380,9 +405,14 @@ std::vector<ViolationEvent> AntiDebugDetector::Check() {
 #else
     return {};
 #endif
+#endif // SENTINEL_DISABLE_ANTIDEBUG
 }
 
 std::vector<ViolationEvent> AntiDebugDetector::FullCheck() {
+#ifdef SENTINEL_DISABLE_ANTIDEBUG
+    // Anti-debug checks disabled for development builds
+    return {};
+#else
     auto violations = Check();  // Quick checks first
     
 #ifdef _WIN32
@@ -502,9 +532,24 @@ std::vector<ViolationEvent> AntiDebugDetector::FullCheck() {
         ev.detection_id = 0;
         violations.push_back(ev);
     }
+    
+    // Task 10: Check honeypots
+    // Honeypot functions that appear valuable but exist only to detect debugging
+    if (CheckHoneypots()) {
+        ViolationEvent ev;
+        ev.type = ViolationType::DebuggerAttached;
+        ev.severity = Severity::High;  // High severity - active analysis detected
+        ev.details = "Honeypot triggered - debugger analyzing security-sensitive code paths";
+        ev.timestamp = 0;
+        ev.address = 0;
+        ev.module_name = "";
+        ev.detection_id = 0;
+        violations.push_back(ev);
+    }
 #endif
     
     return violations;
+#endif // SENTINEL_DISABLE_ANTIDEBUG
 }
 
 bool AntiDebugDetector::CheckIsDebuggerPresent() {
@@ -1331,6 +1376,169 @@ bool AntiDebugDetector::CheckParentProcessDebugger() {
     }
     
     return false;
+#else
+    return false;
+#endif
+}
+
+// ====================================================================
+// Task 10: Honeypot Code Paths
+// ====================================================================
+// These functions appear to contain sensitive security logic but are designed
+// to detect debuggers through timing analysis and control flow monitoring.
+// An attacker analyzing these functions will trigger detection mechanisms.
+
+#ifdef _WIN32
+namespace {
+    // Honeypot: Fake encryption key derivation
+    // This function appears to derive a critical encryption key but is actually
+    // a honeypot that detects single-stepping and breakpoints through timing.
+    __declspec(noinline) uint64_t DeriveEncryptionKey_Honeypot() {
+        // Record start time with high precision
+        uint64_t start_cycles = __rdtsc();
+        
+        // Fake "secure" key derivation that looks important
+        uint64_t fake_key = 0x13579BDF2468ACE0;  // Looks like a real key
+        
+        // Multiple stages that would be analyzed by an attacker
+        for (int stage = 0; stage < 8; stage++) {
+            // Simulate complex mixing operations
+            fake_key ^= (fake_key << 13);
+            fake_key ^= (fake_key >> 7);
+            fake_key ^= (fake_key << 17);
+            
+            // Add fake entropy sources
+            fake_key += __rdtsc();
+            fake_key *= 0x5DEECE66D;
+        }
+        
+        // Record end time
+        uint64_t end_cycles = __rdtsc();
+        uint64_t elapsed = end_cycles - start_cycles;
+        
+        // If this took too long, likely being single-stepped or hit breakpoint
+        // Normal execution: ~500-2000 cycles
+        // Single-stepping: 10,000+ cycles per instruction
+        if (elapsed > 50000) {
+            // Store detection in high bits of return value
+            fake_key |= 0x8000000000000000ULL;  // Set detection flag
+        }
+        
+        return fake_key;
+    }
+    
+    // Honeypot: Fake vulnerability check
+    // This function appears to check for a critical vulnerability but is actually
+    // monitoring for debugger interference with control flow.
+    __declspec(noinline) bool CheckCriticalVulnerability_Honeypot() {
+        // This looks like checking for a buffer overflow or use-after-free
+        volatile int control_value = 0x12345678;
+        
+        // Record initial RDTSC
+        uint64_t tsc1 = __rdtsc();
+        
+        // Fake vulnerability check with multiple branches
+        // An attacker would step through each condition carefully
+        if (control_value == 0x12345678) {
+            control_value ^= 0xDEADBEEF;
+        }
+        
+        uint64_t tsc2 = __rdtsc();
+        
+        if (control_value == 0xCC99E897) {  // 0x12345678 ^ 0xDEADBEEF = 0xCC99E897
+            control_value += 0x1000;
+        }
+        
+        uint64_t tsc3 = __rdtsc();
+        
+        // Analyze timing between checks
+        uint64_t delta1 = tsc2 - tsc1;
+        uint64_t delta2 = tsc3 - tsc2;
+        
+        // Normal execution: deltas should be similar (< 1000 cycles each)
+        // Single-stepping: massive variance and high values
+        if (delta1 > 10000 || delta2 > 10000 || 
+            (delta1 > delta2 * 10) || (delta2 > delta1 * 10)) {
+            return true;  // Debugger detected
+        }
+        
+        return false;
+    }
+    
+    // Honeypot: Fake authentication bypass
+    // This function appears to implement a privileged authentication shortcut
+    // that would be highly attractive to attackers, but detects debugging.
+    // Returns true if debugging detected, false otherwise.
+    __declspec(noinline) bool GrantAdminAccess_Honeypot(uint32_t user_id) {
+        // This looks like a dangerous hardcoded backdoor
+        const uint32_t ADMIN_BACKDOOR_ID = 0xAD000001;  // Looks suspicious (fake admin ID)
+        
+        // Start timing
+        LARGE_INTEGER freq, start, end;
+        QueryPerformanceFrequency(&freq);
+        QueryPerformanceCounter(&start);
+        
+        // Fake authentication logic that would attract attention
+        volatile bool is_admin = false;
+        
+        if (user_id == ADMIN_BACKDOOR_ID) {
+            // Looks like a vulnerability - checking for specific ID
+            is_admin = true;
+        } else if (user_id == 0xDEADBEEF) {
+            // Another "suspicious" check
+            is_admin = true;
+        } else if ((user_id & 0xFFFF0000) == 0xC0DE0000) {
+            // Pattern matching that looks exploitable
+            is_admin = true;
+        }
+        
+        QueryPerformanceCounter(&end);
+        
+        // Calculate elapsed time in microseconds
+        double elapsed_us = static_cast<double>(end.QuadPart - start.QuadPart)
+                           * 1000000.0 / static_cast<double>(freq.QuadPart);
+        
+        // This entire function should execute in < 100 microseconds normally
+        // If it takes longer, likely being analyzed (threshold: 1ms)
+        if (elapsed_us > 1000.0) {
+            return true;  // Debugging detected - took too long
+        }
+        
+        // Normal execution - no debugging detected
+        return false;
+    }
+}
+#endif
+
+// Check honeypots for debugger detection
+// Returns true if any honeypot detected debugging activity
+bool AntiDebugDetector::CheckHoneypots() {
+#ifdef _WIN32
+    bool detected = false;
+    
+    // Call honeypot 1: Fake encryption key
+    uint64_t key = DeriveEncryptionKey_Honeypot();
+    if (key & 0x8000000000000000ULL) {
+        detected = true;
+    }
+    
+    // Call honeypot 2: Fake vulnerability check
+    if (CheckCriticalVulnerability_Honeypot()) {
+        detected = true;
+    }
+    
+    // Call honeypot 3: Fake admin access
+    // Each honeypot performs internal timing checks and returns true if debugging detected
+    if (GrantAdminAccess_Honeypot(0xAD000001)) {  // Suspicious fake admin ID
+        detected = true;
+    }
+    
+    // Try with a different suspicious ID to increase coverage
+    if (GrantAdminAccess_Honeypot(0xDEADBEEF)) {  // Another suspicious ID
+        detected = true;
+    }
+    
+    return detected;
 #else
     return false;
 #endif
