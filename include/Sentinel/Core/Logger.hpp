@@ -9,6 +9,9 @@
  * 
  * Thread-safe logging system with multiple severity levels, file rotation,
  * and structured output for security event tracking and diagnostics.
+ * 
+ * This implementation uses spdlog as the backend for high-performance,
+ * production-grade logging with async support and structured output.
  */
 
 #pragma once
@@ -18,13 +21,20 @@
 
 #include <string>
 #include <string_view>
-#include <fstream>
 #include <mutex>
 #include <memory>
 #include <chrono>
-#include <thread>
-#include <sstream>
-#include <iomanip>
+#include <functional>
+
+// Forward declare spdlog types to avoid including heavy headers
+namespace spdlog {
+    class logger;
+    namespace level {
+        enum level_enum : int;
+    }
+}
+
+#include <spdlog/spdlog.h>
 
 namespace Sentinel {
 namespace Core {
@@ -205,6 +215,16 @@ private:
     Logger& operator=(const Logger&) = delete;
 
     /**
+     * @brief Convert Sentinel log level to spdlog level
+     */
+    static spdlog::level::level_enum ToSpdlogLevel(LogLevel level);
+    
+    /**
+     * @brief Convert spdlog level to Sentinel log level
+     */
+    static LogLevel FromSpdlogLevel(spdlog::level::level_enum level);
+
+    /**
      * @brief Format a log message with metadata
      */
     std::string FormatMessage(LogLevel level, std::string_view message,
@@ -215,31 +235,6 @@ private:
      */
     static const char* LevelToString(LogLevel level);
 
-    /**
-     * @brief Get ANSI color code for log level (console output)
-     */
-    static const char* LevelToColor(LogLevel level);
-
-    /**
-     * @brief Write message to console with optional color
-     */
-    void WriteConsole(LogLevel level, const std::string& message);
-
-    /**
-     * @brief Write message to file
-     */
-    void WriteFile(const std::string& message);
-
-    /**
-     * @brief Check and rotate log file if needed
-     */
-    void CheckRotation();
-
-    /**
-     * @brief Rotate the log file
-     */
-    void RotateLogFile();
-
     // Configuration
     LogLevel minLevel_ = LogLevel::Info;
     LogOutput outputs_ = LogOutput::Console;
@@ -249,9 +244,8 @@ private:
 
     // State
     mutable std::mutex mutex_;
-    std::ofstream fileStream_;
+    std::shared_ptr<spdlog::logger> spdlogger_;
     bool initialized_ = false;
-    size_t currentFileSize_ = 0;
 
     // Statistics
     mutable std::mutex statsMutex_;

@@ -18,6 +18,7 @@
 
 #include <Sentinel/Core/Crypto.hpp>
 #include <Sentinel/Core/Crypto/OpenSSLRAII.hpp>
+#include <Sentinel/Core/Logger.hpp>
 #include <openssl/evp.h>
 #include <openssl/err.h>
 #include <openssl/rand.h>
@@ -197,6 +198,7 @@ public:
         if (ret <= 0) {
             // Tag verification failed - immediately zero plaintext buffer
             secureZero(plaintext.data(), plaintext.size());
+            SENTINEL_LOG_ERROR("AES-GCM authentication tag verification failed");
             return ErrorCode::AuthenticationFailed;
         }
         

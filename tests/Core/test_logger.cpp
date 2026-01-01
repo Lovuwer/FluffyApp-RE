@@ -92,8 +92,8 @@ TEST_F(LoggerTest, FileOutput) {
     
     EXPECT_TRUE(content.find("Test message 1") != std::string::npos);
     EXPECT_TRUE(content.find("Test message 2") != std::string::npos);
-    EXPECT_TRUE(content.find("[INFO ]") != std::string::npos);
-    EXPECT_TRUE(content.find("[ERROR]") != std::string::npos);
+    EXPECT_TRUE(content.find("[info]") != std::string::npos);
+    EXPECT_TRUE(content.find("[error]") != std::string::npos);
     
     logger.Shutdown();
 }

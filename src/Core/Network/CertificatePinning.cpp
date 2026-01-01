@@ -10,6 +10,7 @@
 
 #include <Sentinel/Core/Network.hpp>
 #include <Sentinel/Core/Crypto.hpp>
+#include <Sentinel/Core/Logger.hpp>
 #include <openssl/x509.h>
 #include <openssl/evp.h>
 #include <openssl/bio.h>
@@ -18,7 +19,6 @@
 #include <map>
 #include <mutex>
 #include <atomic>
-#include <iostream>
 
 namespace Sentinel::Network {
 
@@ -75,18 +75,18 @@ Result<bool> CertificatePinner::verify(
     const PinningConfig& config = it->second;
     
     if (cert_chain.empty()) {
-        std::cerr << "[SECURITY EVENT] Certificate pinning failed for host: " << hostname << std::endl;
-        std::cerr << "  Empty certificate chain received" << std::endl;
-        std::cerr << "  Connection REJECTED" << std::endl;
+        SENTINEL_LOG_CRITICAL("Certificate pinning failed - empty chain");
+        SENTINEL_LOG_ERROR_F("Host: %s - Empty certificate chain received", hostname.c_str());
+        SENTINEL_LOG_ERROR("Connection REJECTED");
         return false;
     }
     
     // Compute SPKI hash of leaf certificate
     auto hashResult = computeSPKIHash(cert_chain[0]);
     if (hashResult.isFailure()) {
-        std::cerr << "[SECURITY EVENT] Certificate pinning failed for host: " << hostname << std::endl;
-        std::cerr << "  Failed to compute SPKI hash from certificate" << std::endl;
-        std::cerr << "  Connection REJECTED" << std::endl;
+        SENTINEL_LOG_CRITICAL("Certificate pinning failed - hash computation failed");
+        SENTINEL_LOG_ERROR_F("Host: %s - Failed to compute SPKI hash from certificate", hostname.c_str());
+        SENTINEL_LOG_ERROR("Connection REJECTED");
         return hashResult.error();
     }
     
@@ -100,20 +100,23 @@ Result<bool> CertificatePinner::verify(
     }
     
     // No pin matched - log security event
-    std::cerr << "[SECURITY EVENT] Certificate pinning failed for host: " << hostname << std::endl;
-    std::cerr << "  Expected one of " << config.pins.size() << " pinned certificate(s)" << std::endl;
-    std::cerr << "  Received certificate SPKI hash: " << certHash << std::endl;
+    SENTINEL_LOG_CRITICAL("Certificate pinning validation failed");
+    SENTINEL_LOG_ERROR_F("Host: %s - Expected one of %zu pinned certificate(s)", 
+                         hostname.c_str(), config.pins.size());
+    SENTINEL_LOG_ERROR_F("Received certificate SPKI hash: %s", certHash.c_str());
     
     for (size_t i = 0; i < config.pins.size(); ++i) {
-        std::cerr << "  Pin " << (i + 1) << " (" << config.pins[i].description << "): " 
-                  << config.pins[i].sha256_hash << std::endl;
+        SENTINEL_LOG_DEBUG_F("Pin %zu (%s): %s", 
+                            i + 1, 
+                            config.pins[i].description.c_str(),
+                            config.pins[i].sha256_hash.c_str());
     }
     
     if (config.enforce) {
-        std::cerr << "  Connection REJECTED (enforce=true)" << std::endl;
+        SENTINEL_LOG_ERROR("Connection REJECTED (enforce=true)");
         return false;  // Reject connection
     } else {
-        std::cerr << "  Connection ALLOWED (enforce=false - monitoring mode)" << std::endl;
+        SENTINEL_LOG_WARNING("Connection ALLOWED (enforce=false - monitoring mode)");
         return true;
     }
 }

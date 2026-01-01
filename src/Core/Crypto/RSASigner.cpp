@@ -17,6 +17,7 @@
 
 #include <Sentinel/Core/Crypto.hpp>
 #include <Sentinel/Core/Crypto/OpenSSLRAII.hpp>
+#include <Sentinel/Core/Logger.hpp>
 #include <openssl/evp.h>
 #include <openssl/rsa.h>
 #include <openssl/pem.h>
@@ -46,12 +47,14 @@ public:
         const unsigned char* p = derKey.data();
         EVP_PKEY* pkey = d2i_PrivateKey(EVP_PKEY_RSA, nullptr, &p, derKey.size());
         if (!pkey) {
+            SENTINEL_LOG_ERROR("Failed to parse RSA private key");
             return ErrorCode::InvalidKey;
         }
         
         // Validate key parameters
         if (!validateKeyParams(pkey)) {
             EVP_PKEY_free(pkey);
+            SENTINEL_LOG_ERROR("RSA key failed validation (weak key or invalid parameters)");
             return ErrorCode::WeakKey;
         }
         
@@ -59,6 +62,7 @@ public:
             EVP_PKEY_free(m_pkey);
         }
         m_pkey = pkey;
+        SENTINEL_LOG_DEBUG("RSA private key loaded successfully");
         return ErrorCode::Success;
     }
     
@@ -66,12 +70,14 @@ public:
         const unsigned char* p = derKey.data();
         EVP_PKEY* pkey = d2i_PUBKEY(nullptr, &p, derKey.size());
         if (!pkey) {
+            SENTINEL_LOG_ERROR("Failed to parse RSA public key");
             return ErrorCode::InvalidKey;
         }
         
         // Validate key parameters
         if (!validateKeyParams(pkey)) {
             EVP_PKEY_free(pkey);
+            SENTINEL_LOG_ERROR("RSA key failed validation (weak key or invalid parameters)");
             return ErrorCode::WeakKey;
         }
         
@@ -79,6 +85,7 @@ public:
             EVP_PKEY_free(m_pkey);
         }
         m_pkey = pkey;
+        SENTINEL_LOG_DEBUG("RSA public key loaded successfully");
         return ErrorCode::Success;
     }
     

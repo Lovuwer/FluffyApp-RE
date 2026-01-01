@@ -13,6 +13,7 @@
 #include <Sentinel/Core/ErrorCodes.hpp>
 #include <Sentinel/Core/Network.hpp>
 #include <Sentinel/Core/Crypto.hpp>
+#include <Sentinel/Core/Logger.hpp>
 
 #ifdef SENTINEL_USE_CURL
 #include <curl/curl.h>
@@ -23,7 +24,6 @@
 #include <chrono>
 #include <cstring>
 #include <algorithm>
-#include <iostream>
 #endif
 
 namespace Sentinel::Network {
@@ -51,6 +51,25 @@ namespace {
     
     // Note: curl_global_cleanup() is intentionally not called
     // It's not thread-safe and cleanup happens automatically at process exit
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+namespace {
+    const char* httpMethodToString(HttpMethod method) {
+        switch (method) {
+            case HttpMethod::GET:      return "GET";
+            case HttpMethod::POST:     return "POST";
+            case HttpMethod::PUT:      return "PUT";
+            case HttpMethod::PATCH:    return "PATCH";
+            case HttpMethod::DELETE_:  return "DELETE";
+            case HttpMethod::HEAD:     return "HEAD";
+            case HttpMethod::OPTIONS:  return "OPTIONS";
+            default:                   return "UNKNOWN";
+        }
+    }
 }
 
 // ============================================================================
@@ -152,8 +171,13 @@ public:
     
     Result<HttpResponse> send(const HttpRequest& request) {
         if (!g_curlInitialized) {
+            SENTINEL_LOG_ERROR("cURL library not initialized");
             return ErrorCode::CurlInitFailed;
         }
+        
+        SENTINEL_LOG_DEBUG_F("HTTP %s request to: %s", 
+                            httpMethodToString(request.method), 
+                            request.url.c_str());
         
         std::lock_guard<std::mutex> lock(m_mutex);
         
@@ -176,6 +200,9 @@ public:
                 const auto& signedData = signResult.value();
                 signedRequest.headers["X-Signature"] = signedData.signature;
                 signedRequest.headers["X-Timestamp"] = std::to_string(signedData.timestamp);
+                SENTINEL_LOG_DEBUG("Request signed successfully");
+            } else {
+                SENTINEL_LOG_WARNING("Request signing failed, proceeding without signature");
             }
             // If signing fails, proceed without signature (could also return error)
         }
@@ -183,6 +210,7 @@ public:
         // Create cURL handle
         CURL* curl = curl_easy_init();
         if (!curl) {
+            SENTINEL_LOG_ERROR("Failed to create cURL handle");
             return ErrorCode::CurlInitFailed;
         }
         
@@ -206,8 +234,10 @@ public:
             CURLcode res2 = curl_easy_setopt(curl, CURLOPT_SSL_CTX_DATA, m_certificatePinner.get());
             
             if (res1 != CURLE_OK || res2 != CURLE_OK) {
-                std::cerr << "[SECURITY WARNING] Failed to configure SSL context callback for certificate pinning" << std::endl;
+                SENTINEL_LOG_WARNING("Failed to configure SSL context callback for certificate pinning");
                 // Continue anyway - standard TLS verification will still occur
+            } else {
+                SENTINEL_LOG_DEBUG("Certificate pinning enabled for request");
             }
         }
         
@@ -297,6 +327,9 @@ public:
             
             // Break on success
             if (res == CURLE_OK) {
+                if (attempt > 0) {
+                    SENTINEL_LOG_INFO_F("Request succeeded after %d retries", attempt);
+                }
                 break;
             }
             
@@ -309,8 +342,15 @@ public:
             
             // Don't retry on non-transient errors or timeouts
             if (!isTransient || attempt == maxRetries - 1) {
+                if (attempt > 0) {
+                    SENTINEL_LOG_ERROR_F("Request failed after %d retries: %s", 
+                                        attempt + 1, curl_easy_strerror(res));
+                }
                 break;
             }
+            
+            SENTINEL_LOG_WARNING_F("Transient error on attempt %d: %s - retrying", 
+                                  attempt + 1, curl_easy_strerror(res));
             
             // Exponential backoff
             std::this_thread::sleep_for(Milliseconds(retryDelay));
@@ -327,21 +367,29 @@ public:
         
         // Check for errors
         if (res != CURLE_OK) {
+            SENTINEL_LOG_ERROR_F("HTTP request failed: %s", curl_easy_strerror(res));
+            
             // Map cURL error to Sentinel error code
             switch (res) {
                 case CURLE_COULDNT_RESOLVE_HOST:
+                    SENTINEL_LOG_ERROR("DNS resolution failed");
                     return ErrorCode::DnsResolutionFailed;
                 case CURLE_COULDNT_CONNECT:
+                    SENTINEL_LOG_ERROR("Connection failed");
                     return ErrorCode::ConnectionFailed;
                 case CURLE_OPERATION_TIMEDOUT:
+                    SENTINEL_LOG_ERROR("Request timeout");
                     return ErrorCode::Timeout;
                 case CURLE_SSL_CONNECT_ERROR:
                 case CURLE_SSL_CERTPROBLEM:
                 case CURLE_SSL_CIPHER:
+                    SENTINEL_LOG_ERROR("TLS handshake failed");
                     return ErrorCode::TlsHandshakeFailed;
                 case CURLE_PEER_FAILED_VERIFICATION:
+                    SENTINEL_LOG_ERROR("Certificate verification failed");
                     return ErrorCode::CertificateInvalid;
                 default:
+                    SENTINEL_LOG_ERROR("Network error");
                     return ErrorCode::NetworkError;
             }
         }
@@ -350,6 +398,10 @@ public:
         long httpCode = 0;
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
         response.statusCode = static_cast<int>(httpCode);
+        
+        SENTINEL_LOG_DEBUG_F("HTTP response: %d (%.0fms)", 
+                            response.statusCode, 
+                            static_cast<double>(response.elapsed.count()));
         
         return response;
     }

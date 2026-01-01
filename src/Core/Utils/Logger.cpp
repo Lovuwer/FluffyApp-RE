@@ -6,16 +6,19 @@
  * @date 2025
  * 
  * @copyright Copyright (c) 2025 Sentinel Security. All rights reserved.
+ * 
+ * This implementation uses spdlog for high-performance synchronous logging with
+ * structured output support and automatic log rotation. Synchronous logging is
+ * used for maximum reliability and immediate flush to disk.
  */
 
 #include "Sentinel/Core/Logger.hpp"
+#include <spdlog/spdlog.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/sinks/rotating_file_sink.h>
+#include <spdlog/sinks/callback_sink.h>
 #include <iostream>
 #include <filesystem>
-#include <ctime>
-
-#ifdef _WIN32
-#include <windows.h>
-#endif
 
 namespace Sentinel {
 namespace Core {
@@ -46,53 +49,102 @@ bool Logger::Initialize(LogLevel minLevel, LogOutput outputs,
     logFilePath_ = logFilePath;
     maxFileSizeBytes_ = maxFileSizeMB * 1024 * 1024;
 
-    // Open log file if file output is enabled
-    if (hasFlag(outputs_, LogOutput::File) && !logFilePath_.empty()) {
-        fileStream_.open(logFilePath_, std::ios::app);
-        if (!fileStream_.is_open()) {
-            std::cerr << "Failed to open log file: " << logFilePath_ << std::endl;
-            return false;
+    try {
+        // Create sinks based on requested outputs
+        std::vector<spdlog::sink_ptr> sinks;
+
+        // Console sink
+        if (hasFlag(outputs_, LogOutput::Console)) {
+            auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+            console_sink->set_level(ToSpdlogLevel(minLevel_));
+            sinks.push_back(console_sink);
         }
 
-        // Check current file size
-        try {
-            if (std::filesystem::exists(logFilePath_)) {
-                currentFileSize_ = std::filesystem::file_size(logFilePath_);
+        // File sink with rotation
+        if (hasFlag(outputs_, LogOutput::File) && !logFilePath_.empty()) {
+            // Create directory if it doesn't exist
+            std::filesystem::path logPath(logFilePath_);
+            if (logPath.has_parent_path()) {
+                std::filesystem::create_directories(logPath.parent_path());
             }
-        } catch (const std::exception& e) {
-            std::cerr << "Failed to get log file size: " << e.what() << std::endl;
+
+            auto file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
+                logFilePath_, 
+                maxFileSizeBytes_, 
+                3 // Keep 3 rotated files
+            );
+            file_sink->set_level(ToSpdlogLevel(minLevel_));
+            sinks.push_back(file_sink);
         }
+
+        // Callback sink (for game integration)
+        if (hasFlag(outputs_, LogOutput::Callback)) {
+            auto callback_sink = std::make_shared<spdlog::sinks::callback_sink_mt>(
+                [this](const spdlog::details::log_msg& msg) {
+                    if (callback_) {
+                        auto level = FromSpdlogLevel(msg.level);
+                        std::string message(msg.payload.data(), msg.payload.size());
+                        auto timestamp = std::chrono::system_clock::now();
+                        callback_(level, message, timestamp);
+                    }
+                }
+            );
+            callback_sink->set_level(ToSpdlogLevel(minLevel_));
+            sinks.push_back(callback_sink);
+        }
+
+        // Create logger with sinks
+        if (sinks.empty()) {
+            // No sinks specified, use console as default
+            auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+            console_sink->set_level(ToSpdlogLevel(minLevel_));
+            sinks.push_back(console_sink);
+        }
+
+        // Use synchronous logger for maximum reliability and immediate flush
+        // Synchronous logging ensures all logs are written before returning,
+        // which is critical for debugging production issues and crash analysis
+        spdlogger_ = std::make_shared<spdlog::logger>(
+            "sentinel", 
+            sinks.begin(), 
+            sinks.end()
+        );
+
+        // Set pattern: [timestamp] [level] [thread] message
+        spdlogger_->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] [%t] %v");
+        spdlogger_->set_level(ToSpdlogLevel(minLevel_));
+        spdlogger_->flush_on(spdlog::level::trace); // Always flush for reliability
+
+        initialized_ = true;
+        return true;
+
+    } catch (const std::exception& e) {
+        std::cerr << "Failed to initialize logger: " << e.what() << std::endl;
+        return false;
     }
-
-    initialized_ = true;
-
-    return true;
 }
 
 void Logger::Shutdown() {
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
 
-        if (!initialized_) {
-            return;
-        }
+    if (!initialized_) {
+        return;
+    }
 
-        // Mark as uninitialized before logging to prevent recursive calls
-        initialized_ = false;
+    if (spdlogger_) {
+        spdlogger_->flush();
+        spdlogger_.reset();
     }
-    
-    // Log shutdown message without holding the lock
-    // (Log will check initialized_ and handle appropriately)
-    if (fileStream_.is_open()) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        fileStream_.flush();
-        fileStream_.close();
-    }
+
+    initialized_ = false;
 }
 
 void Logger::SetMinLevel(LogLevel level) {
     std::lock_guard<std::mutex> lock(mutex_);
     minLevel_ = level;
+    if (spdlogger_) {
+        spdlogger_->set_level(ToSpdlogLevel(level));
+    }
 }
 
 LogLevel Logger::GetMinLevel() const {
@@ -144,33 +196,35 @@ void Logger::Log(LogLevel level, std::string_view message,
         }
     }
 
-    auto now = std::chrono::system_clock::now();
-    std::string formattedMessage = FormatMessage(level, message, file, line);
-
     std::lock_guard<std::mutex> lock(mutex_);
-
-    // Write to console
-    if (hasFlag(outputs_, LogOutput::Console)) {
-        WriteConsole(level, formattedMessage);
+    if (!spdlogger_) {
+        return;
     }
 
-    // Write to file
-    if (hasFlag(outputs_, LogOutput::File) && fileStream_.is_open()) {
-        WriteFile(formattedMessage);
-        CheckRotation();
+    // Format message with source location if provided
+    std::string formattedMsg;
+    if (file && line > 0) {
+        // Extract just the filename from the full path
+        const char* filename = file;
+        for (const char* p = file; *p; ++p) {
+            if (*p == '/' || *p == '\\') {
+                filename = p + 1;
+            }
+        }
+        formattedMsg = std::string("(") + filename + ":" + std::to_string(line) + ") " + std::string(message);
+    } else {
+        formattedMsg = std::string(message);
     }
 
-    // Call user callback
-    if (hasFlag(outputs_, LogOutput::Callback) && callback_) {
-        callback_(level, message, now);
-    }
+    // Log using spdlog
+    auto spdlog_level = ToSpdlogLevel(level);
+    spdlogger_->log(spdlog_level, formattedMsg);
 }
 
 void Logger::Flush() {
     std::lock_guard<std::mutex> lock(mutex_);
-    
-    if (fileStream_.is_open()) {
-        fileStream_.flush();
+    if (spdlogger_) {
+        spdlogger_->flush();
     }
 }
 
@@ -184,50 +238,37 @@ void Logger::ResetStatistics() {
     stats_ = Statistics{};
 }
 
+spdlog::level::level_enum Logger::ToSpdlogLevel(LogLevel level) {
+    switch (level) {
+        case LogLevel::Trace:    return spdlog::level::trace;
+        case LogLevel::Debug:    return spdlog::level::debug;
+        case LogLevel::Info:     return spdlog::level::info;
+        case LogLevel::Warning:  return spdlog::level::warn;
+        case LogLevel::Error:    return spdlog::level::err;
+        case LogLevel::Critical: return spdlog::level::critical;
+        case LogLevel::Off:      return spdlog::level::off;
+        default:                 return spdlog::level::info;
+    }
+}
+
+LogLevel Logger::FromSpdlogLevel(spdlog::level::level_enum level) {
+    switch (level) {
+        case spdlog::level::trace:    return LogLevel::Trace;
+        case spdlog::level::debug:    return LogLevel::Debug;
+        case spdlog::level::info:     return LogLevel::Info;
+        case spdlog::level::warn:     return LogLevel::Warning;
+        case spdlog::level::err:      return LogLevel::Error;
+        case spdlog::level::critical: return LogLevel::Critical;
+        case spdlog::level::off:      return LogLevel::Off;
+        default:                      return LogLevel::Info;
+    }
+}
+
 std::string Logger::FormatMessage(LogLevel level, std::string_view message,
                                  const char* file, int line) const {
-    std::ostringstream oss;
-
-    // Timestamp
-    auto now = std::chrono::system_clock::now();
-    auto time_t_now = std::chrono::system_clock::to_time_t(now);
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        now.time_since_epoch()) % 1000;
-
-#ifdef _WIN32
-    struct tm timeinfo;
-    localtime_s(&timeinfo, &time_t_now);
-    oss << std::put_time(&timeinfo, "%Y-%m-%d %H:%M:%S");
-#else
-    struct tm timeinfo;
-    localtime_r(&time_t_now, &timeinfo);
-    oss << std::put_time(&timeinfo, "%Y-%m-%d %H:%M:%S");
-#endif
-
-    oss << '.' << std::setfill('0') << std::setw(3) << ms.count();
-
-    // Thread ID
-    oss << " [" << std::this_thread::get_id() << "]";
-
-    // Log level
-    oss << " [" << LevelToString(level) << "]";
-
-    // File and line (if provided)
-    if (file && line > 0) {
-        // Extract just the filename from the full path
-        const char* filename = file;
-        for (const char* p = file; *p; ++p) {
-            if (*p == '/' || *p == '\\') {
-                filename = p + 1;
-            }
-        }
-        oss << " (" << filename << ":" << line << ")";
-    }
-
-    // Message
-    oss << " " << message;
-
-    return oss.str();
+    // This method is kept for compatibility but no longer used
+    // spdlog handles formatting internally
+    return std::string(message);
 }
 
 const char* Logger::LevelToString(LogLevel level) {
@@ -239,99 +280,6 @@ const char* Logger::LevelToString(LogLevel level) {
         case LogLevel::Error:    return "ERROR";
         case LogLevel::Critical: return "CRIT ";
         default:                 return "UNKN ";
-    }
-}
-
-const char* Logger::LevelToColor(LogLevel level) {
-    switch (level) {
-        case LogLevel::Trace:    return "\033[37m";   // White
-        case LogLevel::Debug:    return "\033[36m";   // Cyan
-        case LogLevel::Info:     return "\033[32m";   // Green
-        case LogLevel::Warning:  return "\033[33m";   // Yellow
-        case LogLevel::Error:    return "\033[31m";   // Red
-        case LogLevel::Critical: return "\033[1;31m"; // Bold Red
-        default:                 return "\033[0m";    // Reset
-    }
-}
-
-void Logger::WriteConsole(LogLevel level, const std::string& message) {
-#ifdef _WIN32
-    // Enable ANSI color support on Windows 10+
-    static bool colorEnabled = []() {
-        HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
-        if (hOut != INVALID_HANDLE_VALUE) {
-            DWORD mode = 0;
-            if (GetConsoleMode(hOut, &mode)) {
-                mode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
-                SetConsoleMode(hOut, mode);
-                return true;
-            }
-        }
-        return false;
-    }();
-
-    if (colorEnabled) {
-        std::cout << LevelToColor(level) << message << "\033[0m" << std::endl;
-    } else {
-        std::cout << message << std::endl;
-    }
-#else
-    // Unix-like systems support ANSI colors by default
-    std::cout << LevelToColor(level) << message << "\033[0m" << std::endl;
-#endif
-}
-
-void Logger::WriteFile(const std::string& message) {
-    fileStream_ << message << std::endl;
-    currentFileSize_ += message.size() + 1; // +1 for newline
-}
-
-void Logger::CheckRotation() {
-    if (currentFileSize_ >= maxFileSizeBytes_) {
-        RotateLogFile();
-    }
-}
-
-void Logger::RotateLogFile() {
-    if (!fileStream_.is_open()) {
-        return;
-    }
-
-    // Close current file
-    fileStream_.close();
-
-    try {
-        // Generate backup filename with timestamp
-        auto now = std::chrono::system_clock::now();
-        auto time_t_now = std::chrono::system_clock::to_time_t(now);
-        
-        std::ostringstream backupName;
-        backupName << logFilePath_ << ".";
-        
-#ifdef _WIN32
-        struct tm timeinfo;
-        localtime_s(&timeinfo, &time_t_now);
-        backupName << std::put_time(&timeinfo, "%Y%m%d_%H%M%S");
-#else
-        struct tm timeinfo;
-        localtime_r(&time_t_now, &timeinfo);
-        backupName << std::put_time(&timeinfo, "%Y%m%d_%H%M%S");
-#endif
-
-        // Rename current log file
-        std::filesystem::rename(logFilePath_, backupName.str());
-
-        // Open new log file
-        fileStream_.open(logFilePath_, std::ios::app);
-        currentFileSize_ = 0;
-
-        Log(LogLevel::Info, "Log file rotated");
-
-    } catch (const std::exception& e) {
-        std::cerr << "Failed to rotate log file: " << e.what() << std::endl;
-        
-        // Try to reopen the original file
-        fileStream_.open(logFilePath_, std::ios::app);
     }
 }
 
