@@ -118,11 +118,11 @@ endif()
 if(SENTINEL_ENABLE_DIVERSITY)
     # Generate a pseudo-random seed based on timestamp and random component
     string(TIMESTAMP BUILD_TIMESTAMP "%s")
-    string(RANDOM LENGTH 16 ALPHABET "0123456789ABCDEF" RANDOM_COMPONENT)
+    string(RANDOM LENGTH 6 ALPHABET "0123456789" RANDOM_COMPONENT)
     
     # Combine timestamp and random to create seed
-    # Convert hex string to decimal for compatibility
-    math(EXPR DIVERSITY_SEED "${BUILD_TIMESTAMP} * 1000000 + 0x${RANDOM_COMPONENT} % 1000000")
+    # Use smaller random component to avoid overflow
+    math(EXPR DIVERSITY_SEED "${BUILD_TIMESTAMP} * 1000000 + ${RANDOM_COMPONENT}")
     
     list(APPEND SDK_COMPILE_DEFINITIONS SENTINEL_DIVERSITY_SEED=${DIVERSITY_SEED}ULL)
     message(STATUS "Client diversity enabled with seed: ${DIVERSITY_SEED}")

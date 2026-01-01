@@ -17,6 +17,8 @@
 #include "Internal/SafeMemory.hpp"  // Task 09: For exception budget tracking
 #include "Internal/ScanScheduler.hpp"  // Task 09: Detection timing randomization
 #include "Internal/IntegrityValidator.hpp"  // Task 08: Memory integrity self-validation
+#include "Sentinel/Core/Logger.hpp"  // Comprehensive logging infrastructure
+// Note: Internal/PerfTelemetry.hpp will be available after merge with main
 #include "Internal/PerfTelemetry.hpp"  // Task 17: Performance telemetry
 
 #include <atomic>
@@ -479,66 +481,113 @@ SENTINEL_API ErrorCode SENTINEL_CALL Initialize(const Configuration* config) {
     g_context->init_time = std::chrono::steady_clock::now();
     g_context->last_update = g_context->init_time;
     
+    // Initialize logging infrastructure
+    auto& logger = Sentinel::Core::Logger::Instance();
+    
+    // Set log level based on debug mode
+    Sentinel::Core::LogLevel logLevel = config->debug_mode 
+        ? Sentinel::Core::LogLevel::Debug 
+        : Sentinel::Core::LogLevel::Info;
+    
+    // Set output targets
+    Sentinel::Core::LogOutput logOutput = Sentinel::Core::LogOutput::Console;
+    
+    if (config->log_path && strlen(config->log_path) > 0) {
+        logOutput = logOutput | Sentinel::Core::LogOutput::File;
+    }
+    
+    // Initialize logger
+    std::string logPath = (config->log_path && strlen(config->log_path) > 0) 
+        ? config->log_path 
+        : "";
+    
+    if (!logger.Initialize(logLevel, logOutput, logPath, 10)) {
+        SetLastError("Failed to initialize logger");
+        // Continue anyway - logging is not critical
+    }
+    
+    SENTINEL_LOG_INFO_F("Sentinel SDK v%s initializing...", SENTINEL_SDK_VERSION_STRING);
+    SENTINEL_LOG_DEBUG_F("Debug mode: %s", config->debug_mode ? "enabled" : "disabled");
+    
     // Validate license (placeholder)
     if (config->license_key == nullptr || strlen(config->license_key) == 0) {
         SetLastError("Invalid license key");
+        SENTINEL_LOG_ERROR("Invalid license key provided");
         g_context.reset();
         return ErrorCode::InvalidLicense;
     }
+    
+    SENTINEL_LOG_DEBUG_F("License key: %.8s... (truncated)", config->license_key);
     
     // Generate session info
     g_context->hardware_id = Internal::GenerateHardwareId();
     g_context->session_token = Internal::GenerateSessionToken();
     
+    SENTINEL_LOG_INFO_F("Session token: %.16s... (truncated)", g_context->session_token.c_str());
+    SENTINEL_LOG_DEBUG_F("Hardware ID: %s", g_context->hardware_id.c_str());
+    
     // Initialize detection modules based on features
     auto features = static_cast<uint32_t>(config->features);
     
+    SENTINEL_LOG_INFO("Initializing detection modules...");
+    
     if (features & static_cast<uint32_t>(DetectionFeatures::AntiDebug)) {
+        SENTINEL_LOG_DEBUG("Initializing AntiDebug detector");
         g_context->anti_debug = std::make_unique<AntiDebugDetector>();
         g_context->anti_debug->Initialize();
     }
     
     if (features & (static_cast<uint32_t>(DetectionFeatures::InlineHookDetect) |
                     static_cast<uint32_t>(DetectionFeatures::IATHookDetect))) {
+        SENTINEL_LOG_DEBUG("Initializing AntiHook detector");
         g_context->anti_hook = std::make_unique<AntiHookDetector>();
         g_context->anti_hook->Initialize();
     }
     
     if (features & (static_cast<uint32_t>(DetectionFeatures::MemoryIntegrity) |
                     static_cast<uint32_t>(DetectionFeatures::CodeIntegrity))) {
+        SENTINEL_LOG_DEBUG("Initializing Integrity checker");
         g_context->integrity = std::make_unique<IntegrityChecker>();
         g_context->integrity->Initialize();
     }
     
     if (features & static_cast<uint32_t>(DetectionFeatures::SpeedHackDetect)) {
+        SENTINEL_LOG_DEBUG("Initializing SpeedHack detector");
         g_context->speed_hack = std::make_unique<SpeedHackDetector>();
         g_context->speed_hack->Initialize();
     }
     
     // Initialize correlation engine (always enabled for false-positive prevention)
+    SENTINEL_LOG_DEBUG("Initializing Correlation engine");
     g_context->correlation = std::make_unique<CorrelationEngine>();
     g_context->correlation->Initialize();
     
     // Initialize whitelist manager
+    SENTINEL_LOG_DEBUG("Initializing Whitelist manager");
     g_whitelist = std::make_unique<WhitelistManager>();
     g_whitelist->Initialize();
     
     // Task 14: Initialize telemetry and runtime configuration
+    SENTINEL_LOG_DEBUG("Initializing Environment detector");
     g_context->env_detector = std::make_unique<EnvironmentDetector>();
     g_context->env_detector->Initialize();
     g_context->env_detector->DetectEnvironment();
     
+    SENTINEL_LOG_DEBUG("Initializing Telemetry emitter");
     g_context->telemetry = std::make_unique<TelemetryEmitter>();
     g_context->telemetry->Initialize();
     g_context->telemetry->SetEnvironmentDetector(g_context->env_detector.get());
     
+    SENTINEL_LOG_DEBUG("Initializing Runtime configuration");
     g_context->runtime_config = std::make_unique<RuntimeConfig>();
     g_context->runtime_config->Initialize();
     
     // Task 07: Initialize heartbeat thread watchdog
+    SENTINEL_LOG_DEBUG("Initializing Watchdog");
     g_context->watchdog = std::make_unique<Watchdog>();
     
     // Task 09: Initialize scan scheduler with randomized timing
+    SENTINEL_LOG_DEBUG("Initializing Scan scheduler");
     g_context->scan_scheduler = std::make_unique<ScanScheduler>();
     ScanSchedulerConfig scheduler_config;
     scheduler_config.min_interval_ms = config->heartbeat_interval_ms / 2;  // 50% variation
@@ -549,6 +598,7 @@ SENTINEL_API ErrorCode SENTINEL_CALL Initialize(const Configuration* config) {
     scheduler_config.vary_scan_scope = true;
     g_context->scan_scheduler->Initialize(scheduler_config);
     // Task 08: Initialize memory integrity self-validation
+    SENTINEL_LOG_DEBUG("Initializing Self-integrity validator");
     g_context->self_integrity = std::make_unique<IntegrityValidator>();
     g_context->self_integrity->Initialize();
     
@@ -563,13 +613,17 @@ SENTINEL_API ErrorCode SENTINEL_CALL Initialize(const Configuration* config) {
     
     // Initialize network if cloud endpoint provided
     if (config->cloud_endpoint && strlen(config->cloud_endpoint) > 0) {
+        SENTINEL_LOG_INFO_F("Initializing cloud reporting to: %s", config->cloud_endpoint);
         g_context->packet_crypto = std::make_unique<PacketEncryption>();
         g_context->reporter = std::make_unique<CloudReporter>(config->cloud_endpoint);
         g_context->reporter->SetBatchSize(config->report_batch_size);
         g_context->reporter->SetInterval(config->report_interval_ms);
+    } else {
+        SENTINEL_LOG_WARNING("Cloud endpoint not configured - telemetry disabled");
     }
     
     // Start heartbeat thread
+    SENTINEL_LOG_DEBUG("Starting heartbeat thread");
     g_context->heartbeat_thread = std::make_unique<std::thread>(HeartbeatThreadFunc);
     
     g_context->initialized.store(true);
@@ -589,16 +643,20 @@ SENTINEL_API ErrorCode SENTINEL_CALL Initialize(const Configuration* config) {
 SENTINEL_API void SENTINEL_CALL Shutdown() {
     if (!g_context) return;
     
+    SENTINEL_LOG_INFO("Sentinel SDK shutting down...");
+    
     // Signal shutdown
     g_context->shutdown_requested.store(true);
     g_context->active.store(false);
     
     // Wait for heartbeat thread
     if (g_context->heartbeat_thread && g_context->heartbeat_thread->joinable()) {
+        SENTINEL_LOG_DEBUG("Waiting for heartbeat thread to stop");
         g_context->heartbeat_thread->join();
     }
     
     // Cleanup modules
+    SENTINEL_LOG_DEBUG("Cleaning up detection modules");
     g_context->anti_debug.reset();
     g_context->anti_hook.reset();
     g_context->integrity.reset();
@@ -645,6 +703,12 @@ SENTINEL_API void SENTINEL_CALL Shutdown() {
     
     g_context->initialized.store(false);
     g_context.reset();
+    
+    SENTINEL_LOG_INFO("Sentinel SDK shut down successfully");
+    
+    // Shutdown logger last
+    auto& logger = Sentinel::Core::Logger::Instance();
+    logger.Shutdown();
 }
 
 SENTINEL_API bool SENTINEL_CALL IsInitialized() {
