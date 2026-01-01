@@ -253,16 +253,6 @@ public:
      */
     static std::string GetOperationName(OperationType operation);
     
-    /**
-     * Create a scoped timer for automatic timing
-     * Usage: auto timer = telemetry.CreateTimer(OperationType::Update);
-     */
-    ScopedTimer CreateTimer(OperationType operation) {
-        return ScopedTimer(operation, [this](OperationType op, double duration_ms) {
-            this->RecordOperation(op, duration_ms);
-        });
-    }
-    
 private:
     /**
      * Calculate percentiles from sample data
@@ -307,7 +297,7 @@ private:
         uint64_t window_start_ms;     // Start time of current window
         uint64_t last_throttle_check_ms; // Last time throttling was evaluated
         double sum_duration;          // Sum for mean calculation
-        std::mutex mutex;             // Thread-safe access
+        mutable std::mutex mutex;     // Thread-safe access (mutable for const methods)
         
         OperationData() 
             : window_start_ms(0)

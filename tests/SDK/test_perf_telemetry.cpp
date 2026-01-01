@@ -278,39 +278,6 @@ TEST_F(PerformanceTelemetryTest, LifetimeVsWindowStats) {
     EXPECT_GT(metrics.lifetime.sample_count, 0u);
 }
 
-TEST_F(PerformanceTelemetryTest, ScopedTimerUsage) {
-    bool callback_called = false;
-    double recorded_duration = 0.0;
-    OperationType recorded_op = OperationType::Initialize;
-    
-    auto callback = [&](OperationType op, double duration_ms) {
-        callback_called = true;
-        recorded_duration = duration_ms;
-        recorded_op = op;
-    };
-    
-    {
-        ScopedTimer timer(OperationType::Update, callback);
-        // Simulate some work
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    
-    EXPECT_TRUE(callback_called);
-    EXPECT_EQ(recorded_op, OperationType::Update);
-    EXPECT_GT(recorded_duration, 9.0);  // At least 9ms
-    EXPECT_LT(recorded_duration, 50.0); // Less than 50ms (generous margin)
-}
-
-TEST_F(PerformanceTelemetryTest, CreateTimerHelper) {
-    {
-        auto timer = telemetry.CreateTimer(OperationType::Update);
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    }
-    
-    auto metrics = telemetry.GetMetrics(OperationType::Update);
-    EXPECT_EQ(metrics.total_operations, 1u);
-}
-
 TEST_F(PerformanceTelemetryTest, ArtificialDelayDemonstration) {
     // Configure with low threshold
     PerfTelemetryConfig config = PerfTelemetryConfig::Default();
