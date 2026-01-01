@@ -38,6 +38,7 @@ set(SDK_SOURCES
     src/Internal/Watchdog.cpp
     src/Internal/ScanScheduler.cpp
     src/Internal/IntegrityValidator.cpp
+    src/Internal/BehavioralCollector.cpp
     src/Core/Heartbeat.cpp
     src/Core/MemoryProtection.cpp
     src/Core/FunctionProtection.cpp
