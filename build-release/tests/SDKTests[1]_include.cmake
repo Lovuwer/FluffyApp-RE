@@ -1,5 +1,0 @@
-if(EXISTS "/home/runner/work/Sentiel-RE/Sentiel-RE/build-release/tests/SDKTests[1]_tests.cmake")
-  include("/home/runner/work/Sentiel-RE/Sentiel-RE/build-release/tests/SDKTests[1]_tests.cmake")
-else()
-  add_test(SDKTests_NOT_BUILT SDKTests_NOT_BUILT)
-endif()
