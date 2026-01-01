@@ -13,7 +13,7 @@
 
 #include "Internal/Detection.hpp"
 #include <Sentinel/Core/Crypto.hpp>
-#include "../../../Core/Crypto/OpenSSLRAII.hpp"
+#include <Sentinel/Core/Crypto/OpenSSLRAII.hpp>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 #include <openssl/kdf.h>
