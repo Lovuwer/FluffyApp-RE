@@ -10,6 +10,7 @@
 
 #include <Sentinel/Core/Network.hpp>
 #include <Sentinel/Core/Crypto.hpp>
+#include <Sentinel/Core/Crypto/OpenSSLRAII.hpp>
 #include <Sentinel/Core/Logger.hpp>
 #include <openssl/x509.h>
 #include <openssl/evp.h>
@@ -130,7 +131,7 @@ Result<std::string> computeSPKIHash(ByteSpan cert_der) {
     }
     
     // Extract public key
-    EVP_PKEY* pkey = X509_get_pubkey(cert);
+    Crypto::EVPPKeyPtr pkey(X509_get_pubkey(cert));
     if (!pkey) {
         X509_free(cert);
         return ErrorCode::CertificateInvalid;
@@ -139,7 +140,6 @@ Result<std::string> computeSPKIHash(ByteSpan cert_der) {
     // Get SPKI in DER format
     int spki_len = i2d_PUBKEY(pkey, nullptr);
     if (spki_len <= 0) {
-        EVP_PKEY_free(pkey);
         X509_free(cert);
         return ErrorCode::CryptoError;
     }
@@ -148,7 +148,6 @@ Result<std::string> computeSPKIHash(ByteSpan cert_der) {
     unsigned char* spki_ptr = spki_der.data();
     i2d_PUBKEY(pkey, &spki_ptr);
     
-    EVP_PKEY_free(pkey);
     X509_free(cert);
     
     // Compute SHA-256 hash
