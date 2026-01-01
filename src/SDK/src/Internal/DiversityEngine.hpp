@@ -143,27 +143,27 @@ private:
 /**
  * Compile-time diversity padding macro
  * Injects variable-size padding based on diversity seed and line number
- * Uses inline assembly for guaranteed code diversity
+ * Must be used within function scope (not at global/namespace scope)
  */
 #ifndef SENTINEL_DIVERSITY_SEED
-#define SENTINEL_DIVERSITY_PADDING(line) 
+// When diversity is disabled, macro expands to safe no-op
+#define SENTINEL_DIVERSITY_PADDING(line) do { (void)(line); } while(0)
 #else
 
-// Use inline assembly to inject NOPs that vary by line number and seed
-// This creates actual code diversity that affects the binary
 #if defined(__GNUC__) || defined(__clang__)
+// GCC/Clang: inline assembly (must be in function scope)
 #define SENTINEL_DIVERSITY_PADDING(line) \
     __asm__ __volatile__( \
         ".rept %c0\n\t" \
         "nop\n\t" \
         ".endr" \
-        : : "i" ((((SENTINEL_DIVERSITY_SEED ^ line) * SENTINEL_DIVERSITY_HASH_MULTIPLIER) >> 56) & 0x1F) \
+        : : "i" ((((SENTINEL_DIVERSITY_SEED ^ (line)) * SENTINEL_DIVERSITY_HASH_MULTIPLIER) >> 56) & 0x1F) \
     )
 #elif defined(_MSC_VER) && defined(_M_X64)
-// MSVC x64 - use __nop() intrinsic (0-15 NOPs for better compatibility)
+// MSVC x64: __nop() intrinsic (must be in function scope)
 #define SENTINEL_DIVERSITY_PADDING(line) \
     do { \
-        constexpr int nop_count = (((SENTINEL_DIVERSITY_SEED ^ line) * SENTINEL_DIVERSITY_HASH_MULTIPLIER) >> 60) & 0xF; \
+        constexpr int nop_count = (((SENTINEL_DIVERSITY_SEED ^ (line)) * SENTINEL_DIVERSITY_HASH_MULTIPLIER) >> 60) & 0xF; \
         if constexpr (nop_count >= 1) __nop(); \
         if constexpr (nop_count >= 2) __nop(); \
         if constexpr (nop_count >= 3) __nop(); \
@@ -181,10 +181,15 @@ private:
         if constexpr (nop_count >= 15) __nop(); \
     } while(0)
 #else
-// Fallback for other compilers
+// Fallback: volatile padding with fixed size (must be in function scope)
 #define SENTINEL_DIVERSITY_PADDING(line) \
-    [[maybe_unused]] volatile char __diversity_pad_##line[(((SENTINEL_DIVERSITY_SEED ^ line) * SENTINEL_DIVERSITY_HASH_MULTIPLIER) >> 60) & 0x7] = {}
+    do { \
+        constexpr int pad_size = (((SENTINEL_DIVERSITY_SEED ^ (line)) * SENTINEL_DIVERSITY_HASH_MULTIPLIER) >> 60) & 0x7; \
+        [[maybe_unused]] volatile char __diversity_pad[8]; \
+        if (pad_size > 0) __diversity_pad[0] = 0; \
+    } while(0)
 #endif
+
 #endif
 
 /**

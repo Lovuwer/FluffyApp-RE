@@ -32,8 +32,6 @@
 #include <chrono>
 
 namespace Sentinel {
-    SENTINEL_DIVERSITY_PADDING(__LINE__);
-    SENTINEL_DIVERSITY_PADDING(__LINE__);
 namespace SDK {
 
 #ifdef _WIN32
