@@ -745,22 +745,33 @@ public:
     }
     
     int64_t create_protected_int(int64_t value) {
-        if (!initialized) return 0;
+        // Note: Returns 0 on failure, which matches SDK behavior
+        // SDK CreateProtectedInt returns 0 (invalid handle) on failure
+        if (!initialized) {
+            UtilityFunctions::printerr("Sentinel SDK not initialized");
+            return 0;
+        }
         return Sentinel::SDK::CreateProtectedInt(value);
     }
     
     int64_t get_protected_int(int64_t handle) {
-        if (!initialized) return 0;
+        if (!initialized || handle == 0) {
+            UtilityFunctions::printerr("Invalid handle or SDK not initialized");
+            return 0;
+        }
         return Sentinel::SDK::GetProtectedInt(handle);
     }
     
     void set_protected_int(int64_t handle, int64_t value) {
-        if (!initialized) return;
+        if (!initialized || handle == 0) {
+            UtilityFunctions::printerr("Invalid handle or SDK not initialized");
+            return;
+        }
         Sentinel::SDK::SetProtectedInt(handle, value);
     }
     
     void destroy_protected(int64_t handle) {
-        if (!initialized) return;
+        if (!initialized || handle == 0) return;
         Sentinel::SDK::DestroyProtectedValue(handle);
     }
     
@@ -823,13 +834,23 @@ func _ready():
     sentinel = SentinelSDKNode.new()
     add_child(sentinel)
     
+    # Load license key from environment or config (DO NOT hardcode in production!)
+    var license_key = OS.get_environment("SENTINEL_LICENSE_KEY")
+    if license_key.is_empty():
+        # For development only - use environment variable in production
+        license_key = "TRIAL-KEY-DEV"
+    
     # Initialize SDK
-    if sentinel.initialize("YOUR-LICENSE-KEY", "your-godot-game"):
+    if sentinel.initialize(license_key, "your-godot-game"):
         print("Sentinel SDK ready")
         
         # Create protected values
         health_handle = sentinel.create_protected_int(100)
         score_handle = sentinel.create_protected_int(0)
+        
+        # Validate handles (SDK returns 0 on failure)
+        if health_handle == 0 or score_handle == 0:
+            push_error("Failed to create protected values")
     else:
         push_error("Failed to initialize Sentinel SDK")
 
