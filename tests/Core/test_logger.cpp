@@ -34,10 +34,15 @@ protected:
         }
         
         // Clean up rotated log files
-        for (const auto& entry : std::filesystem::directory_iterator("/tmp")) {
-            if (entry.path().filename().string().find("sentinel_test_logger.log.") == 0) {
-                std::filesystem::remove(entry.path());
+        try {
+            for (const auto& entry : std::filesystem::directory_iterator("/tmp")) {
+                std::string filename = entry.path().filename().string();
+                if (filename.rfind("sentinel_test_logger.log.", 0) == 0) {
+                    std::filesystem::remove(entry.path());
+                }
             }
+        } catch (const std::exception&) {
+            // Ignore cleanup errors
         }
     }
 

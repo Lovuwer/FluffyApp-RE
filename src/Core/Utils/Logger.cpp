@@ -47,7 +47,7 @@ bool Logger::Initialize(LogLevel minLevel, LogOutput outputs,
     maxFileSizeBytes_ = maxFileSizeMB * 1024 * 1024;
 
     // Open log file if file output is enabled
-    if ((outputs_ && LogOutput::File) && !logFilePath_.empty()) {
+    if (hasFlag(outputs_, LogOutput::File) && !logFilePath_.empty()) {
         fileStream_.open(logFilePath_, std::ios::app);
         if (!fileStream_.is_open()) {
             std::cerr << "Failed to open log file: " << logFilePath_ << std::endl;
@@ -150,18 +150,18 @@ void Logger::Log(LogLevel level, std::string_view message,
     std::lock_guard<std::mutex> lock(mutex_);
 
     // Write to console
-    if (outputs_ && LogOutput::Console) {
+    if (hasFlag(outputs_, LogOutput::Console)) {
         WriteConsole(level, formattedMessage);
     }
 
     // Write to file
-    if ((outputs_ && LogOutput::File) && fileStream_.is_open()) {
+    if (hasFlag(outputs_, LogOutput::File) && fileStream_.is_open()) {
         WriteFile(formattedMessage);
         CheckRotation();
     }
 
     // Call user callback
-    if ((outputs_ && LogOutput::Callback) && callback_) {
+    if (hasFlag(outputs_, LogOutput::Callback) && callback_) {
         callback_(level, message, now);
     }
 }

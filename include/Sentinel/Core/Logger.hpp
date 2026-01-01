@@ -62,8 +62,8 @@ inline LogOutput operator&(LogOutput a, LogOutput b) {
     return static_cast<LogOutput>(static_cast<uint8_t>(a) & static_cast<uint8_t>(b));
 }
 
-inline bool operator&&(LogOutput a, LogOutput b) {
-    return (static_cast<uint8_t>(a) & static_cast<uint8_t>(b)) != 0;
+inline bool hasFlag(LogOutput value, LogOutput flag) {
+    return (static_cast<uint8_t>(value) & static_cast<uint8_t>(flag)) != 0;
 }
 
 /**
