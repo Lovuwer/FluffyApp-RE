@@ -122,6 +122,7 @@ add_executable(SDKTests
     SDK/test_diversity_engine.cpp
     SDK/test_signature_manager.cpp
     SDK/test_update_client.cpp
+    SDK/test_perf_telemetry.cpp
 )
 
 target_include_directories(SDKTests
