@@ -297,7 +297,7 @@ private:
         uint64_t window_start_ms;     // Start time of current window
         uint64_t last_throttle_check_ms; // Last time throttling was evaluated
         double sum_duration;          // Sum for mean calculation
-        mutable std::mutex mutex;     // Thread-safe access (mutable for const methods)
+        mutable std::mutex mutex;     // Thread-safe access (mutable for const GetMetrics methods)
         
         OperationData() 
             : window_start_ms(0)
