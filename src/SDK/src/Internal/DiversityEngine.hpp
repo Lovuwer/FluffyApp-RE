@@ -149,13 +149,13 @@ private:
         ".rept %c0\n\t" \
         "nop\n\t" \
         ".endr" \
-        : : "i" ((((SENTINEL_DIVERSITY_SEED ^ line) * 0x9e3779b97f4a7c15ULL) >> 60) & 0x7) \
+        : : "i" ((((SENTINEL_DIVERSITY_SEED ^ line) * 0x9e3779b97f4a7c15ULL) >> 56) & 0x1F) \
     )
 #elif defined(_MSC_VER) && defined(_M_X64)
-// MSVC x64 - use __nop() intrinsic
+// MSVC x64 - use __nop() intrinsic (0-15 NOPs for better compatibility)
 #define SENTINEL_DIVERSITY_PADDING(line) \
     do { \
-        constexpr int nop_count = (((SENTINEL_DIVERSITY_SEED ^ line) * 0x9e3779b97f4a7c15ULL) >> 60) & 0x7; \
+        constexpr int nop_count = (((SENTINEL_DIVERSITY_SEED ^ line) * 0x9e3779b97f4a7c15ULL) >> 60) & 0xF; \
         if constexpr (nop_count >= 1) __nop(); \
         if constexpr (nop_count >= 2) __nop(); \
         if constexpr (nop_count >= 3) __nop(); \
@@ -163,6 +163,14 @@ private:
         if constexpr (nop_count >= 5) __nop(); \
         if constexpr (nop_count >= 6) __nop(); \
         if constexpr (nop_count >= 7) __nop(); \
+        if constexpr (nop_count >= 8) __nop(); \
+        if constexpr (nop_count >= 9) __nop(); \
+        if constexpr (nop_count >= 10) __nop(); \
+        if constexpr (nop_count >= 11) __nop(); \
+        if constexpr (nop_count >= 12) __nop(); \
+        if constexpr (nop_count >= 13) __nop(); \
+        if constexpr (nop_count >= 14) __nop(); \
+        if constexpr (nop_count >= 15) __nop(); \
     } while(0)
 #else
 // Fallback for other compilers

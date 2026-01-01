@@ -29,20 +29,24 @@ uint64_t DiversityEngine::s_seed = SENTINEL_DIVERSITY_SEED;
 bool DiversityEngine::s_initialized = false;
 
 void DiversityEngine::Initialize(uint64_t seed) {
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     s_seed = seed;
     s_initialized = true;
 }
 
 uint64_t DiversityEngine::GetSeed() {
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     return s_seed;
 }
 
 bool DiversityEngine::IsEnabled() {
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     return s_seed != 0;
 }
 
 // Simple 64-bit hash function (FNV-1a variant)
 uint64_t DiversityEngine::Hash(uint64_t value) {
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     constexpr uint64_t FNV_OFFSET = 14695981039346656037ULL;
     constexpr uint64_t FNV_PRIME = 1099511628211ULL;
     
@@ -63,6 +67,7 @@ uint64_t DiversityEngine::Hash(uint64_t value) {
 
 // 32-bit hash variant
 uint32_t DiversityEngine::Hash32(uint32_t value) {
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     uint64_t hash64 = Hash(value);
     return static_cast<uint32_t>(hash64 ^ (hash64 >> 32));
 }
