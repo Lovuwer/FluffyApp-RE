@@ -1445,7 +1445,7 @@ namespace {
         
         uint64_t tsc2 = __rdtsc();
         
-        if (control_value == 0xCCCCCCC7) {  // 0x12345678 ^ 0xDEADBEEF
+        if (control_value == 0xCC99E897) {  // 0x12345678 ^ 0xDEADBEEF = 0xCC99E897
             control_value += 0x1000;
         }
         
@@ -1470,7 +1470,7 @@ namespace {
     // that would be highly attractive to attackers, but detects debugging.
     __declspec(noinline) bool GrantAdminAccess_Honeypot(uint32_t user_id) {
         // This looks like a dangerous hardcoded backdoor
-        const uint32_t ADMIN_BACKDOOR_ID = 0xADMIN001;  // Looks suspicious
+        const uint32_t ADMIN_BACKDOOR_ID = 0xAD000001;  // Looks suspicious (fake admin ID)
         
         // Start timing
         LARGE_INTEGER freq, start, end;
@@ -1535,7 +1535,7 @@ bool AntiDebugDetector::CheckHoneypots() {
     QueryPerformanceFrequency(&freq);
     
     QueryPerformanceCounter(&start1);
-    GrantAdminAccess_Honeypot(0xADMIN001);  // Suspicious ID
+    GrantAdminAccess_Honeypot(0xAD000001);  // Suspicious fake admin ID
     QueryPerformanceCounter(&end1);
     
     QueryPerformanceCounter(&start2);
