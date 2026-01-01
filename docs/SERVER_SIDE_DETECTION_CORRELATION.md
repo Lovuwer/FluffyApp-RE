@@ -948,6 +948,8 @@ END TEST
 
 #### Test 2: Gap Detection Simulation
 
+**Implementation:** See `tests/SDK/test_cloud_reporter.cpp::GapDetectionWithSimulatedSuppression`
+
 ```pseudocode
 TEST GapDetectionWithSuppression
     # Setup
@@ -975,7 +977,11 @@ TEST GapDetectionWithSuppression
 END TEST
 ```
 
+**Note:** The actual implementation in `test_cloud_reporter.cpp` documents the expected behavior since client-side unit tests cannot intercept HTTP traffic. The test demonstrates the sequence numbers that would be generated with and without suppression, and documents the server-side gap detection algorithm that would execute.
+
 #### Test 3: Challenge-Response
+
+**Implementation:** See `tests/SDK/test_cloud_reporter.cpp::ConsecutiveGapsTriggersChallenge`
 
 ```pseudocode
 TEST ChallengeResponseFlow
@@ -1005,6 +1011,8 @@ TEST ChallengeResponseFlow
     ASSERT session.gap_count == 0  # Reset on success
 END TEST
 ```
+
+**Note:** The actual implementation documents the challenge-response trigger scenario. Full challenge-response protocol implementation requires server-side support (HTTP 503 response with challenge payload).
 
 #### Test 4: Behavioral Correlation
 
