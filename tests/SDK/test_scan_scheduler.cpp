@@ -12,6 +12,7 @@
 #include <thread>
 #include <chrono>
 #include <vector>
+#include <set>
 #include <algorithm>
 #include <cmath>
 #include <numeric>
@@ -285,12 +286,10 @@ TEST(ScanSchedulerTests, BurstModeActivation) {
     // Wait for burst duration to expire
     std::this_thread::sleep_for(std::chrono::milliseconds(600));
     
-    // Mark a scan complete to check for burst mode expiration
-    scheduler.MarkScanComplete();
-    if (scheduler.ShouldScan()) {
-        // Need to check after ShouldScan() processes time
-        scheduler.MarkScanComplete();
-    }
+    // Check if burst mode expired by calling ShouldScan() which updates mode state
+    // ShouldScan() internally checks if burst_mode_end_time_ms_ has passed and
+    // transitions out of burst mode if needed
+    scheduler.ShouldScan();
     
     // Should exit burst mode after duration
     EXPECT_FALSE(scheduler.IsInBurstMode())

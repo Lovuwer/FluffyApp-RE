@@ -143,7 +143,11 @@ uint32_t ScanScheduler::GenerateSecureRandom(uint32_t min, uint32_t max) {
     }
 #endif
     
-    // Ensure uniform distribution using rejection sampling
+    // Ensure uniform distribution using rejection sampling to prevent modulo bias
+    // Rejection sampling: If we simply did (random % range), values near 0 would be
+    // slightly more likely when UINT32_MAX+1 is not divisible by range. We compute
+    // the largest multiple of range that fits in uint32_t and reject values above it.
+    // This ensures every value in [0, range) has exactly equal probability.
     uint32_t limit = UINT32_MAX - (UINT32_MAX % range);
     while (random_value >= limit) {
         // Retry if value would cause bias
@@ -372,9 +376,11 @@ void ScanScheduler::UpdateStatistics(uint32_t interval) {
     stats_.variance = variance_sum / interval_history_.size();
     
     // Update distribution buckets
+    constexpr size_t NUM_BUCKETS = 10;  // Match stats_.interval_distribution size
     uint32_t range = config_.max_interval_ms - config_.min_interval_ms;
     if (range > 0 && interval >= config_.min_interval_ms && interval <= config_.max_interval_ms) {
-        uint32_t bucket_size = (range + 9) / 10;  // Divide into 10 buckets
+        // Ceiling division to ensure all intervals fit into buckets
+        uint32_t bucket_size = (range + NUM_BUCKETS - 1) / NUM_BUCKETS;
         size_t bucket_index = (interval - config_.min_interval_ms) / bucket_size;
         if (bucket_index >= stats_.interval_distribution.size()) {
             bucket_index = stats_.interval_distribution.size() - 1;
