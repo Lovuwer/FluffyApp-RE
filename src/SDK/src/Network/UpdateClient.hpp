@@ -17,6 +17,8 @@
 #include <string>
 #include <functional>
 #include <chrono>
+#include <thread>
+#include <atomic>
 
 namespace Sentinel {
 namespace SDK {

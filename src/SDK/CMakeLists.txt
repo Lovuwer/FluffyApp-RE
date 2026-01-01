@@ -51,6 +51,8 @@ set(SDK_SOURCES
     src/Detection/EnvironmentDetection.cpp
     src/Network/PacketEncryption.cpp
     src/Network/CloudReporter.cpp
+    src/Network/UpdateClient.cpp
+    src/Internal/SignatureManager.cpp
     src/Util/SecureTime.cpp
     src/Util/HardwareId.cpp
     src/Util/Obfuscation.cpp
@@ -73,6 +75,8 @@ set(SDK_HEADERS
     src/Internal/Watchdog.hpp
     src/Internal/ScanScheduler.hpp
     src/Internal/IntegrityValidator.hpp
+    src/Internal/SignatureManager.hpp
+    src/Network/UpdateClient.hpp
 )
 
 # Header files for IDE organization only (not compiled)

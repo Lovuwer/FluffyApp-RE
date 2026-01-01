@@ -237,8 +237,14 @@ void UpdateClient::setProgressCallback(UpdateProgressCallback callback) {
 }
 
 UpdateStatistics UpdateClient::getStatistics() const {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    return m_statistics;
+    // Don't lock on const method - return atomic snapshot
+    UpdateStatistics stats;
+    stats.total_updates = m_statistics.total_updates;
+    stats.failed_updates = m_statistics.failed_updates;
+    stats.last_check = m_statistics.last_check;
+    stats.last_success = m_statistics.last_success;
+    stats.current_version = m_statistics.current_version;
+    return stats;
 }
 
 UpdateStatus UpdateClient::getCurrentStatus() const noexcept {
