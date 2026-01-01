@@ -312,35 +312,35 @@ private:
         Crypto::EVPPKeyCtxPtr ctx(EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, nullptr));
         if (!ctx) return;
         
-        if (EVP_PKEY_derive_init(ctx) <= 0) {
+        if (EVP_PKEY_derive_init(ctx.get()) <= 0) {
             return;
         }
         
-        if (EVP_PKEY_CTX_ctrl(ctx, -1, EVP_PKEY_OP_DERIVE,
+        if (EVP_PKEY_CTX_ctrl(ctx.get(), -1, EVP_PKEY_OP_DERIVE,
                                EVP_PKEY_CTRL_HKDF_MD, 0, (void*)EVP_sha256()) <= 0) {
             return;
         }
         
-        if (EVP_PKEY_CTX_ctrl(ctx, -1, EVP_PKEY_OP_DERIVE,
+        if (EVP_PKEY_CTX_ctrl(ctx.get(), -1, EVP_PKEY_OP_DERIVE,
                                EVP_PKEY_CTRL_HKDF_KEY, master_key_len,
                                (void*)master_key) <= 0) {
             return;
         }
         
-        if (EVP_PKEY_CTX_ctrl(ctx, -1, EVP_PKEY_OP_DERIVE,
+        if (EVP_PKEY_CTX_ctrl(ctx.get(), -1, EVP_PKEY_OP_DERIVE,
                                EVP_PKEY_CTRL_HKDF_SALT, salt_len,
                                (void*)salt) <= 0) {
             return;
         }
         
-        if (EVP_PKEY_CTX_ctrl(ctx, -1, EVP_PKEY_OP_DERIVE,
+        if (EVP_PKEY_CTX_ctrl(ctx.get(), -1, EVP_PKEY_OP_DERIVE,
                                EVP_PKEY_CTRL_HKDF_INFO, info_len,
                                (void*)info) <= 0) {
             return;
         }
         
         size_t keylen = out_key_len;
-        EVP_PKEY_derive(ctx, out_key, &keylen);
+        EVP_PKEY_derive(ctx.get(), out_key, &keylen);
     }
 
 public:
