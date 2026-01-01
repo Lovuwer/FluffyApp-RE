@@ -184,11 +184,13 @@ private:
     uint64_t total_validation_time_us_ = 0;
     
     // Constants
-    static constexpr uint64_t MIN_VALIDATION_INTERVAL_MS = 1000;   // 1 second minimum
-    static constexpr uint64_t MAX_VALIDATION_INTERVAL_MS = 5000;   // 5 seconds maximum
-    static constexpr uint64_t VALIDATION_JITTER_MS = 2000;         // +/- 2 seconds jitter
+    // Task 23: Stricter timing requirements - guarantee 5-second detection window
+    static constexpr uint64_t MIN_VALIDATION_INTERVAL_MS = 500;    // 0.5 second minimum
+    static constexpr uint64_t MAX_VALIDATION_INTERVAL_MS = 4000;   // 4 seconds maximum (ensures detection within 5s)
+    static constexpr uint64_t VALIDATION_JITTER_MS = 1500;         // +/- 1.5 seconds jitter
     static constexpr size_t QUICK_CHECK_SECTION_COUNT = 2;         // Sections per quick check
-    static constexpr uint64_t MAX_QUICK_VALIDATION_TIME_US = 1000; // 1ms limit for quick checks
+    // Task 23: Tighter performance budget - 0.5ms per validation cycle
+    static constexpr uint64_t MAX_QUICK_VALIDATION_TIME_US = 500;  // 0.5ms limit for quick checks
     static constexpr uint64_t MAX_FULL_VALIDATION_TIME_US = 10000; // 10ms limit for full scans
     static constexpr uint32_t SELF_INTEGRITY_DETECTION_ID_BASE = 0xDEADBEEF; // Base ID for self-integrity violations
 };

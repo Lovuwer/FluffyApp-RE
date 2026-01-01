@@ -31,6 +31,7 @@
 #include <cstring>
 #include <algorithm>
 #include <unordered_map>
+#include <cstdlib>  // Task 23: For rand() in distributed validation
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -953,6 +954,15 @@ SENTINEL_API uint64_t SENTINEL_CALL ProtectMemory(void* address, size_t size, co
         return 0;
     }
     
+    // Task 23: Distributed integrity validation - validate on memory protection calls
+    if (g_context->self_integrity && (rand() % 10 == 0)) {  // 10% of calls
+        if (!g_context->self_integrity->ValidateQuick()) {
+            ViolationEvent event = IntegrityValidator::CreateGenericTamperEvent();
+            event.timestamp = GetSecureTime();
+            ReportViolation(event);
+        }
+    }
+    
     if (!address || size == 0) {
         SetLastError("Invalid address or size");
         return 0;
@@ -1010,6 +1020,15 @@ SENTINEL_API bool SENTINEL_CALL VerifyMemory(uint64_t handle) {
     
     if (!g_context) return false;
     
+    // Task 23: Distributed integrity validation - validate on memory verify calls
+    if (g_context->self_integrity && (rand() % 15 == 0)) {  // ~7% of calls
+        if (!g_context->self_integrity->ValidateQuick()) {
+            ViolationEvent event = IntegrityValidator::CreateGenericTamperEvent();
+            event.timestamp = GetSecureTime();
+            ReportViolation(event);
+        }
+    }
+    
     std::lock_guard<std::mutex> lock(g_context->protection_mutex);
     
     auto it = g_context->protected_regions.find(handle);
@@ -1041,6 +1060,15 @@ SENTINEL_API uint64_t SENTINEL_CALL ProtectFunction(void* function_address, cons
     
     if (!g_context || !g_context->initialized.load()) {
         return 0;
+    }
+    
+    // Task 23: Distributed integrity validation - validate on function protection calls
+    if (g_context->self_integrity && (rand() % 12 == 0)) {  // ~8% of calls
+        if (!g_context->self_integrity->ValidateQuick()) {
+            ViolationEvent event = IntegrityValidator::CreateGenericTamperEvent();
+            event.timestamp = GetSecureTime();
+            ReportViolation(event);
+        }
     }
     
     if (!function_address) {
@@ -1204,6 +1232,15 @@ SENTINEL_API ErrorCode SENTINEL_CALL EncryptPacket(
     
     if (!g_context || !g_context->packet_crypto) {
         return ErrorCode::NotInitialized;
+    }
+    
+    // Task 23: Distributed integrity validation - validate on packet operations
+    if (g_context->self_integrity && (rand() % 20 == 0)) {  // 5% of calls
+        if (!g_context->self_integrity->ValidateQuick()) {
+            ViolationEvent event = IntegrityValidator::CreateGenericTamperEvent();
+            event.timestamp = GetSecureTime();
+            ReportViolation(event);
+        }
     }
     
     return g_context->packet_crypto->Encrypt(data, size, out_buffer, out_size);
