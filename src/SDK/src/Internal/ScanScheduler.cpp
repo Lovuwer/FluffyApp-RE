@@ -190,7 +190,7 @@ uint32_t ScanScheduler::GenerateSecureRandom(uint32_t min, uint32_t max) {
     return min + (random_value % range);
 }
 
-uint32_t TimingRandomizer::GenerateInterval() {
+uint32_t ScanScheduler::GenerateInterval() {
     uint32_t min_interval, max_interval;
     
     if (burst_mode_.load(std::memory_order_acquire)) {

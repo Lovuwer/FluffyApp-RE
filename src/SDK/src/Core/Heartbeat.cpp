@@ -8,11 +8,12 @@
  */
 
 #include "Internal/Context.hpp"
-#include "Internal/DiversityEngine.hpp"
+// Task 22: Temporarily disabled diversity padding due to compiler error with asm outside function
+// #include "Internal/DiversityEngine.hpp"
 
 namespace Sentinel {
-    SENTINEL_DIVERSITY_PADDING(__LINE__);
-    SENTINEL_DIVERSITY_PADDING(__LINE__);
+    // SENTINEL_DIVERSITY_PADDING(__LINE__);
+    // SENTINEL_DIVERSITY_PADDING(__LINE__);
 namespace SDK {
 
 // Stub implementation - To be implemented

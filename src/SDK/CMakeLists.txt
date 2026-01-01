@@ -41,6 +41,8 @@ set(SDK_SOURCES
     src/Internal/IntegrityValidator.cpp
     src/Internal/DiversityEngine.cpp
     src/Internal/PerfTelemetry.cpp
+    src/Internal/TimingRandomizer.cpp
+    src/Internal/InitializationRandomizer.cpp
     src/Core/Heartbeat.cpp
     src/Core/MemoryProtection.cpp
     src/Core/FunctionProtection.cpp
@@ -80,6 +82,8 @@ set(SDK_HEADERS
     src/Internal/IntegrityValidator.hpp
     src/Internal/DiversityEngine.hpp
     src/Internal/PerfTelemetry.hpp
+    src/Internal/TimingRandomizer.hpp
+    src/Internal/InitializationRandomizer.hpp
 )
 
 # Header files for IDE organization only (not compiled)
