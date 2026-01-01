@@ -276,10 +276,6 @@ void HeartbeatThreadFunc() {
                 g_context->runtime_config->CheckForUpdates();
             }
             
-            // Task 09: Check if scan should be performed (randomized timing)
-            if (g_context->scan_scheduler && g_context->scan_scheduler->ShouldScan()) {
-                // Get next scan type (randomized order)
-                ScanType scan_type = g_context->scan_scheduler->GetNextScanType();
             // Task 08: Validate SDK's own code integrity (distributed across heartbeats)
             if (g_context->self_integrity) {
                 if (!g_context->self_integrity->ValidateQuick()) {
@@ -291,12 +287,10 @@ void HeartbeatThreadFunc() {
                 }
             }
             
-            // Perform background integrity checks
-            if (g_context->integrity) {
-                auto violations = RunDetectionWithTelemetry(
-                    DetectionType::MemoryIntegrity,
-                    [&]() { return g_context->integrity->QuickCheck(); }
-                );
+            // Task 09: Check if scan should be performed (randomized timing)
+            if (g_context->scan_scheduler && g_context->scan_scheduler->ShouldScan()) {
+                // Get next scan type (randomized order)
+                ScanType scan_type = g_context->scan_scheduler->GetNextScanType();
                 
                 // Execute the appropriate scan based on type
                 switch (scan_type) {

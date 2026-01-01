@@ -53,6 +53,8 @@ set(SDK_SOURCES
     src/Detection/EnvironmentDetection.cpp
     src/Network/PacketEncryption.cpp
     src/Network/CloudReporter.cpp
+    src/Network/UpdateClient.cpp
+    src/Internal/SignatureManager.cpp
     src/Util/SecureTime.cpp
     src/Util/HardwareId.cpp
     src/Util/Obfuscation.cpp
