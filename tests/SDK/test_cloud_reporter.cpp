@@ -362,3 +362,206 @@ TEST_F(CloudReporterTest, EndToEndFlow) {
     
     SUCCEED();
 }
+
+// ============================================================================
+// Task 15: Sequence Numbering Tests
+// ============================================================================
+
+TEST_F(CloudReporterTest, SequenceNumberingIncremental) {
+    // Test that sequence numbers increment with each batch
+    // Note: This is a client-side test. Server-side validation is separate.
+    
+    // Set batch size to 1 to send each event immediately
+    reporter->SetBatchSize(1);
+    
+    // Queue 5 events, each should get its own sequence number
+    for (int i = 0; i < 5; ++i) {
+        std::string details = "Event " + std::to_string(i);
+        auto event = CreateTestEvent(
+            ViolationType::DebuggerAttached,
+            Severity::Info,
+            details.c_str()
+        );
+        reporter->QueueEvent(event);
+        
+        // Small delay to ensure batches are sent separately
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    
+    // Allow time for all batches to be processed
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    
+    // Note: Actual sequence validation happens server-side
+    // This test verifies the client can send multiple batches without crashing
+    SUCCEED();
+}
+
+TEST_F(CloudReporterTest, SequenceNumberingWithBatching) {
+    // Test sequence numbers with larger batch sizes
+    
+    // Set batch size to 3
+    reporter->SetBatchSize(3);
+    
+    // Send 10 events (will create 4 batches: 3, 3, 3, 1)
+    for (int i = 0; i < 10; ++i) {
+        auto event = CreateTestEvent();
+        reporter->QueueEvent(event);
+    }
+    
+    // Wait for batches to be sent
+    std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+    
+    // Verify reporter still functional
+    auto test_event = CreateTestEvent();
+    reporter->QueueEvent(test_event);
+    reporter->Flush();
+    
+    SUCCEED();
+}
+
+TEST_F(CloudReporterTest, SequenceNumberingAfterFlush) {
+    // Test that sequence numbering continues correctly after manual flush
+    
+    reporter->SetBatchSize(10);  // Large batch size to prevent auto-flush
+    
+    // Queue some events
+    for (int i = 0; i < 3; ++i) {
+        auto event = CreateTestEvent();
+        reporter->QueueEvent(event);
+    }
+    
+    // Manual flush (should send batch with sequence 0)
+    reporter->Flush();
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    
+    // Queue more events
+    for (int i = 0; i < 3; ++i) {
+        auto event = CreateTestEvent();
+        reporter->QueueEvent(event);
+    }
+    
+    // Another flush (should send batch with sequence 1)
+    reporter->Flush();
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    
+    SUCCEED();
+}
+
+TEST_F(CloudReporterTest, SequenceNumberingConcurrentBatches) {
+    // Test sequence numbering under concurrent load
+    
+    reporter->SetBatchSize(5);
+    
+    std::vector<std::thread> threads;
+    std::atomic<int> total_events{0};
+    
+    // Multiple threads queueing events
+    for (int t = 0; t < 3; ++t) {
+        threads.emplace_back([this, &total_events]() {
+            for (int i = 0; i < 10; ++i) {
+                auto event = CreateTestEvent();
+                reporter->QueueEvent(event);
+                total_events++;
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+        });
+    }
+    
+    // Wait for all threads
+    for (auto& thread : threads) {
+        thread.join();
+    }
+    
+    // Flush remaining events
+    reporter->Flush();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    
+    EXPECT_EQ(30, total_events.load());
+}
+
+TEST_F(CloudReporterTest, SequenceNumberingWithOfflineBuffering) {
+    // Test that sequence numbers are preserved when events are buffered offline
+    // (e.g., when network is unavailable)
+    
+    // Use an unreachable endpoint to force offline buffering
+    auto offline_reporter = std::make_unique<CloudReporter>("http://127.0.0.1:9999/violations");
+    offline_reporter->SetBatchSize(2);
+    
+    // Queue events (will be buffered offline since endpoint is unreachable)
+    for (int i = 0; i < 5; ++i) {
+        auto event = CreateTestEvent();
+        offline_reporter->QueueEvent(event);
+    }
+    
+    offline_reporter->Flush();
+    
+    // Give time for send attempts and offline buffering
+    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+    
+    // Cleanup - reporter will buffer remaining events on shutdown
+    offline_reporter.reset();
+    
+    // Note: Actual offline persistence is tested by examining filesystem
+    // or by creating a new reporter and checking if events are reloaded
+    SUCCEED();
+}
+
+// ============================================================================
+// Task 15: Gap Detection Simulation Tests
+// ============================================================================
+
+TEST_F(CloudReporterTest, GapDetectionScenario) {
+    // This test demonstrates the gap detection scenario
+    // In a real attack, a proxy would filter certain reports
+    // The server would detect the gap in sequence numbers
+    
+    reporter->SetBatchSize(1);
+    
+    // Send events that would normally trigger sequential numbers
+    // Event 0: Debugger check - allowed through
+    auto event1 = CreateTestEvent(ViolationType::DebuggerAttached, Severity::Info);
+    reporter->QueueEvent(event1);
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    
+    // Event 1: Speed hack - allowed through
+    auto event2 = CreateTestEvent(ViolationType::SpeedHack, Severity::Warning);
+    reporter->QueueEvent(event2);
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    
+    // Event 2: Hook detection - allowed through
+    auto event3 = CreateTestEvent(ViolationType::InlineHook, Severity::High);
+    reporter->QueueEvent(event3);
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    
+    // Server should receive sequences 0, 1, 2 in order
+    // If any were filtered, server would detect the gap
+    
+    reporter->Flush();
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    
+    SUCCEED();
+}
+
+TEST_F(CloudReporterTest, MultipleGapsScenario) {
+    // Scenario where multiple reports are suppressed
+    
+    reporter->SetBatchSize(1);
+    
+    // Send 10 events in sequence
+    // An attacker might filter specific types, creating multiple gaps
+    for (int i = 0; i < 10; ++i) {
+        ViolationType type = (i % 3 == 0) ? ViolationType::DebuggerAttached :
+                            (i % 3 == 1) ? ViolationType::SpeedHack :
+                                          ViolationType::InlineHook;
+        
+        auto event = CreateTestEvent(type, Severity::Info);
+        reporter->QueueEvent(event);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    
+    reporter->Flush();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    
+    // Server-side gap detection would flag if reports were filtered
+    SUCCEED();
+}

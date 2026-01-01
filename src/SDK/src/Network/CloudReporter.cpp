@@ -51,6 +51,7 @@ public:
         , interval_ms_(30000)
         , max_queue_depth_(1000)
         , running_(false)
+        , report_sequence_number_(0)
     {
         // Initialize HTTP client
         http_client_ = std::make_unique<HttpClient>();
@@ -264,8 +265,16 @@ private:
                 j_batch.push_back(j_event);
             }
             
+            // Get and increment sequence number (thread-safe)
+            uint64_t sequence_num;
+            {
+                std::lock_guard<std::mutex> lock(sequence_mutex_);
+                sequence_num = report_sequence_number_++;
+            }
+            
             json payload = {
                 {"version", "1.0"},
+                {"sequence", sequence_num},
                 {"events", j_batch},
                 {"batch_size", batch.size()},
                 {"timestamp", GetCurrentTimestamp()}
@@ -502,6 +511,10 @@ private:
     // Offline storage
     std::string offline_storage_path_;
     AESKey encryption_key_;
+    
+    // Task 15: Report sequence numbering for gap detection
+    uint64_t report_sequence_number_;
+    std::mutex sequence_mutex_;
 };
 
 // ============================================================================
