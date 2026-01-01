@@ -277,13 +277,8 @@ void HeartbeatThreadFunc() {
             if (g_context->self_integrity) {
                 if (!g_context->self_integrity->ValidateQuick()) {
                     // Self-integrity violation detected - report with high severity
-                    ViolationEvent event{};
-                    event.type = ViolationType::ModuleModified;
-                    event.severity = Severity::Critical;
+                    ViolationEvent event = IntegrityValidator::CreateGenericTamperEvent();
                     event.timestamp = GetSecureTime();
-                    event.module_name = "SentinelSDK";
-                    event.details = "SDK code tampered - detection bypass attempt";
-                    event.detection_id = 0xDEADBEEF;
                     
                     ReportViolation(event);
                 }
@@ -605,13 +600,8 @@ SENTINEL_API ErrorCode SENTINEL_CALL Update() {
     // Check every 20 updates to distribute validation across multiple code paths
     if (g_context->self_integrity && (g_context->stats.updates_performed % 20 == 0)) {
         if (!g_context->self_integrity->ValidateQuick()) {
-            ViolationEvent event{};
-            event.type = ViolationType::ModuleModified;
-            event.severity = Severity::Critical;
+            ViolationEvent event = IntegrityValidator::CreateGenericTamperEvent();
             event.timestamp = GetSecureTime();
-            event.module_name = "SentinelSDK";
-            event.details = "SDK code tampered - detection bypass attempt";
-            event.detection_id = 0xDEADBEEF;
             
             ReportViolation(event);
             result = ErrorCode::TamperingDetected;

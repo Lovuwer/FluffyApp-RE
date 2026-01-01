@@ -299,12 +299,12 @@ std::vector<ViolationEvent> IntegrityValidator::ValidateFull() {
         }
         section.last_validated = current_time;
         
-        // Respect performance budget
+        // Respect performance budget for full scans (10ms)
         auto current = std::chrono::high_resolution_clock::now();
         auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
             current - start_time).count();
         
-        if (static_cast<uint64_t>(elapsed_us) > MAX_VALIDATION_TIME_US) {
+        if (static_cast<uint64_t>(elapsed_us) > MAX_FULL_VALIDATION_TIME_US) {
             break; // Stop if exceeding time budget
         }
     }
@@ -344,7 +344,12 @@ ViolationEvent IntegrityValidator::CreateTamperEvent(const CodeSection& section)
     event.module_name = "SentinelSDK";
     event.details = "SDK code section '" + section.name + "' tampered (size: " + 
                    std::to_string(section.size) + " bytes)";
-    event.detection_id = 0xDEADBEEF; // Unique ID for self-integrity violations
+    
+    // Generate unique detection ID based on section name and address
+    // This helps with debugging and correlation of specific section tampering
+    uint64_t section_hash = ComputeHash(section.name.c_str(), section.name.length());
+    section_hash ^= section.base_address;
+    event.detection_id = static_cast<uint32_t>(SELF_INTEGRITY_DETECTION_ID_BASE ^ section_hash);
     
     return event;
 }
@@ -360,6 +365,18 @@ uint64_t IntegrityValidator::GetTimeUntilNextValidation() const {
     }
     
     return next_validation_time_ - current;
+}
+
+ViolationEvent IntegrityValidator::CreateGenericTamperEvent() {
+    ViolationEvent event;
+    event.type = ViolationType::ModuleModified;
+    event.severity = Severity::Critical;
+    event.timestamp = 0; // Will be set by caller
+    event.address = 0;
+    event.module_name = "SentinelSDK";
+    event.details = "SDK code tampered - detection bypass attempt";
+    event.detection_id = SELF_INTEGRITY_DETECTION_ID_BASE;
+    return event;
 }
 
 } // namespace SDK

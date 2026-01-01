@@ -88,6 +88,13 @@ public:
      */
     bool IsInitialized() const { return initialized_; }
     
+    /**
+     * Create a violation event for generic self-integrity failure
+     * Use this for quick checks where specific section info is not available
+     * @return Violation event
+     */
+    static ViolationEvent CreateGenericTamperEvent();
+    
 private:
     /**
      * Discover and register critical code sections
@@ -181,7 +188,9 @@ private:
     static constexpr uint64_t MAX_VALIDATION_INTERVAL_MS = 5000;   // 5 seconds maximum
     static constexpr uint64_t VALIDATION_JITTER_MS = 2000;         // +/- 2 seconds jitter
     static constexpr size_t QUICK_CHECK_SECTION_COUNT = 2;         // Sections per quick check
-    static constexpr uint64_t MAX_VALIDATION_TIME_US = 1000;       // 1ms performance limit
+    static constexpr uint64_t MAX_QUICK_VALIDATION_TIME_US = 1000; // 1ms limit for quick checks
+    static constexpr uint64_t MAX_FULL_VALIDATION_TIME_US = 10000; // 10ms limit for full scans
+    static constexpr uint32_t SELF_INTEGRITY_DETECTION_ID_BASE = 0xDEADBEEF; // Base ID for self-integrity violations
 };
 
 } // namespace SDK
