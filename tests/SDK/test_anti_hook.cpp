@@ -25,7 +25,8 @@
 using namespace Sentinel::SDK;
 
 // Test constants
-constexpr size_t TEST_PROLOGUE_SIZE = 16;
+// Task 11: Updated from 16 to 64 bytes to match HasSuspiciousJump scan size
+constexpr size_t TEST_PROLOGUE_SIZE = 64;
 
 /**
  * Dummy function for testing
@@ -78,8 +79,9 @@ TEST(AntiHookTests, PatternMatching) {
     
     // Test JMP rel32 pattern (E9 XX XX XX XX)
     {
-        uint8_t jmpPattern[16] = {0xE9, 0x00, 0x00, 0x00, 0x00, 0x90, 0x90, 0x90, 
+        uint8_t jmpPattern[64] = {0xE9, 0x00, 0x00, 0x00, 0x00, 0x90, 0x90, 0x90, 
                                    0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90};
+        // Remaining bytes initialized to 0
         
         FunctionProtection func;
         func.address = reinterpret_cast<uintptr_t>(jmpPattern);
@@ -98,8 +100,9 @@ TEST(AntiHookTests, PatternMatching) {
     
     // Test INT 3 pattern (CC)
     {
-        uint8_t int3Pattern[16] = {0xCC, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
+        uint8_t int3Pattern[64] = {0xCC, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
                                     0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90};
+        // Remaining bytes initialized to 0
         
         FunctionProtection func;
         func.address = reinterpret_cast<uintptr_t>(int3Pattern);
@@ -118,8 +121,9 @@ TEST(AntiHookTests, PatternMatching) {
     
     // Test MOV RAX, imm64; JMP RAX pattern
     {
-        uint8_t movJmpPattern[16] = {0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+        uint8_t movJmpPattern[64] = {0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
                                       0x00, 0x00, 0xFF, 0xE0, 0x90, 0x90, 0x90, 0x90};
+        // Remaining bytes initialized to 0
         
         FunctionProtection func;
         func.address = reinterpret_cast<uintptr_t>(movJmpPattern);
@@ -290,30 +294,33 @@ TEST(AntiHookTests, SuspiciousJump) {
     AntiHookDetector detector;
     detector.Initialize();
     
+    // Note: HasSuspiciousJump scans 64 bytes, so all test buffers must be 64 bytes
+    // to avoid reading uninitialized stack memory which could contain random suspicious patterns
+    
     // Test various suspicious patterns through CheckFunction (unregistered)
     {
-        uint8_t jmpRel32[5] = {0xE9, 0x00, 0x00, 0x00, 0x00};
+        uint8_t jmpRel32[64] = {0xE9, 0x00, 0x00, 0x00, 0x00};  // Rest initialized to 0
         uintptr_t addr = reinterpret_cast<uintptr_t>(jmpRel32);
         bool isHooked = detector.CheckFunction(addr);
         EXPECT_TRUE(isHooked) << "JMP rel32 should be detected as hooked";
     }
     
     {
-        uint8_t callRel32[5] = {0xE8, 0x00, 0x00, 0x00, 0x00};
+        uint8_t callRel32[64] = {0xE8, 0x00, 0x00, 0x00, 0x00};  // Rest initialized to 0
         uintptr_t addr = reinterpret_cast<uintptr_t>(callRel32);
         bool isHooked = detector.CheckFunction(addr);
         EXPECT_TRUE(isHooked) << "CALL rel32 should be detected as hooked";
     }
     
     {
-        uint8_t int3[1] = {0xCC};
+        uint8_t int3[64] = {0xCC};  // Rest initialized to 0
         uintptr_t addr = reinterpret_cast<uintptr_t>(int3);
         bool isHooked = detector.CheckFunction(addr);
         EXPECT_TRUE(isHooked) << "INT 3 should be detected as hooked";
     }
     
     {
-        uint8_t movRax[2] = {0x48, 0xB8};
+        uint8_t movRax[64] = {0x48, 0xB8};  // Rest initialized to 0
         uintptr_t addr = reinterpret_cast<uintptr_t>(movRax);
         bool isHooked = detector.CheckFunction(addr);
         EXPECT_TRUE(isHooked) << "MOV RAX, imm64 should be detected as hooked";
@@ -321,7 +328,7 @@ TEST(AntiHookTests, SuspiciousJump) {
     
     // Test normal prologue
     {
-        uint8_t normalPrologue[5] = {0x55, 0x48, 0x89, 0xE5, 0x53};  // push rbp; mov rbp, rsp; push rbx
+        uint8_t normalPrologue[64] = {0x55, 0x48, 0x89, 0xE5, 0x53};  // push rbp; mov rbp, rsp; push rbx (rest initialized to 0)
         uintptr_t addr = reinterpret_cast<uintptr_t>(normalPrologue);
         bool isHooked = detector.CheckFunction(addr);
         EXPECT_FALSE(isHooked) << "Normal prologue should not be detected as hooked";
@@ -338,15 +345,15 @@ TEST(AntiHookTests, ModifiedBytesDetection) {
     AntiHookDetector detector;
     detector.Initialize();
     
-    // Create a writable buffer to simulate a function
-    uint8_t buffer[32];
-    memset(buffer, 0x90, 32);  // Fill with NOPs
+    // Create a writable buffer to simulate a function (64 bytes to match scan size)
+    uint8_t buffer[64];
+    memset(buffer, 0x90, 64);  // Fill with NOPs
     
     FunctionProtection func;
     func.address = reinterpret_cast<uintptr_t>(buffer);
     func.name = "ModifiedFunction";
     func.prologue_size = TEST_PROLOGUE_SIZE;
-    memcpy(func.original_prologue.data(), buffer, 16);
+    memcpy(func.original_prologue.data(), buffer, TEST_PROLOGUE_SIZE);
     
     detector.RegisterFunction(func);
     
@@ -386,8 +393,8 @@ TEST(AntiHookTests, MultiplePatterns) {
     };
     
     for (const auto& pattern : patterns) {
-        uint8_t buffer[32];
-        memset(buffer, 0x90, 32);
+        uint8_t buffer[64];
+        memset(buffer, 0x90, 64);
         
         // Copy pattern to buffer
         memcpy(buffer, pattern.bytes.data(), pattern.bytes.size());
@@ -662,15 +669,15 @@ TEST(AntiHookTests, DoubleCheckPattern) {
     AntiHookDetector detector;
     detector.Initialize();
     
-    // Create a function buffer
-    uint8_t buffer[32];
-    memset(buffer, 0x90, 32);  // Fill with NOPs
+    // Create a function buffer (64 bytes to match scan size)
+    uint8_t buffer[64];
+    memset(buffer, 0x90, 64);  // Fill with NOPs
     
     FunctionProtection func;
     func.address = reinterpret_cast<uintptr_t>(buffer);
     func.name = "DoubleCheckTest";
-    func.prologue_size = 16;
-    memcpy(func.original_prologue.data(), buffer, 16);
+    func.prologue_size = TEST_PROLOGUE_SIZE;
+    memcpy(func.original_prologue.data(), buffer, TEST_PROLOGUE_SIZE);
     
     detector.RegisterFunction(func);
     
@@ -689,8 +696,9 @@ TEST(AntiHookTests, DoubleCheckPattern) {
 }
 
 /**
- * Test 21: Extended Suspicious Jump Detection (16 bytes)
+ * Test 21: Extended Suspicious Jump Detection (64 bytes)
  * Verifies that hooks at offsets 0-5 are detected
+ * Note: HasSuspiciousJump scans 64 bytes, so buffer must be 64 bytes
  */
 TEST(AntiHookTests, ExtendedSuspiciousJumpDetection) {
     AntiHookDetector detector;
@@ -698,8 +706,8 @@ TEST(AntiHookTests, ExtendedSuspiciousJumpDetection) {
     
     // Test hooks at different offsets (0-5)
     for (size_t offset = 0; offset <= 5; offset++) {
-        uint8_t buffer[32];
-        memset(buffer, 0x90, 32);  // Fill with NOPs
+        uint8_t buffer[64];
+        memset(buffer, 0x90, 64);  // Fill with NOPs
         
         // Place a JMP at the offset
         buffer[offset] = 0xE9;  // JMP rel32
@@ -715,8 +723,9 @@ TEST(AntiHookTests, ExtendedSuspiciousJumpDetection) {
 }
 
 /**
- * Test 22: INT 3 Detection in First 16 Bytes
- * Verifies that INT 3 anywhere in the first 16 bytes is detected
+ * Test 22: INT 3 Detection in Scanned Region
+ * Verifies that INT 3 anywhere in the scanned region (64 bytes) is detected
+ * Note: HasSuspiciousJump scans 64 bytes, so buffer must be 64 bytes
  */
 TEST(AntiHookTests, Int3DetectionInFirst16Bytes) {
     AntiHookDetector detector;
@@ -724,8 +733,8 @@ TEST(AntiHookTests, Int3DetectionInFirst16Bytes) {
     
     // Test INT 3 at various positions
     for (size_t pos = 0; pos < 16; pos++) {
-        uint8_t buffer[32];
-        memset(buffer, 0x90, 32);  // Fill with NOPs
+        uint8_t buffer[64];
+        memset(buffer, 0x90, 64);  // Fill with NOPs
         
         // Place an INT 3 at the position
         buffer[pos] = 0xCC;
@@ -748,15 +757,15 @@ TEST(AntiHookTests, HoneypotRegistration) {
     AntiHookDetector detector;
     detector.Initialize();
     
-    // Create a honeypot function
-    uint8_t honeypotBuffer[32];
-    memset(honeypotBuffer, 0x90, 32);
+    // Create a honeypot function (64 bytes to match scan size)
+    uint8_t honeypotBuffer[64];
+    memset(honeypotBuffer, 0x90, 64);
     
     FunctionProtection honeypot;
     honeypot.address = reinterpret_cast<uintptr_t>(honeypotBuffer);
     honeypot.name = "HoneypotFunction";
-    honeypot.prologue_size = 16;
-    memcpy(honeypot.original_prologue.data(), honeypotBuffer, 16);
+    honeypot.prologue_size = TEST_PROLOGUE_SIZE;
+    memcpy(honeypot.original_prologue.data(), honeypotBuffer, TEST_PROLOGUE_SIZE);
     
     detector.RegisterHoneypot(honeypot);
     
@@ -798,16 +807,16 @@ TEST(AntiHookTests, HoneypotUnregistration) {
     std::vector<std::unique_ptr<uint8_t[]>> buffers;
     std::vector<uintptr_t> addresses;
     
-    // Register multiple honeypots
+    // Register multiple honeypots (64 bytes to match scan size)
     for (int i = 0; i < 5; i++) {
-        auto buffer = std::make_unique<uint8_t[]>(32);
-        memset(buffer.get(), 0x90, 32);
+        auto buffer = std::make_unique<uint8_t[]>(64);
+        memset(buffer.get(), 0x90, 64);
         
         FunctionProtection honeypot;
         honeypot.address = reinterpret_cast<uintptr_t>(buffer.get());
         honeypot.name = "Honeypot_" + std::to_string(i);
-        honeypot.prologue_size = 16;
-        memcpy(honeypot.original_prologue.data(), buffer.get(), 16);
+        honeypot.prologue_size = TEST_PROLOGUE_SIZE;
+        memcpy(honeypot.original_prologue.data(), buffer.get(), TEST_PROLOGUE_SIZE);
         
         addresses.push_back(honeypot.address);
         detector.RegisterHoneypot(honeypot);
@@ -839,9 +848,9 @@ TEST(AntiHookTests, TrampolineHookDetection) {
     AntiHookDetector detector;
     detector.Initialize();
     
-    // Create a buffer with a normal 5-byte prologue, then a hook at offset 5
-    uint8_t buffer[32];
-    memset(buffer, 0x90, 32);
+    // Create a buffer with a normal 5-byte prologue, then a hook at offset 5 (64 bytes total)
+    uint8_t buffer[64] = {0};
+    memset(buffer, 0x90, 64);
     
     // Normal prologue at offset 0
     buffer[0] = 0x55;  // PUSH RBP
@@ -872,11 +881,11 @@ TEST(AntiHookTests, PushRetPatternDetection) {
     
     // Test at different offsets
     for (size_t offset = 0; offset <= 5; offset++) {
-        uint8_t buffer[32];
-        memset(buffer, 0x90, 32);
+        uint8_t buffer[64] = {0};
+        memset(buffer, 0x90, 64);
         
         // Place PUSH imm32; RET at the offset
-        if (offset + 5 < 32) {
+        if (offset + 5 < 64) {
             buffer[offset] = 0x68;      // PUSH imm32
             buffer[offset + 1] = 0xAA;
             buffer[offset + 2] = 0xBB;
@@ -905,11 +914,11 @@ TEST(AntiHookTests, JmpRipPatternDetection) {
     
     // Test at different offsets
     for (size_t offset = 0; offset <= 5; offset++) {
-        uint8_t buffer[32];
-        memset(buffer, 0x90, 32);
+        uint8_t buffer[64] = {0};
+        memset(buffer, 0x90, 64);
         
         // Place JMP [rip+0] at the offset
-        if (offset + 5 < 32) {
+        if (offset + 5 < 64) {
             buffer[offset] = 0xFF;      // JMP
             buffer[offset + 1] = 0x25;  // [rip+displacement]
             buffer[offset + 2] = 0x00;
@@ -936,17 +945,17 @@ TEST(AntiHookTests, PerformanceScanBudget) {
     AntiHookDetector detector;
     detector.Initialize();
     
-    // Register 100 functions to simulate realistic load
+    // Register 100 functions to simulate realistic load (64 bytes each)
     std::vector<std::unique_ptr<uint8_t[]>> buffers;
     for (int i = 0; i < 100; i++) {
-        auto buffer = std::make_unique<uint8_t[]>(32);
-        memset(buffer.get(), 0x90, 32);
+        auto buffer = std::make_unique<uint8_t[]>(64);
+        memset(buffer.get(), 0x90, 64);
         
         FunctionProtection func;
         func.address = reinterpret_cast<uintptr_t>(buffer.get());
         func.name = "PerfTestFunc_" + std::to_string(i);
-        func.prologue_size = 16;
-        memcpy(func.original_prologue.data(), buffer.get(), 16);
+        func.prologue_size = TEST_PROLOGUE_SIZE;
+        memcpy(func.original_prologue.data(), buffer.get(), TEST_PROLOGUE_SIZE);
         
         detector.RegisterFunction(func);
         buffers.push_back(std::move(buffer));
@@ -999,19 +1008,19 @@ TEST(AntiHookTests, PerformanceProbabilisticCoverage) {
     AntiHookDetector detector;
     detector.Initialize();
     
-    // Register 100 functions
+    // Register 100 functions (64 bytes each)
     std::vector<std::unique_ptr<uint8_t[]>> buffers;
     std::vector<uintptr_t> addresses;
     
     for (int i = 0; i < 100; i++) {
-        auto buffer = std::make_unique<uint8_t[]>(32);
-        memset(buffer.get(), 0x90, 32);
+        auto buffer = std::make_unique<uint8_t[]>(64);
+        memset(buffer.get(), 0x90, 64);
         
         FunctionProtection func;
         func.address = reinterpret_cast<uintptr_t>(buffer.get());
         func.name = "CoverageTestFunc_" + std::to_string(i);
-        func.prologue_size = 16;
-        memcpy(func.original_prologue.data(), buffer.get(), 16);
+        func.prologue_size = TEST_PROLOGUE_SIZE;
+        memcpy(func.original_prologue.data(), buffer.get(), TEST_PROLOGUE_SIZE);
         
         addresses.push_back(func.address);
         detector.RegisterFunction(func);
@@ -1062,17 +1071,17 @@ TEST(AntiHookTests, PerformanceFrameTimeStability) {
     AntiHookDetector detector;
     detector.Initialize();
     
-    // Register functions
+    // Register functions (64 bytes each)
     std::vector<std::unique_ptr<uint8_t[]>> buffers;
     for (int i = 0; i < 50; i++) {
-        auto buffer = std::make_unique<uint8_t[]>(32);
-        memset(buffer.get(), 0x90, 32);
+        auto buffer = std::make_unique<uint8_t[]>(64);
+        memset(buffer.get(), 0x90, 64);
         
         FunctionProtection func;
         func.address = reinterpret_cast<uintptr_t>(buffer.get());
         func.name = "StabilityTestFunc_" + std::to_string(i);
-        func.prologue_size = 16;
-        memcpy(func.original_prologue.data(), buffer.get(), 16);
+        func.prologue_size = TEST_PROLOGUE_SIZE;
+        memcpy(func.original_prologue.data(), buffer.get(), TEST_PROLOGUE_SIZE);
         
         detector.RegisterFunction(func);
         buffers.push_back(std::move(buffer));
