@@ -38,6 +38,11 @@ HMODULE GetCurrentModule() {
         &hModule);
     return hModule;
 }
+#else
+// Helper function to get address in this module (for dladdr)
+void* GetModuleSymbol() {
+    return reinterpret_cast<void*>(&GetModuleSymbol);
+}
 #endif
 
 } // anonymous namespace
@@ -125,10 +130,11 @@ void IntegrityValidator::DiscoverCodeSections() {
     }
 #else
     // Linux/Unix: Use dl_iterate_phdr to find our own module
-    // For simplicity, register the main .text section
-    // This would need platform-specific implementation
+    // For simplicity, use a static function address
+    // This would need platform-specific implementation with ELF parsing for production
+    
     Dl_info info;
-    if (dladdr(reinterpret_cast<void*>(&IntegrityValidator::Initialize), &info)) {
+    if (dladdr(GetModuleSymbol(), &info)) {
         // Register approximate text section - would need ELF parsing for accuracy
         // This is a simplified implementation
         uintptr_t base = reinterpret_cast<uintptr_t>(info.dli_fbase);
@@ -298,7 +304,7 @@ std::vector<ViolationEvent> IntegrityValidator::ValidateFull() {
         auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
             current - start_time).count();
         
-        if (elapsed_us > MAX_VALIDATION_TIME_US) {
+        if (static_cast<uint64_t>(elapsed_us) > MAX_VALIDATION_TIME_US) {
             break; // Stop if exceeding time budget
         }
     }
