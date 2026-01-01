@@ -20,6 +20,7 @@
 #include <filesystem>
 #include <deque>
 #include <cstring>
+#include <atomic>
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -265,12 +266,8 @@ private:
                 j_batch.push_back(j_event);
             }
             
-            // Get and increment sequence number (thread-safe)
-            uint64_t sequence_num;
-            {
-                std::lock_guard<std::mutex> lock(sequence_mutex_);
-                sequence_num = report_sequence_number_++;
-            }
+            // Get and increment sequence number (atomic, lock-free)
+            uint64_t sequence_num = report_sequence_number_.fetch_add(1, std::memory_order_relaxed);
             
             json payload = {
                 {"version", "1.0"},
@@ -513,8 +510,7 @@ private:
     AESKey encryption_key_;
     
     // Task 15: Report sequence numbering for gap detection
-    uint64_t report_sequence_number_;
-    std::mutex sequence_mutex_;
+    std::atomic<uint64_t> report_sequence_number_;
 };
 
 // ============================================================================
