@@ -20,6 +20,7 @@
  */
 
 #include <Sentinel/Core/Crypto.hpp>
+#include "OpenSSLRAII.hpp"
 #include <openssl/evp.h>
 #include <openssl/err.h>
 #include <cstring>
@@ -34,7 +35,7 @@ class HashEngine::Impl {
 public:
     explicit Impl(HashAlgorithm algorithm)
         : m_algorithm(algorithm)
-        , m_ctx(nullptr)
+        , m_ctx(EVP_MD_CTX_new())
         , m_md(nullptr)
         , m_finalized(false)
     {
@@ -56,20 +57,9 @@ public:
                 m_md = EVP_sha256(); // Default to SHA256
                 break;
         }
-        
-        // Create context
-        m_ctx = EVP_MD_CTX_new();
-        if (m_ctx == nullptr) {
-            // Context creation failed - will be handled in operations
-        }
     }
     
-    ~Impl() {
-        if (m_ctx != nullptr) {
-            EVP_MD_CTX_free(m_ctx);
-            m_ctx = nullptr;
-        }
-    }
+    ~Impl() = default;
     
     // Disable copy
     Impl(const Impl&) = delete;
@@ -78,26 +68,20 @@ public:
     // Enable move
     Impl(Impl&& other) noexcept
         : m_algorithm(other.m_algorithm)
-        , m_ctx(other.m_ctx)
+        , m_ctx(std::move(other.m_ctx))
         , m_md(other.m_md)
         , m_finalized(other.m_finalized)
     {
-        other.m_ctx = nullptr;
         other.m_md = nullptr;
     }
     
     Impl& operator=(Impl&& other) noexcept {
         if (this != &other) {
-            if (m_ctx != nullptr) {
-                EVP_MD_CTX_free(m_ctx);
-            }
-            
             m_algorithm = other.m_algorithm;
-            m_ctx = other.m_ctx;
+            m_ctx = std::move(other.m_ctx);
             m_md = other.m_md;
             m_finalized = other.m_finalized;
             
-            other.m_ctx = nullptr;
             other.m_md = nullptr;
         }
         return *this;
@@ -209,7 +193,7 @@ public:
     
 private:
     HashAlgorithm m_algorithm;
-    EVP_MD_CTX* m_ctx;
+    EVPMDCtxPtr m_ctx;
     const EVP_MD* m_md;
     bool m_finalized;
 };

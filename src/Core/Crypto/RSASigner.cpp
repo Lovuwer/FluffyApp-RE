@@ -16,6 +16,7 @@
  */
 
 #include <Sentinel/Core/Crypto.hpp>
+#include "OpenSSLRAII.hpp"
 #include <openssl/evp.h>
 #include <openssl/rsa.h>
 #include <openssl/pem.h>
@@ -86,7 +87,7 @@ public:
             return ErrorCode::KeyNotLoaded;
         }
         
-        EVP_MD_CTX* mdCtx = EVP_MD_CTX_new();
+        EVPMDCtxPtr mdCtx(EVP_MD_CTX_new());
         if (!mdCtx) {
             return ErrorCode::CryptoError;
         }
@@ -96,44 +97,37 @@ public:
         // Initialize signing with SHA-256 hash
         if (EVP_DigestSignInit(mdCtx, &pkeyCtx, EVP_sha256(), 
                                 nullptr, m_pkey) != 1) {
-            EVP_MD_CTX_free(mdCtx);
             return ErrorCode::CryptoError;
         }
         
         // Set PSS padding
         if (EVP_PKEY_CTX_set_rsa_padding(pkeyCtx, RSA_PKCS1_PSS_PADDING) != 1) {
-            EVP_MD_CTX_free(mdCtx);
             return ErrorCode::CryptoError;
         }
         
         // Set salt length to hash length (SHA-256 = 32 bytes)
         if (EVP_PKEY_CTX_set_rsa_pss_saltlen(pkeyCtx, RSA_PSS_SALTLEN_DIGEST) != 1) {
-            EVP_MD_CTX_free(mdCtx);
             return ErrorCode::CryptoError;
         }
         
         // Update with data
         if (EVP_DigestSignUpdate(mdCtx, data.data(), data.size()) != 1) {
-            EVP_MD_CTX_free(mdCtx);
             return ErrorCode::CryptoError;
         }
         
         // Get signature size
         size_t sigLen = 0;
         if (EVP_DigestSignFinal(mdCtx, nullptr, &sigLen) != 1) {
-            EVP_MD_CTX_free(mdCtx);
             return ErrorCode::CryptoError;
         }
         
         // Sign
         Signature signature(sigLen);
         if (EVP_DigestSignFinal(mdCtx, signature.data(), &sigLen) != 1) {
-            EVP_MD_CTX_free(mdCtx);
             return ErrorCode::CryptoError;
         }
         
         signature.resize(sigLen);
-        EVP_MD_CTX_free(mdCtx);
         return signature;
     }
     
@@ -142,7 +136,7 @@ public:
             return ErrorCode::KeyNotLoaded;
         }
         
-        EVP_MD_CTX* mdCtx = EVP_MD_CTX_new();
+        EVPMDCtxPtr mdCtx(EVP_MD_CTX_new());
         if (!mdCtx) {
             return ErrorCode::CryptoError;
         }
@@ -152,31 +146,26 @@ public:
         // Initialize verification with SHA-256 hash
         if (EVP_DigestVerifyInit(mdCtx, &pkeyCtx, EVP_sha256(), 
                                   nullptr, m_pkey) != 1) {
-            EVP_MD_CTX_free(mdCtx);
             return ErrorCode::CryptoError;
         }
         
         // Set PSS padding
         if (EVP_PKEY_CTX_set_rsa_padding(pkeyCtx, RSA_PKCS1_PSS_PADDING) != 1) {
-            EVP_MD_CTX_free(mdCtx);
             return ErrorCode::CryptoError;
         }
         
         // Set salt length to hash length (SHA-256 = 32 bytes)
         if (EVP_PKEY_CTX_set_rsa_pss_saltlen(pkeyCtx, RSA_PSS_SALTLEN_DIGEST) != 1) {
-            EVP_MD_CTX_free(mdCtx);
             return ErrorCode::CryptoError;
         }
         
         // Update with data
         if (EVP_DigestVerifyUpdate(mdCtx, data.data(), data.size()) != 1) {
-            EVP_MD_CTX_free(mdCtx);
             return ErrorCode::CryptoError;
         }
         
         // Verify signature
         int verifyResult = EVP_DigestVerifyFinal(mdCtx, signature.data(), signature.size());
-        EVP_MD_CTX_free(mdCtx);
         
         if (verifyResult == 1) {
             return true;  // Signature valid
