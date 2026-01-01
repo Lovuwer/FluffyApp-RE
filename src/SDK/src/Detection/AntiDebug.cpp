@@ -1468,6 +1468,7 @@ namespace {
     // Honeypot: Fake authentication bypass
     // This function appears to implement a privileged authentication shortcut
     // that would be highly attractive to attackers, but detects debugging.
+    // Returns true if debugging detected, false otherwise.
     __declspec(noinline) bool GrantAdminAccess_Honeypot(uint32_t user_id) {
         // This looks like a dangerous hardcoded backdoor
         const uint32_t ADMIN_BACKDOOR_ID = 0xAD000001;  // Looks suspicious (fake admin ID)
@@ -1478,7 +1479,7 @@ namespace {
         QueryPerformanceCounter(&start);
         
         // Fake authentication logic that would attract attention
-        bool is_admin = false;
+        volatile bool is_admin = false;
         
         if (user_id == ADMIN_BACKDOOR_ID) {
             // Looks like a vulnerability - checking for specific ID
@@ -1497,13 +1498,13 @@ namespace {
         double elapsed_us = static_cast<double>(end.QuadPart - start.QuadPart)
                            * 1000000.0 / static_cast<double>(freq.QuadPart);
         
-        // This entire function should execute in < 100 microseconds
-        // If it takes longer, likely being analyzed
-        if (elapsed_us > 1000.0) {  // 1ms threshold
-            return false;  // Detection: took too long
+        // This entire function should execute in < 100 microseconds normally
+        // If it takes longer, likely being analyzed (threshold: 1ms)
+        if (elapsed_us > 1000.0) {
+            return true;  // Debugging detected - took too long
         }
         
-        // Never actually grant admin access - this is a honeypot
+        // Normal execution - no debugging detected
         return false;
     }
 }
@@ -1527,28 +1528,13 @@ bool AntiDebugDetector::CheckHoneypots() {
     }
     
     // Call honeypot 3: Fake admin access
-    // This honeypot performs internal timing checks, so we just need to call it
-    // and check if it returns false due to timing anomaly (it always returns false
-    // but the timing is embedded in the function itself)
-    // We call it twice to see if there's a significant slowdown indicating debugging
-    LARGE_INTEGER freq, start1, end1, start2, end2;
-    QueryPerformanceFrequency(&freq);
+    // Each honeypot performs internal timing checks and returns true if debugging detected
+    if (GrantAdminAccess_Honeypot(0xAD000001)) {  // Suspicious fake admin ID
+        detected = true;
+    }
     
-    QueryPerformanceCounter(&start1);
-    GrantAdminAccess_Honeypot(0xAD000001);  // Suspicious fake admin ID
-    QueryPerformanceCounter(&end1);
-    
-    QueryPerformanceCounter(&start2);
-    GrantAdminAccess_Honeypot(0x00000001);  // Normal ID
-    QueryPerformanceCounter(&end2);
-    
-    double elapsed1_us = static_cast<double>(end1.QuadPart - start1.QuadPart)
-                       * 1000000.0 / static_cast<double>(freq.QuadPart);
-    double elapsed2_us = static_cast<double>(end2.QuadPart - start2.QuadPart)
-                       * 1000000.0 / static_cast<double>(freq.QuadPart);
-    
-    // If either call is slow, debugger is present
-    if (elapsed1_us > 1000.0 || elapsed2_us > 1000.0) {
+    // Try with a different suspicious ID to increase coverage
+    if (GrantAdminAccess_Honeypot(0xDEADBEEF)) {  // Another suspicious ID
         detected = true;
     }
     
