@@ -31,7 +31,7 @@
 #include <cstring>
 #include <algorithm>
 #include <unordered_map>
-#include <cstdlib>  // Task 23: For rand() in distributed validation
+#include <random>  // Task 23: For secure RNG in distributed validation
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -118,6 +118,10 @@ namespace {
 // Forward declaration
 void ReportViolation(const ViolationEvent& event);
 
+// Task 23: Thread-local secure RNG for distributed validation decisions
+// Using thread_local to avoid contention between threads
+thread_local std::mt19937 g_validation_rng(std::random_device{}());
+
 void SetLastError(const std::string& error) {
     if (g_context) {
         g_context->last_error = error;
@@ -126,6 +130,13 @@ void SetLastError(const std::string& error) {
 
 uint64_t GenerateHandle() {
     return g_context->next_handle.fetch_add(1, std::memory_order_relaxed);
+}
+
+// Task 23: Helper for probabilistic validation (cryptographically secure)
+// Returns true with probability 1/N
+bool ShouldValidateWithProbability(uint32_t N) {
+    std::uniform_int_distribution<uint32_t> dist(0, N - 1);
+    return dist(g_validation_rng) == 0;
 }
 
 // Task 14: Helper to emit telemetry for detections
@@ -955,7 +966,7 @@ SENTINEL_API uint64_t SENTINEL_CALL ProtectMemory(void* address, size_t size, co
     }
     
     // Task 23: Distributed integrity validation - validate on memory protection calls
-    if (g_context->self_integrity && (rand() % 10 == 0)) {  // 10% of calls
+    if (g_context->self_integrity && ShouldValidateWithProbability(10)) {  // 10% of calls
         if (!g_context->self_integrity->ValidateQuick()) {
             ViolationEvent event = IntegrityValidator::CreateGenericTamperEvent();
             event.timestamp = GetSecureTime();
@@ -1021,7 +1032,7 @@ SENTINEL_API bool SENTINEL_CALL VerifyMemory(uint64_t handle) {
     if (!g_context) return false;
     
     // Task 23: Distributed integrity validation - validate on memory verify calls
-    if (g_context->self_integrity && (rand() % 15 == 0)) {  // ~7% of calls
+    if (g_context->self_integrity && ShouldValidateWithProbability(15)) {  // ~7% of calls
         if (!g_context->self_integrity->ValidateQuick()) {
             ViolationEvent event = IntegrityValidator::CreateGenericTamperEvent();
             event.timestamp = GetSecureTime();
@@ -1063,7 +1074,7 @@ SENTINEL_API uint64_t SENTINEL_CALL ProtectFunction(void* function_address, cons
     }
     
     // Task 23: Distributed integrity validation - validate on function protection calls
-    if (g_context->self_integrity && (rand() % 12 == 0)) {  // ~8% of calls
+    if (g_context->self_integrity && ShouldValidateWithProbability(12)) {  // ~8% of calls
         if (!g_context->self_integrity->ValidateQuick()) {
             ViolationEvent event = IntegrityValidator::CreateGenericTamperEvent();
             event.timestamp = GetSecureTime();
@@ -1235,7 +1246,7 @@ SENTINEL_API ErrorCode SENTINEL_CALL EncryptPacket(
     }
     
     // Task 23: Distributed integrity validation - validate on packet operations
-    if (g_context->self_integrity && (rand() % 20 == 0)) {  // 5% of calls
+    if (g_context->self_integrity && ShouldValidateWithProbability(20)) {  // 5% of calls
         if (!g_context->self_integrity->ValidateQuick()) {
             ViolationEvent event = IntegrityValidator::CreateGenericTamperEvent();
             event.timestamp = GetSecureTime();
