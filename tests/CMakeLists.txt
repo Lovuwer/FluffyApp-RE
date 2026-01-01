@@ -31,6 +31,7 @@ add_executable(CoreTests
     Core/test_certificate_pinning.cpp
     Core/test_config_loader.cpp
     Core/test_memory.cpp
+    Core/test_obfuscated_string.cpp
 )
 
 target_link_libraries(CoreTests
