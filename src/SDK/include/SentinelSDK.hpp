@@ -38,6 +38,7 @@
     #endif
 #elif defined(SENTINEL_SDK_STATIC)
     // For static libraries, mark API functions as used to prevent unused function warnings
+    // Windows MSVC doesn't flag exported functions as unused, but GCC/Clang do
     #ifdef _WIN32
         #define SENTINEL_API
     #else
