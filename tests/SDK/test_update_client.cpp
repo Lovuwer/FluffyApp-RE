@@ -28,7 +28,7 @@ public:
     void setVersionResponse(uint32_t version) { m_version_response = version; }
     void setSignatureResponse(const std::string& json) { m_signature_response = json; }
     
-    Result<Network::HttpResponse> send(const Network::HttpRequest& request) {
+    Result<Network::HttpResponse> send(const Network::HttpRequest& request) override {
         if (m_should_fail) {
             return ErrorCode::NetworkError;
         }
