@@ -326,8 +326,10 @@ endif()
 if(SENTINEL_BUILD_SDK)
     add_subdirectory(src/SDK)
     
-    # Add SDK examples (including DummyGame)
-    add_subdirectory(examples/DummyGame)
+    # Add SDK examples (including DummyGame) if enabled
+    if(SENTINEL_SDK_BUILD_EXAMPLES)
+        add_subdirectory(examples/DummyGame)
+    endif()
 endif()
 
 # Sentinel Watchtower (Roblox Module)

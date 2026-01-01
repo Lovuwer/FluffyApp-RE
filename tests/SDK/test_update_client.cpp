@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 #include "Network/UpdateClient.hpp"
 #include "Internal/SignatureManager.hpp"
+#include "RSATestHelpers.hpp"
 #include <Sentinel/Core/HttpClient.hpp>
 #include <Sentinel/Core/Crypto.hpp>
 #include <filesystem>
@@ -64,14 +65,11 @@ protected:
         test_dir = std::filesystem::temp_directory_path() / "sentinel_test_updates";
         std::filesystem::create_directories(test_dir);
         
-        // Generate RSA key pair for testing
+        // Generate RSA key pair for testing using helper
         rsa_signer = std::make_unique<Crypto::RSASigner>();
-        auto key_result = rsa_signer->generateKeyPair();
-        ASSERT_TRUE(key_result.isSuccess());
-        
-        auto public_key_result = rsa_signer->exportPublicKey();
-        ASSERT_TRUE(public_key_result.isSuccess());
-        public_key = public_key_result.value();
+        auto key_result = Testing::setupTestRSAKey(*rsa_signer);
+        ASSERT_TRUE(key_result.isSuccess()) << "Failed to setup test RSA key";
+        public_key = key_result.value();
         
         // Initialize signature manager
         signature_manager = std::make_shared<SignatureManager>();

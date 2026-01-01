@@ -125,4 +125,5 @@ endif()
 set_target_properties(SentinelCore PROPERTIES
     OUTPUT_NAME "SentinelCore"
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+    POSITION_INDEPENDENT_CODE ON
 )

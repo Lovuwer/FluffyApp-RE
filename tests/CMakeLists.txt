@@ -120,8 +120,10 @@ add_executable(SDKTests
     SDK/test_cloud_reporter.cpp
     SDK/test_scan_scheduler.cpp
     SDK/test_integrity_validator.cpp
+    SDK/test_diversity_engine.cpp
     SDK/test_signature_manager.cpp
     SDK/test_update_client.cpp
+    SDK/test_perf_telemetry.cpp
 )
 
 target_include_directories(SDKTests

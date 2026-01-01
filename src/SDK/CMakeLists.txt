@@ -40,6 +40,7 @@ set(SDK_SOURCES
     src/Internal/ScanScheduler.cpp
     src/Internal/IntegrityValidator.cpp
     src/Internal/DiversityEngine.cpp
+    src/Internal/PerfTelemetry.cpp
     src/Core/Heartbeat.cpp
     src/Core/MemoryProtection.cpp
     src/Core/FunctionProtection.cpp
@@ -78,6 +79,7 @@ set(SDK_HEADERS
     src/Internal/ScanScheduler.hpp
     src/Internal/IntegrityValidator.hpp
     src/Internal/DiversityEngine.hpp
+    src/Internal/PerfTelemetry.hpp
 )
 
 # Header files for IDE organization only (not compiled)

@@ -19,6 +19,7 @@
 #include "Internal/IntegrityValidator.hpp"  // Task 08: Memory integrity self-validation
 #include "Sentinel/Core/Logger.hpp"  // Comprehensive logging infrastructure
 // Note: Internal/PerfTelemetry.hpp will be available after merge with main
+#include "Internal/PerfTelemetry.hpp"  // Task 17: Performance telemetry
 
 #include <atomic>
 #include <chrono>
@@ -93,6 +94,9 @@ struct SDKContext {
     std::unique_ptr<ScanScheduler> scan_scheduler;
     // Task 08: Memory integrity self-validation
     std::unique_ptr<IntegrityValidator> self_integrity;
+    
+    // Task 17: Performance telemetry
+    std::unique_ptr<PerformanceTelemetry> perf_telemetry;
     
     // Session info
     std::string session_token;
@@ -461,7 +465,6 @@ void ReportViolation(const ViolationEvent& event) {
 // ==================== Core API Implementation ====================
 
 SENTINEL_API ErrorCode SENTINEL_CALL Initialize(const Configuration* config) {
-    // Task 17: Record initialization start time
     auto init_start = std::chrono::high_resolution_clock::now();
     
     if (!config) {
@@ -599,6 +602,15 @@ SENTINEL_API ErrorCode SENTINEL_CALL Initialize(const Configuration* config) {
     g_context->self_integrity = std::make_unique<IntegrityValidator>();
     g_context->self_integrity->Initialize();
     
+    // Task 17: Initialize performance telemetry
+    g_context->perf_telemetry = std::make_unique<PerformanceTelemetry>();
+    PerfTelemetryConfig perf_config = PerfTelemetryConfig::Default();
+    // Configure thresholds based on SDK requirements
+    perf_config.p95_threshold_ms = 5.0;  // 5ms P95 target
+    perf_config.p99_threshold_ms = 10.0; // 10ms P99 target
+    perf_config.enable_self_throttling = true;
+    g_context->perf_telemetry->Initialize(perf_config);
+    
     // Initialize network if cloud endpoint provided
     if (config->cloud_endpoint && strlen(config->cloud_endpoint) > 0) {
         SENTINEL_LOG_INFO_F("Initializing cloud reporting to: %s", config->cloud_endpoint);
@@ -620,9 +632,10 @@ SENTINEL_API ErrorCode SENTINEL_CALL Initialize(const Configuration* config) {
     // Task 17: Record initialization timing
     auto init_end = std::chrono::high_resolution_clock::now();
     auto init_duration_us = std::chrono::duration_cast<std::chrono::microseconds>(init_end - init_start).count();
-    
-    SENTINEL_LOG_INFO("Sentinel SDK initialized successfully");
-    SENTINEL_LOG_DEBUG_F("Initialization completed in %lld microseconds", init_duration_us);
+    double init_duration_ms = init_duration_us / 1000.0;
+    if (g_context->perf_telemetry) {
+        g_context->perf_telemetry->RecordOperation(OperationType::Initialize, init_duration_ms);
+    }
     
     return ErrorCode::Success;
 }
@@ -671,6 +684,12 @@ SENTINEL_API void SENTINEL_CALL Shutdown() {
     }
     g_context->self_integrity.reset();
     
+    // Task 17: Cleanup performance telemetry
+    if (g_context->perf_telemetry) {
+        g_context->perf_telemetry->Shutdown();
+    }
+    g_context->perf_telemetry.reset();
+    
     // Cleanup whitelist manager
     if (g_whitelist) {
         g_whitelist->Shutdown();
@@ -716,6 +735,11 @@ SENTINEL_API ErrorCode SENTINEL_CALL Update() {
     
     if (!g_context->active.load()) {
         return ErrorCode::Success;  // Paused, skip checks
+    }
+    
+    // Task 17: Check if this update should be throttled
+    if (g_context->perf_telemetry && g_context->perf_telemetry->ShouldThrottle(OperationType::Update)) {
+        return ErrorCode::Success;  // Skip update due to performance throttling
     }
     
     auto start = std::chrono::high_resolution_clock::now();
@@ -804,12 +828,23 @@ SENTINEL_API ErrorCode SENTINEL_CALL Update() {
     
     g_context->last_update = std::chrono::steady_clock::now();
     
+    // Task 17: Record update timing
+    double elapsed_ms = elapsed_us / 1000.0;
+    if (g_context->perf_telemetry) {
+        g_context->perf_telemetry->RecordOperation(OperationType::Update, elapsed_ms);
+    }
+    
     return result;
 }
 
 SENTINEL_API ErrorCode SENTINEL_CALL FullScan() {
     if (!g_context || !g_context->initialized.load()) {
         return ErrorCode::NotInitialized;
+    }
+    
+    // Task 17: Check if this scan should be throttled
+    if (g_context->perf_telemetry && g_context->perf_telemetry->ShouldThrottle(OperationType::FullScan)) {
+        return ErrorCode::Success;  // Skip scan due to performance throttling
     }
     
     auto start = std::chrono::high_resolution_clock::now();
@@ -861,6 +896,11 @@ SENTINEL_API ErrorCode SENTINEL_CALL FullScan() {
         (g_context->stats.avg_scan_time_ms * (g_context->stats.scans_performed - 1) + elapsed_ms) /
         g_context->stats.scans_performed;
     
+    // Task 17: Record scan timing
+    if (g_context->perf_telemetry) {
+        g_context->perf_telemetry->RecordOperation(OperationType::FullScan, elapsed_ms);
+    }
+    
     return result;
 }
 
@@ -883,6 +923,8 @@ SENTINEL_API bool SENTINEL_CALL IsActive() {
 // ==================== Memory Protection ====================
 
 SENTINEL_API uint64_t SENTINEL_CALL ProtectMemory(void* address, size_t size, const char* name) {
+    auto start = std::chrono::high_resolution_clock::now();
+    
     if (!g_context || !g_context->initialized.load()) {
         return 0;
     }
@@ -912,6 +954,14 @@ SENTINEL_API uint64_t SENTINEL_CALL ProtectMemory(void* address, size_t size, co
         g_context->integrity->RegisterRegion(region);
     }
     
+    // Task 17: Record timing
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration_us = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    double duration_ms = duration_us / 1000.0;
+    if (g_context->perf_telemetry) {
+        g_context->perf_telemetry->RecordOperation(OperationType::ProtectMemory, duration_ms);
+    }
+    
     return handle;
 }
 
@@ -932,6 +982,8 @@ SENTINEL_API void SENTINEL_CALL UnprotectMemory(uint64_t handle) {
 }
 
 SENTINEL_API bool SENTINEL_CALL VerifyMemory(uint64_t handle) {
+    auto start = std::chrono::high_resolution_clock::now();
+    
     if (!g_context) return false;
     
     std::lock_guard<std::mutex> lock(g_context->protection_mutex);
@@ -945,12 +997,24 @@ SENTINEL_API bool SENTINEL_CALL VerifyMemory(uint64_t handle) {
         reinterpret_cast<void*>(it->second.address),
         it->second.size);
     
-    return current_hash == it->second.original_hash;
+    bool result = (current_hash == it->second.original_hash);
+    
+    // Task 17: Record timing
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration_us = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    double duration_ms = duration_us / 1000.0;
+    if (g_context->perf_telemetry) {
+        g_context->perf_telemetry->RecordOperation(OperationType::VerifyMemory, duration_ms);
+    }
+    
+    return result;
 }
 
 // ==================== Function Protection ====================
 
 SENTINEL_API uint64_t SENTINEL_CALL ProtectFunction(void* function_address, const char* name) {
+    auto start = std::chrono::high_resolution_clock::now();
+    
     if (!g_context || !g_context->initialized.load()) {
         return 0;
     }
@@ -978,6 +1042,14 @@ SENTINEL_API uint64_t SENTINEL_CALL ProtectFunction(void* function_address, cons
     // Register with hook detector
     if (g_context->anti_hook) {
         g_context->anti_hook->RegisterFunction(protection);
+    }
+    
+    // Task 17: Record timing
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration_us = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    double duration_ms = duration_us / 1000.0;
+    if (g_context->perf_telemetry) {
+        g_context->perf_telemetry->RecordOperation(OperationType::ProtectFunction, duration_ms);
     }
     
     return handle;
