@@ -401,8 +401,12 @@ void HeartbeatThreadFunc() {
         
         // Task 22: Add cryptographic jitter to sleep interval (30% variation)
         // This prevents timing-based detection of heartbeat patterns
-        if (g_context->timing_randomizer && sleep_ms > 100) {
-            sleep_ms = g_context->timing_randomizer->AddJitter(sleep_ms, 30);
+        // Minimum threshold ensures we don't add jitter to very short sleeps
+        constexpr uint32_t HEARTBEAT_JITTER_PERCENT = 30;
+        constexpr uint32_t MIN_SLEEP_FOR_JITTER_MS = 100;
+        
+        if (g_context->timing_randomizer && sleep_ms > MIN_SLEEP_FOR_JITTER_MS) {
+            sleep_ms = g_context->timing_randomizer->AddJitter(sleep_ms, HEARTBEAT_JITTER_PERCENT);
         }
         
         std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));

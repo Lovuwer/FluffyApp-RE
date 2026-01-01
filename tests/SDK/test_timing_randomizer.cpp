@@ -14,6 +14,9 @@
 #include <cmath>
 #include <numeric>
 #include <set>
+#include <chrono>
+#include <thread>
+#include <atomic>
 
 using namespace Sentinel::SDK;
 

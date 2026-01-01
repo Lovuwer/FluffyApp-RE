@@ -117,7 +117,10 @@ void InitializationRandomizer::InitializeAll() {
     actual_order_.reserve(components_.size());
     
     size_t initialized_count = 0;
-    size_t max_iterations = components_.size() * 2;  // Prevent infinite loop
+    // Maximum iterations: component_count * 2 to prevent infinite loops
+    // Factor of 2 allows for complex dependency graphs with multiple passes
+    constexpr size_t MAX_ITERATION_MULTIPLIER = 2;
+    size_t max_iterations = components_.size() * MAX_ITERATION_MULTIPLIER;
     size_t iteration = 0;
     
     while (initialized_count < components_.size() && iteration < max_iterations) {

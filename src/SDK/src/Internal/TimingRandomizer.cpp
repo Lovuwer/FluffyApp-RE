@@ -111,7 +111,14 @@ uint32_t TimingRandomizer::AddJitter(uint32_t base_value_ms, uint32_t variation_
     }
     
     // Clamp variation percent to reasonable bounds [10%, 100%]
+    const uint32_t original_variation = variation_percent;
     variation_percent = std::max(10u, std::min(100u, variation_percent));
+    
+    // Log if clamping occurred (could indicate a programming error)
+    if (original_variation != variation_percent) {
+        SENTINEL_LOG_WARNING_F("[TimingRandomizer] Variation percent clamped from %u%% to %u%%",
+                                original_variation, variation_percent);
+    }
     
     // Calculate bounds: base * (1 - variation/100) to base * (1 + variation/100)
     // Use 64-bit to prevent overflow

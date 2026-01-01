@@ -30,6 +30,11 @@ namespace SDK {
  * - Using cryptographically secure random source
  * - Internally logging all variation parameters
  * - Ensuring uniform distribution over time
+ * 
+ * Thread Safety:
+ * - All public methods are thread-safe via mutex protection
+ * - SecureRandom initialization is deferred until first use
+ * - Uses double-checked locking for initialization
  */
 class TimingRandomizer {
 public:
@@ -39,8 +44,11 @@ public:
     /**
      * Apply random jitter to a timing value
      * @param base_value_ms Base timing value in milliseconds
-     * @param variation_percent Percentage of variation (default 50%)
+     * @param variation_percent Percentage of variation (default 50%, clamped to [10%, 100%])
      * @return Randomized value within [base * (1 - variation/100), base * (1 + variation/100)]
+     * 
+     * Note: variation_percent is silently clamped to [10%, 100%] to prevent invalid configurations.
+     * This ensures a reasonable variation range while preventing extreme values.
      * 
      * Example: AddJitter(1000, 50) returns value in range [500, 1500]
      */
