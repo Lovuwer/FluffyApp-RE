@@ -97,6 +97,22 @@ std::chrono::system_clock::time_point parseTimestamp(const std::string& iso_time
     return std::chrono::system_clock::from_time_t(std::mktime(&tm));
 }
 
+// Helper to convert SignatureType enum to string
+const char* signatureTypeToString(Sentinel::SDK::SignatureType type) {
+    switch (type) {
+        case Sentinel::SDK::SignatureType::MemoryPattern:
+            return "MemoryPattern";
+        case Sentinel::SDK::SignatureType::HashSignature:
+            return "HashSignature";
+        case Sentinel::SDK::SignatureType::BehaviorSignature:
+            return "BehaviorSignature";
+        case Sentinel::SDK::SignatureType::ModuleSignature:
+            return "ModuleSignature";
+        default:
+            return "Unknown";
+    }
+}
+
 } // anonymous namespace
 
 namespace Sentinel {
@@ -643,7 +659,7 @@ Result<std::string> SignatureManager::serializeSignatureSet(
         oss << "      \"id\": \"" << sig.id << "\",\n";
         oss << "      \"name\": \"" << sig.name << "\",\n";
         oss << "      \"version\": " << sig.version << ",\n";
-        oss << "      \"type\": \"" << sig.type << "\",\n";
+        oss << "      \"type\": \"" << signatureTypeToString(sig.type) << "\",\n";
         oss << "      \"threat_family\": \"" << sig.threat_family << "\",\n";
         oss << "      \"severity\": " << static_cast<int>(sig.severity) << ",\n";
         oss << "      \"pattern\": \"" << bytesToHex(sig.pattern_data) << "\",\n";
