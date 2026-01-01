@@ -21,6 +21,8 @@
 #include <thread>
 #include <chrono>
 #include <cmath>
+#include <ctime>
+#include <random>
 
 using namespace Sentinel::SDK;
 
@@ -205,18 +207,13 @@ void DisplayPerformanceDashboard(PerformanceTelemetry* perf_telemetry) {
  * Simulate game workload with varying performance characteristics
  */
 void SimulateGameWorkload(int iteration) {
-    // Simulate different performance scenarios
-    
+    // Use consistent sleep-based simulation for predictable performance
     // Every 10 iterations, inject a performance spike
     if (iteration % 10 == 0) {
         std::this_thread::sleep_for(std::chrono::microseconds(500));
-    }
-    
-    // Normal workload variation
-    int base_work = 100 + (iteration % 50);
-    volatile int dummy = 0;
-    for (int i = 0; i < base_work; ++i) {
-        dummy += i * i;
+    } else {
+        // Normal frame time variation
+        std::this_thread::sleep_for(std::chrono::microseconds(50 + (iteration % 50)));
     }
 }
 
@@ -257,6 +254,11 @@ int main() {
     perf_config.window_size = 100;  // Smaller window for demo
     demo_telemetry.Initialize(perf_config);
     
+    // Initialize random number generator for demo
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<> dis(0.0, 1.0);
+    
     // Simulate game loop with performance monitoring
     int iteration = 0;
     auto last_dashboard_update = std::chrono::steady_clock::now();
@@ -276,13 +278,15 @@ int main() {
         // Record performance for demo telemetry
         demo_telemetry.RecordOperation(OperationType::Update, frame_time_ms);
         
-        // Periodically record other operations
+        // Periodically record other operations with random variation
         if (iteration % 5 == 0) {
-            demo_telemetry.RecordOperation(OperationType::VerifyMemory, 0.5 + (rand() % 100) / 100.0);
+            demo_telemetry.RecordOperation(OperationType::VerifyMemory, 
+                                          0.5 + dis(gen) * 1.0);
         }
         
         if (iteration % 20 == 0) {
-            demo_telemetry.RecordOperation(OperationType::FullScan, 15.0 + (rand() % 1000) / 100.0);
+            demo_telemetry.RecordOperation(OperationType::FullScan, 
+                                          15.0 + dis(gen) * 10.0);
         }
         
         // Update dashboard every second
