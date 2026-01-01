@@ -75,6 +75,7 @@
  */
 
 #include "Internal/Detection.hpp"
+#include "Internal/DiversityEngine.hpp"
 #include "Internal/EnvironmentDetection.hpp"
 
 #ifdef _WIN32
@@ -89,7 +90,10 @@
 #include <cmath>
 
 namespace Sentinel {
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
 namespace SDK {
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
 
 bool SpeedHackDetector::DetectHypervisor() {
 #ifdef _WIN32
@@ -103,9 +107,11 @@ bool SpeedHackDetector::DetectHypervisor() {
     // For now, return false as a conservative approach
     return false;
 #endif
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
 }
 
 bool SpeedHackDetector::IsFrequencyPlausible(double frequency_mhz) {
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     return frequency_mhz >= MIN_CPU_FREQUENCY_MHZ && frequency_mhz <= MAX_CPU_FREQUENCY_MHZ;
 }
 
@@ -115,6 +121,7 @@ void SpeedHackDetector::Initialize() {
     // Initialize environment detector
     env_detector_ = std::make_unique<EnvironmentDetector>();
     env_detector_->Initialize();
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     
     UpdateBaseline();
 }
@@ -122,6 +129,7 @@ void SpeedHackDetector::Initialize() {
 void SpeedHackDetector::Shutdown() {
     // Clean up environment detector
     if (env_detector_) {
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
         env_detector_->Shutdown();
         env_detector_.reset();
     }
@@ -133,6 +141,7 @@ uint64_t SpeedHackDetector::GetSystemTime() {
     return GetTickCount64();
 #else
     // Linux fallback: use steady_clock
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     auto now = std::chrono::steady_clock::now();
     auto duration = now.time_since_epoch();
     return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
@@ -145,6 +154,7 @@ uint64_t SpeedHackDetector::GetPerformanceCounter() {
     QueryPerformanceCounter(&counter);
     return counter.QuadPart;
 #else
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     // Linux fallback: use high_resolution_clock
     auto now = std::chrono::high_resolution_clock::now();
     auto duration = now.time_since_epoch();
@@ -163,6 +173,7 @@ uint64_t SpeedHackDetector::GetRDTSC() {
     __asm__ __volatile__("rdtsc" : "=a"(lo), "=d"(hi));
     return ((uint64_t)hi << 32) | lo;
 #else
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     // Fallback for non-x86: use high_resolution_clock
     auto now = std::chrono::high_resolution_clock::now();
     auto duration = now.time_since_epoch();
@@ -234,6 +245,7 @@ void SpeedHackDetector::RecalibrateRDTSC() {
         
         // Store in calibration history
         calibration_history_[calibration_history_index_] = new_frequency;
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
         calibration_history_index_ = (calibration_history_index_ + 1) % CALIBRATION_HISTORY_SIZE;
         
         // Update frequency
@@ -254,6 +266,7 @@ void SpeedHackDetector::UpdateBaseline() {
     
     current_time_scale_ = 1.0f;
     anomaly_count_ = 0;
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     
     // Reset wall clock baseline
     wall_clock_baseline_time_ = 0;
@@ -394,6 +407,7 @@ bool SpeedHackDetector::ValidateSourceRatios() {
                     timing_anomalies_in_window_ = 0;
                 }
             }
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
         }
     }
     
@@ -446,6 +460,7 @@ bool SpeedHackDetector::ValidateAgainstWallClock() {
         double ratio = elapsedQPCMs / (double)elapsedWall;
         
         // Speed hack detection (acceleration)
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
         if (ratio > 1.0 + MAX_TIME_SCALE_DEVIATION) {
             return false;
         }
@@ -461,6 +476,7 @@ bool SpeedHackDetector::ValidateAgainstWallClock() {
 bool SpeedHackDetector::ValidateFrame() {
     // Basic source comparison
     if (!ValidateSourceRatios()) {
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
         return false;
     }
     

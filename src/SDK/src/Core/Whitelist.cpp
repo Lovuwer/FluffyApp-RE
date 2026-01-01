@@ -23,16 +23,21 @@
 #endif
 
 namespace Sentinel {
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
 namespace SDK {
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
 
 void WhitelistManager::Initialize() {
     std::lock_guard<std::mutex> lock(mutex_);
     entries_.clear();
     LoadBuiltinWhitelist();
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
 }
 
 void WhitelistManager::Shutdown() {
     std::lock_guard<std::mutex> lock(mutex_);
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     entries_.clear();
 }
 
@@ -276,6 +281,7 @@ void WhitelistManager::LoadBuiltinWhitelist() {
         "Hyper-V virtualization detected",
         true,
         std::nullopt,
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
         std::nullopt
     });
 }
@@ -289,6 +295,7 @@ void WhitelistManager::Add(const WhitelistEntry& entry) {
             return e.identifier == entry.identifier && e.type == entry.type;
         });
     
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     if (it == entries_.end()) {
         entries_.push_back(entry);
     }
@@ -301,6 +308,7 @@ void WhitelistManager::Remove(const std::string& identifier) {
     entries_.erase(
         std::remove_if(entries_.begin(), entries_.end(),
             [&identifier](const WhitelistEntry& e) {
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
                 return e.identifier == identifier && !e.builtin;
             }),
         entries_.end()
@@ -366,6 +374,7 @@ bool WhitelistManager::IsModuleWhitelisted(const wchar_t* modulePath) const {
                 }
 #endif
                 return true;
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
             }
         }
     }
@@ -379,6 +388,7 @@ bool WhitelistManager::IsModuleWhitelisted(const std::string& moduleHash) const 
     for (const auto& entry : entries_) {
         if (entry.type == WhitelistType::Module) {
             if (entry.sha256_hash.has_value() && entry.sha256_hash.value() == moduleHash) {
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
                 return true;
             }
         }
@@ -398,6 +408,7 @@ bool WhitelistManager::IsRegionWhitelisted(uintptr_t address, size_t size) const
         if (entry.type == WhitelistType::MemoryRegion) {
             // Parse identifier as "address-size" format
             // Example: "0x140000000-0x1000" for a 4KB region at 0x140000000
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
             (void)address;
             (void)size;
         }
@@ -450,6 +461,7 @@ bool WhitelistManager::IsThreadOriginWhitelisted(uintptr_t startAddress) const {
             
             if (lowerIdentifier == narrowName) {
                 return true;
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
             }
         }
     }
@@ -491,6 +503,7 @@ bool WhitelistManager::IsVirtualizedEnvironment() const {
     // Also check for common VM vendor strings not in whitelist
     // This provides fallback detection for VMs even if whitelist is not initialized
     if (strstr(vendor, "VMwareVMware") != nullptr) return true;
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     if (strstr(vendor, "VBoxVBoxVBox") != nullptr) return true;
     if (strstr(vendor, "Microsoft Hv") != nullptr) return true;
     if (strstr(vendor, "KVMKVMKVM") != nullptr) return true;
