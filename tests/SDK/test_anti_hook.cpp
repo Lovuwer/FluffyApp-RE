@@ -440,9 +440,9 @@ TEST(AntiHookTests, UnregisteredFunctionCheck) {
     
     // Create a normal pattern
     uint8_t normalBuffer[TEST_PROLOGUE_SIZE];
+    memset(normalBuffer, 0x90, TEST_PROLOGUE_SIZE);  // Initialize entire buffer with NOPs
     normalBuffer[0] = 0x55;  // PUSH RBP
     normalBuffer[1] = 0x48;  // REX.W
-    memset(normalBuffer + 2, 0x90, 14);
     
     uintptr_t normalAddr = reinterpret_cast<uintptr_t>(normalBuffer);
     

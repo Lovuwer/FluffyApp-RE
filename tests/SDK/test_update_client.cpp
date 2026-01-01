@@ -48,7 +48,7 @@ public:
             response.statusCode = 404;
         }
         
-        response.headers["Content-Type"] = "application/json";
+        response.headers["content-type"] = "application/json";
         return response;
     }
     
