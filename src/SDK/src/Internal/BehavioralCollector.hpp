@@ -14,6 +14,8 @@
 #include <cstdint>
 #include <vector>
 #include <mutex>
+#include <condition_variable>
+#include <thread>
 #include <chrono>
 
 namespace Sentinel {
@@ -252,7 +254,7 @@ private:
     
     // Threading
     std::thread aggregation_thread_;
-    std::mutex data_mutex_;
+    mutable std::mutex data_mutex_;
     std::condition_variable cv_;
     bool running_;
     
