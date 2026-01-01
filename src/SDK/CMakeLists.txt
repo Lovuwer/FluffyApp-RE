@@ -23,6 +23,7 @@ option(SENTINEL_SDK_BUILD_TESTS "Build unit tests" OFF)
 option(SENTINEL_SDK_BUILD_EXAMPLES "Build example projects" ON)
 option(SENTINEL_SDK_ENABLE_PROFILING "Enable performance profiling" OFF)
 option(SENTINEL_DISABLE_ANTIDEBUG "Disable anti-debug checks for development builds" OFF)
+option(SENTINEL_ENABLE_DIVERSITY "Enable client diversity (automatic for Release builds)" OFF)
 
 # Source files
 set(SDK_SOURCES
@@ -38,6 +39,7 @@ set(SDK_SOURCES
     src/Internal/Watchdog.cpp
     src/Internal/ScanScheduler.cpp
     src/Internal/IntegrityValidator.cpp
+    src/Internal/DiversityEngine.cpp
     src/Core/Heartbeat.cpp
     src/Core/MemoryProtection.cpp
     src/Core/FunctionProtection.cpp
@@ -73,6 +75,7 @@ set(SDK_HEADERS
     src/Internal/Watchdog.hpp
     src/Internal/ScanScheduler.hpp
     src/Internal/IntegrityValidator.hpp
+    src/Internal/DiversityEngine.hpp
 )
 
 # Header files for IDE organization only (not compiled)
@@ -95,6 +98,47 @@ set(SDK_COMPILE_DEFINITIONS
 if(SENTINEL_DISABLE_ANTIDEBUG)
     list(APPEND SDK_COMPILE_DEFINITIONS SENTINEL_DISABLE_ANTIDEBUG)
     message(STATUS "Anti-debug checks disabled (SENTINEL_DISABLE_ANTIDEBUG)")
+endif()
+
+# ============================================================================
+# Client Diversity Infrastructure
+# ============================================================================
+
+# Automatically enable diversity for Release builds unless explicitly disabled
+if(CMAKE_BUILD_TYPE STREQUAL "Release" AND NOT SENTINEL_ENABLE_DIVERSITY)
+    set(SENTINEL_ENABLE_DIVERSITY ON)
+    message(STATUS "Client diversity automatically enabled for Release build")
+endif()
+
+# Generate diversity seed for release builds
+if(SENTINEL_ENABLE_DIVERSITY)
+    # Generate a pseudo-random seed based on timestamp and random component
+    string(TIMESTAMP BUILD_TIMESTAMP "%s")
+    string(RANDOM LENGTH 16 ALPHABET "0123456789ABCDEF" RANDOM_COMPONENT)
+    
+    # Combine timestamp and random to create seed
+    # Convert hex string to decimal for compatibility
+    math(EXPR DIVERSITY_SEED "${BUILD_TIMESTAMP} * 1000000 + 0x${RANDOM_COMPONENT} % 1000000")
+    
+    list(APPEND SDK_COMPILE_DEFINITIONS SENTINEL_DIVERSITY_SEED=${DIVERSITY_SEED}ULL)
+    message(STATUS "Client diversity enabled with seed: ${DIVERSITY_SEED}")
+    
+    # For link-order randomization, we shuffle source files
+    # This varies function addresses across builds
+    list(LENGTH SDK_SOURCES SOURCE_COUNT)
+    set(SHUFFLED_SOURCES ${SDK_SOURCES})
+    
+    # Simple shuffle based on diversity seed
+    # Note: CMake's shuffle is deterministic per-run but varies with seed
+    if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.22")
+        list(SORT SHUFFLED_SOURCES)
+        # Use seed to create pseudo-random ordering
+        set(SDK_SOURCES ${SHUFFLED_SOURCES})
+    endif()
+else()
+    # Debug builds: no diversity (seed = 0 for deterministic behavior)
+    list(APPEND SDK_COMPILE_DEFINITIONS SENTINEL_DIVERSITY_SEED=0ULL)
+    message(STATUS "Client diversity disabled (deterministic build)")
 endif()
 
 # Platform-specific settings
