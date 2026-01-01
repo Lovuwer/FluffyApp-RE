@@ -18,6 +18,7 @@
 #include "Internal/ScanScheduler.hpp"  // Task 09: Detection timing randomization
 #include "Internal/IntegrityValidator.hpp"  // Task 08: Memory integrity self-validation
 #include "Sentinel/Core/Logger.hpp"  // Comprehensive logging infrastructure
+// Note: Internal/PerfTelemetry.hpp will be available after merge with main
 
 #include <atomic>
 #include <chrono>
@@ -460,6 +461,9 @@ void ReportViolation(const ViolationEvent& event) {
 // ==================== Core API Implementation ====================
 
 SENTINEL_API ErrorCode SENTINEL_CALL Initialize(const Configuration* config) {
+    // Task 17: Record initialization start time
+    auto init_start = std::chrono::high_resolution_clock::now();
+    
     if (!config) {
         return ErrorCode::InvalidParameter;
     }
@@ -613,7 +617,12 @@ SENTINEL_API ErrorCode SENTINEL_CALL Initialize(const Configuration* config) {
     g_context->initialized.store(true);
     g_context->active.store(true);
     
+    // Task 17: Record initialization timing
+    auto init_end = std::chrono::high_resolution_clock::now();
+    auto init_duration_us = std::chrono::duration_cast<std::chrono::microseconds>(init_end - init_start).count();
+    
     SENTINEL_LOG_INFO("Sentinel SDK initialized successfully");
+    SENTINEL_LOG_DEBUG_F("Initialization completed in %lld microseconds", init_duration_us);
     
     return ErrorCode::Success;
 }
