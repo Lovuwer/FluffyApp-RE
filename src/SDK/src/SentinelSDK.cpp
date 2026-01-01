@@ -15,6 +15,7 @@
 #include "Internal/EnvironmentDetection.hpp"
 #include "Internal/Watchdog.hpp"
 #include "Internal/SafeMemory.hpp"  // Task 09: For exception budget tracking
+#include "Internal/ScanScheduler.hpp"  // Task 09: Detection timing randomization
 #include "Internal/IntegrityValidator.hpp"  // Task 08: Memory integrity self-validation
 
 #include <atomic>
@@ -86,6 +87,8 @@ struct SDKContext {
     // Task 07: Heartbeat thread watchdog
     std::unique_ptr<Watchdog> watchdog;
     
+    // Task 09: Scan scheduler for randomized timing
+    std::unique_ptr<ScanScheduler> scan_scheduler;
     // Task 08: Memory integrity self-validation
     std::unique_ptr<IntegrityValidator> self_integrity;
     
@@ -273,6 +276,10 @@ void HeartbeatThreadFunc() {
                 g_context->runtime_config->CheckForUpdates();
             }
             
+            // Task 09: Check if scan should be performed (randomized timing)
+            if (g_context->scan_scheduler && g_context->scan_scheduler->ShouldScan()) {
+                // Get next scan type (randomized order)
+                ScanType scan_type = g_context->scan_scheduler->GetNextScanType();
             // Task 08: Validate SDK's own code integrity (distributed across heartbeats)
             if (g_context->self_integrity) {
                 if (!g_context->self_integrity->ValidateQuick()) {
@@ -291,57 +298,120 @@ void HeartbeatThreadFunc() {
                     [&]() { return g_context->integrity->QuickCheck(); }
                 );
                 
-                for (const auto& violation : violations) {
-                    ReportViolation(violation);
+                // Execute the appropriate scan based on type
+                switch (scan_type) {
+                    case ScanType::QuickIntegrity:
+                        if (g_context->integrity) {
+                            auto violations = RunDetectionWithTelemetry(
+                                DetectionType::MemoryIntegrity,
+                                [&]() { return g_context->integrity->QuickCheck(); }
+                            );
+                            for (const auto& violation : violations) {
+                                ReportViolation(violation);
+                            }
+                        }
+                        break;
+                        
+                    case ScanType::FullIntegrity:
+                        if (g_context->integrity) {
+                            auto violations = RunDetectionWithTelemetry(
+                                DetectionType::MemoryIntegrity,
+                                [&]() { return g_context->integrity->FullScan(); },
+                                0.9f  // Higher confidence for full scan
+                            );
+                            for (const auto& violation : violations) {
+                                ReportViolation(violation);
+                            }
+                        }
+                        break;
+                        
+                    case ScanType::HookDetection:
+                        if (g_context->anti_hook) {
+                            auto violations = RunDetectionWithTelemetry(
+                                DetectionType::AntiHook,
+                                [&]() { return g_context->anti_hook->QuickCheck(); }
+                            );
+                            for (const auto& violation : violations) {
+                                ReportViolation(violation);
+                            }
+                        }
+                        break;
+                        
+                    case ScanType::DebugDetection:
+                        if (g_context->anti_debug) {
+                            // Task 11: Perform comprehensive all-thread scan every 10 heartbeats
+                            // This balances thoroughness with performance impact
+                            if (heartbeat_counter % 10 == 0) {
+                                // FullCheck includes CheckAllThreadsHardwareBP
+                                auto violations = RunDetectionWithTelemetry(
+                                    DetectionType::AntiDebug,
+                                    [&]() { return g_context->anti_debug->FullCheck(); },
+                                    0.9f  // Higher confidence for full check
+                                );
+                                for (const auto& violation : violations) {
+                                    ReportViolation(violation);
+                                }
+                            } else {
+                                // Regular quick check on other heartbeats
+                                auto violations = RunDetectionWithTelemetry(
+                                    DetectionType::AntiDebug,
+                                    [&]() { return g_context->anti_debug->Check(); },
+                                    0.7f  // Lower confidence for quick check
+                                );
+                                for (const auto& violation : violations) {
+                                    ReportViolation(violation);
+                                }
+                            }
+                        }
+                        break;
+                        
+                    case ScanType::SpeedHack:
+                        if (g_context->speed_hack) {
+                            g_context->speed_hack->UpdateBaseline();
+                        }
+                        break;
+                        
+                    case ScanType::InjectionScan:
+                        // Placeholder for future injection scanning
+                        break;
                 }
-            }
-            
-            // Check for debuggers
-            if (g_context->anti_debug) {
-                // Task 11: Perform comprehensive all-thread scan every 10 heartbeats
-                // This balances thoroughness with performance impact
-                if (heartbeat_counter % 10 == 0) {
-                    // FullCheck includes CheckAllThreadsHardwareBP
-                    auto violations = RunDetectionWithTelemetry(
-                        DetectionType::AntiDebug,
-                        [&]() { return g_context->anti_debug->FullCheck(); },
-                        0.9f  // Higher confidence for full check
-                    );
-                    
-                    // Report any violations found
-                    for (const auto& violation : violations) {
-                        ReportViolation(violation);
-                    }
-                } else {
-                    // Regular quick check on other heartbeats
-                    auto violations = RunDetectionWithTelemetry(
-                        DetectionType::AntiDebug,
-                        [&]() { return g_context->anti_debug->Check(); },
-                        0.7f  // Lower confidence for quick check
-                    );
-                    
-                    // Report any violations found
-                    for (const auto& violation : violations) {
-                        ReportViolation(violation);
-                    }
-                }
-            }
-            
-            // Update timing
-            if (g_context->speed_hack) {
-                g_context->speed_hack->UpdateBaseline();
+                
+                // Mark scan complete to update statistics and schedule next scan
+                g_context->scan_scheduler->MarkScanComplete();
             }
             
             heartbeat_counter++;
         }
         
-        std::this_thread::sleep_for(
-            std::chrono::milliseconds(g_context->config.heartbeat_interval_ms));
+        // Task 09: Use scan scheduler for dynamic sleep intervals
+        uint32_t sleep_ms = g_context->config.heartbeat_interval_ms;
+        if (g_context->scan_scheduler) {
+            // Use a fraction of time until next scan to check more frequently
+            // This ensures we don't miss the scan window
+            uint32_t time_until_scan = g_context->scan_scheduler->GetTimeUntilNextScan();
+            if (time_until_scan > 0) {
+                // Sleep for a fraction of the remaining time, max heartbeat interval
+                sleep_ms = std::min(sleep_ms, std::max(50u, time_until_scan / 2));
+            }
+        }
+        
+        std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
     }
 }
 
 void ReportViolation(const ViolationEvent& event) {
     if (!g_context) return;
+    
+    // Task 09: Trigger burst mode for high-severity violations
+    if (g_context->scan_scheduler && 
+        (event.severity == Severity::High || event.severity == Severity::Critical)) {
+        // Use correlation score as signal strength if available
+        float signal_strength = 0.8f;  // Default high signal
+        if (g_context->correlation) {
+            signal_strength = g_context->correlation->GetCorrelationScore() / 100.0f;
+        }
+        g_context->scan_scheduler->RecordBehavioralSignal(signal_strength);
+    }
     
     // Route through correlation engine if available
     if (g_context->correlation) {
@@ -468,6 +538,16 @@ SENTINEL_API ErrorCode SENTINEL_CALL Initialize(const Configuration* config) {
     // Task 07: Initialize heartbeat thread watchdog
     g_context->watchdog = std::make_unique<Watchdog>();
     
+    // Task 09: Initialize scan scheduler with randomized timing
+    g_context->scan_scheduler = std::make_unique<ScanScheduler>();
+    ScanSchedulerConfig scheduler_config;
+    scheduler_config.min_interval_ms = config->heartbeat_interval_ms / 2;  // 50% variation
+    scheduler_config.max_interval_ms = config->heartbeat_interval_ms * 3 / 2;  // 150% variation
+    scheduler_config.mean_interval_ms = config->heartbeat_interval_ms;
+    scheduler_config.enable_burst_scans = true;
+    scheduler_config.vary_scan_order = true;
+    scheduler_config.vary_scan_scope = true;
+    g_context->scan_scheduler->Initialize(scheduler_config);
     // Task 08: Initialize memory integrity self-validation
     g_context->self_integrity = std::make_unique<IntegrityValidator>();
     g_context->self_integrity->Initialize();
@@ -518,6 +598,11 @@ SENTINEL_API void SENTINEL_CALL Shutdown() {
     // Task 07: Cleanup watchdog
     g_context->watchdog.reset();
     
+    // Task 09: Cleanup scan scheduler
+    if (g_context->scan_scheduler) {
+        g_context->scan_scheduler->Shutdown();
+    }
+    g_context->scan_scheduler.reset();
     // Task 08: Cleanup self-integrity validator
     if (g_context->self_integrity) {
         g_context->self_integrity->Shutdown();
