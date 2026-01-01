@@ -764,8 +764,8 @@ TEST(AntiHookTests, HoneypotRegistration) {
     FunctionProtection honeypot;
     honeypot.address = reinterpret_cast<uintptr_t>(honeypotBuffer);
     honeypot.name = "HoneypotFunction";
-    honeypot.prologue_size = 64;
-    memcpy(honeypot.original_prologue.data(), honeypotBuffer, 64);
+    honeypot.prologue_size = TEST_PROLOGUE_SIZE;
+    memcpy(honeypot.original_prologue.data(), honeypotBuffer, TEST_PROLOGUE_SIZE);
     
     detector.RegisterHoneypot(honeypot);
     
@@ -815,8 +815,8 @@ TEST(AntiHookTests, HoneypotUnregistration) {
         FunctionProtection honeypot;
         honeypot.address = reinterpret_cast<uintptr_t>(buffer.get());
         honeypot.name = "Honeypot_" + std::to_string(i);
-        honeypot.prologue_size = 64;
-        memcpy(honeypot.original_prologue.data(), buffer.get(), 64);
+        honeypot.prologue_size = TEST_PROLOGUE_SIZE;
+        memcpy(honeypot.original_prologue.data(), buffer.get(), TEST_PROLOGUE_SIZE);
         
         addresses.push_back(honeypot.address);
         detector.RegisterHoneypot(honeypot);
