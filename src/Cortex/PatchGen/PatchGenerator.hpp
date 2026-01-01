@@ -513,6 +513,9 @@ private:
     
     PatchGeneratorConfig config_;
     
+    // Helper method to resolve Auto architecture to concrete architecture
+    PatchArchitecture ResolveArchitecture(PatchArchitecture arch) const;
+    
     // Internal helpers
     std::string GeneratePatchId();
     PatchArchitecture DetectArchitecture(const std::string& binary_path);
