@@ -77,7 +77,7 @@ Sentinel::Result<Sentinel::ByteBuffer> hexToBytes(const std::string& hex) {
 std::string bytesToHex(Sentinel::ByteSpan bytes) {
     std::ostringstream oss;
     for (auto byte : bytes) {
-        oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
+        oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<unsigned int>(byte);
     }
     return oss.str();
 }
