@@ -2,11 +2,13 @@
  * Sentinel SDK - Scan Scheduler Implementation
  * 
  * Task 9: Detection Timing Randomization
+ * Task 22: Runtime Behavior Variation - Added internal logging
  * 
  * Copyright (c) 2024 Sentinel Security. All rights reserved.
  */
 
 #include "ScanScheduler.hpp"
+#include <Sentinel/Core/Logger.hpp>
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -64,6 +66,23 @@ void ScanScheduler::Initialize(const ScanSchedulerConfig& config) {
         throw std::invalid_argument("Configuration does not meet 50% variation requirement");
     }
     
+    // Task 22: Log configuration parameters internally
+    SENTINEL_LOG_DEBUG_F("[ScanScheduler] Initializing with timing variation: "
+                         "min=%ums, max=%ums, mean=%ums (%.1f%% variation)",
+                         config_.min_interval_ms,
+                         config_.max_interval_ms,
+                         config_.mean_interval_ms,
+                         ((config_.max_interval_ms - config_.min_interval_ms) * 100.0f / config_.mean_interval_ms));
+    
+    if (config_.enable_burst_scans) {
+        SENTINEL_LOG_DEBUG_F("[ScanScheduler] Burst mode enabled: "
+                             "min=%ums, max=%ums, duration=%ums, threshold=%.2f",
+                             config_.burst_min_interval_ms,
+                             config_.burst_max_interval_ms,
+                             config_.burst_duration_ms,
+                             config_.burst_trigger_threshold);
+    }
+    
 #ifdef _WIN32
     // Initialize Windows Crypto API for CSPRNG
     if (!CryptAcquireContextW(
@@ -89,9 +108,11 @@ void ScanScheduler::Initialize(const ScanSchedulerConfig& config) {
     // Shuffle initial scan order
     if (config_.vary_scan_order) {
         ShuffleScanOrder();
+        SENTINEL_LOG_DEBUG("[ScanScheduler] Scan order randomization enabled");
     }
     
     initialized_.store(true, std::memory_order_release);
+    SENTINEL_LOG_INFO("[ScanScheduler] Initialized successfully with randomized timing");
 }
 
 void ScanScheduler::Shutdown() {
@@ -169,7 +190,7 @@ uint32_t ScanScheduler::GenerateSecureRandom(uint32_t min, uint32_t max) {
     return min + (random_value % range);
 }
 
-uint32_t ScanScheduler::GenerateInterval() {
+uint32_t TimingRandomizer::GenerateInterval() {
     uint32_t min_interval, max_interval;
     
     if (burst_mode_.load(std::memory_order_acquire)) {
@@ -180,7 +201,14 @@ uint32_t ScanScheduler::GenerateInterval() {
         max_interval = config_.max_interval_ms;
     }
     
-    return GenerateSecureRandom(min_interval, max_interval);
+    uint32_t interval = GenerateSecureRandom(min_interval, max_interval);
+    
+    // Task 22: Log generated interval internally
+    const char* mode = burst_mode_.load(std::memory_order_acquire) ? "burst" : "normal";
+    SENTINEL_LOG_DEBUG_F("[ScanScheduler] Generated %s interval: %ums (range: %u-%u)",
+                         mode, interval, min_interval, max_interval);
+    
+    return interval;
 }
 
 uint32_t ScanScheduler::GetNextInterval() {
@@ -259,6 +287,9 @@ void ScanScheduler::TriggerBurstMode(uint32_t duration_ms) {
     
     // Immediately schedule next scan with burst interval
     next_scan_time_ms_ = current_time + GenerateInterval();
+    
+    // Task 22: Log burst mode activation
+    SENTINEL_LOG_INFO_F("[ScanScheduler] Burst mode activated for %ums", burst_duration);
     
     // Update statistics
     {
