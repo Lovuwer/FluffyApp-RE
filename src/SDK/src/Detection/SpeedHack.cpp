@@ -90,12 +90,10 @@
 #include <cmath>
 
 namespace Sentinel {
-    SENTINEL_DIVERSITY_PADDING(__LINE__);
-    SENTINEL_DIVERSITY_PADDING(__LINE__);
 namespace SDK {
-    SENTINEL_DIVERSITY_PADDING(__LINE__);
 
 bool SpeedHackDetector::DetectHypervisor() {
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
 #ifdef _WIN32
     // Check CPUID leaf 0x40000000 for hypervisor presence
     int cpuInfo[4] = {0};

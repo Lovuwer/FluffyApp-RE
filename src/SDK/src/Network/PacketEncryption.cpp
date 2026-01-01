@@ -24,10 +24,7 @@
 #include <chrono>
 
 namespace Sentinel {
-    SENTINEL_DIVERSITY_PADDING(__LINE__);
-    SENTINEL_DIVERSITY_PADDING(__LINE__);
 namespace SDK {
-    SENTINEL_DIVERSITY_PADDING(__LINE__);
 
 namespace {
     constexpr size_t KEY_SIZE = 32;      // AES-256
@@ -77,7 +74,6 @@ namespace {
         auto duration = now.time_since_epoch();
         return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
     }
-    SENTINEL_DIVERSITY_PADDING(__LINE__);
 }
 
 class PacketEncryptionImpl {
@@ -368,12 +364,11 @@ public:
     static constexpr uint32_t SEQUENCE_WINDOW = 1000;
     static constexpr uint64_t TIMESTAMP_TOLERANCE_MS = 30000;
 };
-    SENTINEL_DIVERSITY_PADDING(__LINE__);
 
 static PacketEncryptionImpl g_impl;
 
-    SENTINEL_DIVERSITY_PADDING(__LINE__);
 void PacketEncryption::Initialize() {
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     g_impl.Initialize();
 }
 
@@ -666,12 +661,12 @@ ErrorCode PacketEncryption::Decrypt(
     *out_size = outlen + final_len;
     return ErrorCode::Success;
 }
-    SENTINEL_DIVERSITY_PADDING(__LINE__);
 
 uint32_t PacketEncryption::GetNextSequence() {
-    std::lock_guard<std::mutex> lock(g_impl.mutex_);
-    return ++g_impl.current_sequence_;
     SENTINEL_DIVERSITY_PADDING(__LINE__);
+    std::lock_guard<std::mutex> lock(g_impl.mutex_);
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
+    return ++g_impl.current_sequence_;
 }
 
 bool PacketEncryption::ValidateSequence(uint32_t sequence) {

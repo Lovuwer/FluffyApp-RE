@@ -5,6 +5,7 @@
  */
 
 #include "Internal/Whitelist.hpp"
+#include "Internal/DiversityEngine.hpp"
 #include <algorithm>
 #include <cstring>
 #include <limits.h>
@@ -23,10 +24,7 @@
 #endif
 
 namespace Sentinel {
-    SENTINEL_DIVERSITY_PADDING(__LINE__);
-    SENTINEL_DIVERSITY_PADDING(__LINE__);
 namespace SDK {
-    SENTINEL_DIVERSITY_PADDING(__LINE__);
 
 void WhitelistManager::Initialize() {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -281,7 +279,6 @@ void WhitelistManager::LoadBuiltinWhitelist() {
         "Hyper-V virtualization detected",
         true,
         std::nullopt,
-    SENTINEL_DIVERSITY_PADDING(__LINE__);
         std::nullopt
     });
 }

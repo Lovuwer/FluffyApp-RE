@@ -25,17 +25,15 @@
 #endif
 
 namespace Sentinel {
-    SENTINEL_DIVERSITY_PADDING(__LINE__);
-    SENTINEL_DIVERSITY_PADDING(__LINE__);
 namespace SDK {
 
-    SENTINEL_DIVERSITY_PADDING(__LINE__);
 // Helper function to get current time in milliseconds
 static inline uint64_t GetCurrentTimeMs() {
     auto now = std::chrono::steady_clock::now();
     auto duration = now.time_since_epoch();
-    return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
     SENTINEL_DIVERSITY_PADDING(__LINE__);
+    return ms;
 }
 
 void IntegrityChecker::Initialize() {
@@ -246,21 +244,21 @@ void IntegrityChecker::Shutdown() {
     }
     {
         std::lock_guard<std::mutex> lock(iat_mutex_);
-    SENTINEL_DIVERSITY_PADDING(__LINE__);
+        SENTINEL_DIVERSITY_PADDING(__LINE__);
         iat_entries_.clear();
     }
 }
 
-    SENTINEL_DIVERSITY_PADDING(__LINE__);
 void IntegrityChecker::RegisterRegion(const MemoryRegion& region) {
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     std::lock_guard<std::mutex> lock(regions_mutex_);
     registered_regions_.push_back(region);
 }
 
 void IntegrityChecker::UnregisterRegion(uintptr_t address) {
     std::lock_guard<std::mutex> lock(regions_mutex_);
-    registered_regions_.erase(
     SENTINEL_DIVERSITY_PADDING(__LINE__);
+    registered_regions_.erase(
         std::remove_if(registered_regions_.begin(), registered_regions_.end(),
             [address](const MemoryRegion& r) { return r.address == address; }),
         registered_regions_.end()
