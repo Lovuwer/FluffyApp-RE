@@ -22,9 +22,13 @@ import os
 import re
 import time
 import json
+import shutil
 from pathlib import Path
 from typing import Dict, Set, Tuple, List
 import hashlib
+
+# Configuration
+BUILD_TIMEOUT_SECONDS = 600  # 10 minutes - adjust for slower systems
 
 def run_command(cmd: List[str], cwd: str = None, capture_output: bool = True) -> Tuple[int, str, str]:
     """Run a command and return (returncode, stdout, stderr)"""
@@ -34,7 +38,7 @@ def run_command(cmd: List[str], cwd: str = None, capture_output: bool = True) ->
             cwd=cwd,
             capture_output=capture_output,
             text=True,
-            timeout=600  # 10 minute timeout
+            timeout=BUILD_TIMEOUT_SECONDS
         )
         return result.returncode, result.stdout, result.stderr
     except subprocess.TimeoutExpired:
@@ -152,7 +156,7 @@ def build_sdk(build_dir: Path, build_type: str = "Release") -> Tuple[bool, float
     
     if returncode != 0:
         # Try to find the binary anyway in case of non-critical warnings
-        pass
+        print(f"Warning: Build returned non-zero exit code ({returncode}), but continuing...")
     
     # Find the built library
     lib_extensions = [".so", ".dll", ".dylib", ".a"]
@@ -182,7 +186,6 @@ def main():
     print("Cleaning previous test builds...")
     for build_dir in [build1_dir, build2_dir, baseline_build_dir]:
         if build_dir.exists():
-            import shutil
             shutil.rmtree(build_dir)
     
     print()

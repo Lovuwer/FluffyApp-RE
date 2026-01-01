@@ -12,6 +12,8 @@
 #include <set>
 
 // Include the DiversityEngine header
+// Note: This test uses a relative path for standalone compilation
+// For CMake builds, proper include directories should be configured
 #include "../src/SDK/src/Internal/DiversityEngine.hpp"
 
 using namespace Sentinel::SDK::Internal;

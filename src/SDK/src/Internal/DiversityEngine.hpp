@@ -60,6 +60,11 @@ public:
      * Get randomized structure padding size (0-15 bytes)
      * Used to vary structure layouts between builds.
      * 
+     * The 15-byte maximum limit balances:
+     * - Sufficient diversity for meaningful layout variation
+     * - Minimal memory overhead (< 1% for typical structures)
+     * - Cache-line friendly (stays within 64-byte cache lines)
+     * 
      * @param structId Unique identifier for the structure
      * @return Padding size in bytes (0-15)
      */

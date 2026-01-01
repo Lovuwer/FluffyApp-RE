@@ -10,6 +10,7 @@ This implementation adds build-time client diversity to the Sentinel SDK, making
 
 A complete diversification engine with:
 - **Structure padding randomization** - Adds 0-15 bytes of padding to vary memory layouts
+  (15-byte limit balances diversity with memory overhead while staying cache-line friendly)
 - **Constant transformation** - Creates equivalent but different constant representations
 - **Function ordering hooks** - Prepared for link-order randomization
 - **Diversified code paths** - 8 different implementations of functionally equivalent no-ops
