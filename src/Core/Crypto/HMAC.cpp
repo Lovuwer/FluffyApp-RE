@@ -13,6 +13,7 @@
  */
 
 #include <Sentinel/Core/Crypto.hpp>
+#include <Sentinel/Core/Crypto/OpenSSLRAII.hpp>
 #include <openssl/evp.h>
 #include <openssl/core_names.h>
 
@@ -36,14 +37,13 @@ public:
     }
     
     Result<ByteBuffer> compute(ByteSpan data) {
-        EVP_MAC* mac = EVP_MAC_fetch(NULL, "HMAC", NULL);
+        EVPMACPtr mac(EVP_MAC_fetch(NULL, "HMAC", NULL));
         if (!mac) {
             return ErrorCode::CryptoError;
         }
         
-        EVP_MAC_CTX* ctx = EVP_MAC_CTX_new(mac);
+        EVPMACCtxPtr ctx(EVP_MAC_CTX_new(mac));
         if (!ctx) {
-            EVP_MAC_free(mac);
             return ErrorCode::CryptoError;
         }
         
@@ -65,28 +65,23 @@ public:
         const unsigned char* key_ptr = m_key.empty() ? &dummy_key : m_key.data();
         
         if (!EVP_MAC_init(ctx, key_ptr, m_key.size(), params)) {
-            cleanup(ctx, mac);
             return ErrorCode::CryptoError;
         }
         
         if (!EVP_MAC_update(ctx, data.data(), data.size())) {
-            cleanup(ctx, mac);
             return ErrorCode::CryptoError;
         }
         
         size_t mac_size = 0;
         if (!EVP_MAC_final(ctx, NULL, &mac_size, 0)) {
-            cleanup(ctx, mac);
             return ErrorCode::CryptoError;
         }
         
         ByteBuffer result(mac_size);
         if (!EVP_MAC_final(ctx, result.data(), &mac_size, result.size())) {
-            cleanup(ctx, mac);
             return ErrorCode::CryptoError;
         }
         
-        cleanup(ctx, mac);
         return result;
     }
     
@@ -113,11 +108,6 @@ public:
 private: 
     ByteBuffer m_key;
     HashAlgorithm m_algorithm;
-    
-    void cleanup(EVP_MAC_CTX* ctx, EVP_MAC* mac) {
-        EVP_MAC_CTX_free(ctx);
-        EVP_MAC_free(mac);
-    }
     
     const char* getDigestName(HashAlgorithm alg) {
         switch (alg) {

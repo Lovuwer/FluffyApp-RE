@@ -17,6 +17,7 @@
  */
 
 #include <Sentinel/Core/Crypto.hpp>
+#include <Sentinel/Core/Crypto/OpenSSLRAII.hpp>
 #include <openssl/evp.h>
 #include <openssl/err.h>
 #include <openssl/rand.h>
@@ -93,7 +94,7 @@ public:
         const AESNonce& nonce,
         ByteSpan associatedData
     ) {
-        EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+        EVPCipherCtxPtr ctx(EVP_CIPHER_CTX_new());
         if (!ctx) {
             return ErrorCode::CryptoError;
         }
@@ -103,49 +104,41 @@ public:
         int len = 0;
         int ciphertext_len = 0;
         
-        do {
-            // Initialize encryption with AES-256-GCM
-            if (EVP_EncryptInit_ex2(ctx, EVP_aes_256_gcm(), m_key.data(), nonce.data(), NULL) != 1) {
-                break;
-            }
-            
-            // Set AAD if provided
-            if (!associatedData.empty()) {
-                if (EVP_EncryptUpdate(ctx, NULL, &len, associatedData.data(), 
-                                     static_cast<int>(associatedData.size())) != 1) {
-                    break;
-                }
-            }
-            
-            // Encrypt plaintext
-            if (EVP_EncryptUpdate(ctx, output.data(), &len, plaintext.data(), 
-                                 static_cast<int>(plaintext.size())) != 1) {
-                break;
-            }
-            ciphertext_len = len;
-            
-            // Finalize encryption
-            if (EVP_EncryptFinal_ex(ctx, output.data() + len, &len) != 1) {
-                break;
-            }
-            ciphertext_len += len;
-            
-            // Get authentication tag
-            if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, AES_GCM_TAG_SIZE, 
-                                   output.data() + ciphertext_len) != 1) {
-                break;
-            }
-            
-            // Success - resize output to actual size
-            output.resize(ciphertext_len + AES_GCM_TAG_SIZE);
-            EVP_CIPHER_CTX_free(ctx);
-            return output;
-            
-        } while (false);
+        // Initialize encryption with AES-256-GCM
+        if (EVP_EncryptInit_ex2(ctx, EVP_aes_256_gcm(), m_key.data(), nonce.data(), NULL) != 1) {
+            return ErrorCode::EncryptionFailed;
+        }
         
-        // Cleanup on error
-        EVP_CIPHER_CTX_free(ctx);
-        return ErrorCode::EncryptionFailed;
+        // Set AAD if provided
+        if (!associatedData.empty()) {
+            if (EVP_EncryptUpdate(ctx, NULL, &len, associatedData.data(), 
+                                 static_cast<int>(associatedData.size())) != 1) {
+                return ErrorCode::EncryptionFailed;
+            }
+        }
+        
+        // Encrypt plaintext
+        if (EVP_EncryptUpdate(ctx, output.data(), &len, plaintext.data(), 
+                             static_cast<int>(plaintext.size())) != 1) {
+            return ErrorCode::EncryptionFailed;
+        }
+        ciphertext_len = len;
+        
+        // Finalize encryption
+        if (EVP_EncryptFinal_ex(ctx, output.data() + len, &len) != 1) {
+            return ErrorCode::EncryptionFailed;
+        }
+        ciphertext_len += len;
+        
+        // Get authentication tag
+        if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, AES_GCM_TAG_SIZE, 
+                               output.data() + ciphertext_len) != 1) {
+            return ErrorCode::EncryptionFailed;
+        }
+        
+        // Success - resize output to actual size
+        output.resize(ciphertext_len + AES_GCM_TAG_SIZE);
+        return output;
     }
     
     Result<ByteBuffer> decryptWithNonce(
@@ -158,7 +151,7 @@ public:
             return ErrorCode::InvalidArgument;
         }
         
-        EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+        EVPCipherCtxPtr ctx(EVP_CIPHER_CTX_new());
         if (!ctx) {
             return ErrorCode::CryptoError;
         }
@@ -171,58 +164,47 @@ public:
         ByteBuffer plaintext(ct_len);
         int len = 0;
         int plaintext_len = 0;
-        int ret = 0;
         
-        do {
-            // Initialize decryption with AES-256-GCM
-            if (EVP_DecryptInit_ex2(ctx, EVP_aes_256_gcm(), m_key.data(), nonce.data(), NULL) != 1) {
-                break;
-            }
-            
-            // Set expected tag
-            if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, AES_GCM_TAG_SIZE, 
-                                   const_cast<Byte*>(tag)) != 1) {
-                break;
-            }
-            
-            // Set AAD if provided
-            if (!associatedData.empty()) {
-                if (EVP_DecryptUpdate(ctx, NULL, &len, associatedData.data(), 
-                                     static_cast<int>(associatedData.size())) != 1) {
-                    break;
-                }
-            }
-            
-            // Decrypt ciphertext
-            if (EVP_DecryptUpdate(ctx, plaintext.data(), &len, ciphertext.data(), 
-                                 static_cast<int>(ct_len)) != 1) {
-                break;
-            }
-            plaintext_len = len;
-            
-            // CRITICAL VERIFICATION: Finalize and verify tag
-            ret = EVP_DecryptFinal_ex(ctx, plaintext.data() + len, &len);
-            
-            if (ret <= 0) {
-                // Tag verification failed - immediately zero plaintext buffer
-                secureZero(plaintext.data(), plaintext.size());
-                EVP_CIPHER_CTX_free(ctx);
-                return ErrorCode::AuthenticationFailed;
-            }
-            
-            plaintext_len += len;
-            
-            // Success - resize output to actual size
-            plaintext.resize(plaintext_len);
-            EVP_CIPHER_CTX_free(ctx);
-            return plaintext;
-            
-        } while (false);
+        // Initialize decryption with AES-256-GCM
+        if (EVP_DecryptInit_ex2(ctx, EVP_aes_256_gcm(), m_key.data(), nonce.data(), NULL) != 1) {
+            return ErrorCode::DecryptionFailed;
+        }
         
-        // Cleanup on error
-        secureZero(plaintext.data(), plaintext.size());
-        EVP_CIPHER_CTX_free(ctx);
-        return ErrorCode::DecryptionFailed;
+        // Set expected tag
+        if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, AES_GCM_TAG_SIZE, 
+                               const_cast<Byte*>(tag)) != 1) {
+            return ErrorCode::DecryptionFailed;
+        }
+        
+        // Set AAD if provided
+        if (!associatedData.empty()) {
+            if (EVP_DecryptUpdate(ctx, NULL, &len, associatedData.data(), 
+                                 static_cast<int>(associatedData.size())) != 1) {
+                return ErrorCode::DecryptionFailed;
+            }
+        }
+        
+        // Decrypt ciphertext
+        if (EVP_DecryptUpdate(ctx, plaintext.data(), &len, ciphertext.data(), 
+                             static_cast<int>(ct_len)) != 1) {
+            return ErrorCode::DecryptionFailed;
+        }
+        plaintext_len = len;
+        
+        // CRITICAL VERIFICATION: Finalize and verify tag
+        int ret = EVP_DecryptFinal_ex(ctx, plaintext.data() + len, &len);
+        
+        if (ret <= 0) {
+            // Tag verification failed - immediately zero plaintext buffer
+            secureZero(plaintext.data(), plaintext.size());
+            return ErrorCode::AuthenticationFailed;
+        }
+        
+        plaintext_len += len;
+        
+        // Success - resize output to actual size
+        plaintext.resize(plaintext_len);
+        return plaintext;
     }
     
     void setKey(const AESKey& key) {

@@ -13,6 +13,7 @@
 
 #include "Internal/Detection.hpp"
 #include <Sentinel/Core/Crypto.hpp>
+#include <Sentinel/Core/Crypto/OpenSSLRAII.hpp>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 #include <openssl/kdf.h>
@@ -440,7 +441,7 @@ ErrorCode PacketEncryption::Encrypt(
     output += HMAC_SIZE;
     
     // Encrypt with AES-256-GCM
-    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+    Crypto::EVPCipherCtxPtr ctx(EVP_CIPHER_CTX_new());
     if (!ctx) {
         return ErrorCode::CryptoError;
     }
@@ -448,7 +449,6 @@ ErrorCode PacketEncryption::Encrypt(
     int ret = EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), 
                                   nullptr, g_impl.session_key_, iv);
     if (ret != 1) {
-        EVP_CIPHER_CTX_free(ctx);
         return ErrorCode::CryptoError;
     }
     
@@ -457,7 +457,6 @@ ErrorCode PacketEncryption::Encrypt(
     ret = EVP_EncryptUpdate(ctx, output, &outlen,
                             static_cast<const uint8_t*>(data), (int)size);
     if (ret != 1) {
-        EVP_CIPHER_CTX_free(ctx);
         return ErrorCode::CryptoError;
     }
     output += outlen;
@@ -466,7 +465,6 @@ ErrorCode PacketEncryption::Encrypt(
     int final_len = 0;
     ret = EVP_EncryptFinal_ex(ctx, output, &final_len);
     if (ret != 1) {
-        EVP_CIPHER_CTX_free(ctx);
         return ErrorCode::CryptoError;
     }
     output += final_len;
@@ -474,11 +472,8 @@ ErrorCode PacketEncryption::Encrypt(
     // Get authentication tag
     ret = EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, TAG_SIZE, output);
     if (ret != 1) {
-        EVP_CIPHER_CTX_free(ctx);
         return ErrorCode::CryptoError;
     }
-    
-    EVP_CIPHER_CTX_free(ctx);
     
     // Compute HMAC over entire packet (excluding HMAC field itself)
     // HMAC covers: sequence + timestamp + IV + ciphertext + tag
@@ -630,7 +625,7 @@ ErrorCode PacketEncryption::Decrypt(
     const uint8_t* tag = static_cast<const uint8_t*>(data) + size - TAG_SIZE;
     
     // Decrypt with AES-256-GCM
-    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+    Crypto::EVPCipherCtxPtr ctx(EVP_CIPHER_CTX_new());
     if (!ctx) {
         return ErrorCode::CryptoError;
     }
@@ -638,7 +633,6 @@ ErrorCode PacketEncryption::Decrypt(
     int ret = EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), 
                                   nullptr, g_impl.session_key_, iv);
     if (ret != 1) {
-        EVP_CIPHER_CTX_free(ctx);
         return ErrorCode::CryptoError;
     }
     
@@ -647,7 +641,6 @@ ErrorCode PacketEncryption::Decrypt(
     ret = EVP_DecryptUpdate(ctx, static_cast<uint8_t*>(out_buffer), &outlen,
                             input, (int)ciphertext_size);
     if (ret != 1) {
-        EVP_CIPHER_CTX_free(ctx);
         return ErrorCode::CryptoError;
     }
     
@@ -655,7 +648,6 @@ ErrorCode PacketEncryption::Decrypt(
     ret = EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, TAG_SIZE, 
                                const_cast<uint8_t*>(tag));
     if (ret != 1) {
-        EVP_CIPHER_CTX_free(ctx);
         return ErrorCode::CryptoError;
     }
     
@@ -663,8 +655,6 @@ ErrorCode PacketEncryption::Decrypt(
     int final_len = 0;
     ret = EVP_DecryptFinal_ex(ctx, 
         static_cast<uint8_t*>(out_buffer) + outlen, &final_len);
-    
-    EVP_CIPHER_CTX_free(ctx);
     
     if (ret != 1) {
         // CRITICAL: Zero output buffer on auth failure
