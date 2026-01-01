@@ -1,0 +1,5 @@
+if(EXISTS "/home/runner/work/Sentiel-RE/Sentiel-RE/build-test/tests/CoreTests[1]_tests.cmake")
+  include("/home/runner/work/Sentiel-RE/Sentiel-RE/build-test/tests/CoreTests[1]_tests.cmake")
+else()
+  add_test(CoreTests_NOT_BUILT CoreTests_NOT_BUILT)
+endif()

@@ -1,0 +1,5 @@
+if(EXISTS "/home/runner/work/Sentiel-RE/Sentiel-RE/build-test/tests/VMDeobfuscatorTests[1]_tests.cmake")
+  include("/home/runner/work/Sentiel-RE/Sentiel-RE/build-test/tests/VMDeobfuscatorTests[1]_tests.cmake")
+else()
+  add_test(VMDeobfuscatorTests_NOT_BUILT VMDeobfuscatorTests_NOT_BUILT)
+endif()
