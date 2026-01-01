@@ -162,6 +162,16 @@ void PatchGenerator::Shutdown() {
     // Clean up resources
 }
 
+// ==================== Private Helper Methods ====================
+
+PatchArchitecture PatchGenerator::ResolveArchitecture(PatchArchitecture arch) const {
+    // Resolve Auto architecture to default x64
+    if (arch == PatchArchitecture::Auto) {
+        return PatchArchitecture::x64;
+    }
+    return arch;
+}
+
 // ==================== Patch Creation ====================
 
 Sentinel::Result<PatchOperation> PatchGenerator::CreateInlinePatch(
@@ -289,11 +299,8 @@ Sentinel::Result<PatchOperation> PatchGenerator::CreateReturnPatch(
     patch.arch = config_.default_arch;
     patch.target_address = address;
     
-    // Resolve Auto architecture to default x64
-    PatchArchitecture resolvedArch = patch.arch;
-    if (patch.arch == PatchArchitecture::Auto) {
-        resolvedArch = PatchArchitecture::x64;
-    }
+    // Resolve Auto architecture to concrete architecture
+    PatchArchitecture resolvedArch = ResolveArchitecture(patch.arch);
     
     // Generate return instruction based on architecture
     if (resolvedArch == PatchArchitecture::x64 || resolvedArch == PatchArchitecture::x86) {
@@ -817,11 +824,8 @@ Sentinel::Result<std::vector<uint8_t>> PatchGenerator::AssembleX64(const std::st
 std::vector<uint8_t> PatchGenerator::GenerateNops(size_t count, PatchArchitecture arch) {
     std::vector<uint8_t> nops;
     
-    // Resolve Auto architecture to default x64
-    PatchArchitecture resolvedArch = arch;
-    if (arch == PatchArchitecture::Auto) {
-        resolvedArch = PatchArchitecture::x64;
-    }
+    // Resolve Auto architecture to concrete architecture
+    PatchArchitecture resolvedArch = ResolveArchitecture(arch);
     
     if (resolvedArch == PatchArchitecture::x64 || resolvedArch == PatchArchitecture::x86) {
         nops.resize(count, 0x90); // NOP instruction
