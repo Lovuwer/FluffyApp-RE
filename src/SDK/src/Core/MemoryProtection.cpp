@@ -8,8 +8,11 @@
  */
 
 #include "Internal/Protection.hpp"
+#include "Internal/DiversityEngine.hpp"
 
 namespace Sentinel {
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
 namespace SDK {
 
 // Stub implementation - To be implemented

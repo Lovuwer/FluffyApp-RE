@@ -29,20 +29,24 @@ uint64_t DiversityEngine::s_seed = SENTINEL_DIVERSITY_SEED;
 bool DiversityEngine::s_initialized = false;
 
 void DiversityEngine::Initialize(uint64_t seed) {
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     s_seed = seed;
     s_initialized = true;
 }
 
 uint64_t DiversityEngine::GetSeed() {
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     return s_seed;
 }
 
 bool DiversityEngine::IsEnabled() {
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     return s_seed != 0;
 }
 
 // Simple 64-bit hash function (FNV-1a variant)
 uint64_t DiversityEngine::Hash(uint64_t value) {
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     constexpr uint64_t FNV_OFFSET = 14695981039346656037ULL;
     constexpr uint64_t FNV_PRIME = 1099511628211ULL;
     
@@ -63,11 +67,15 @@ uint64_t DiversityEngine::Hash(uint64_t value) {
 
 // 32-bit hash variant
 uint32_t DiversityEngine::Hash32(uint32_t value) {
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     uint64_t hash64 = Hash(value);
     return static_cast<uint32_t>(hash64 ^ (hash64 >> 32));
 }
 
 uint64_t DiversityEngine::TransformConstant(uint64_t value) {
+    // Diversity padding - varies function structure
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
+    
     if (!IsEnabled()) {
         return value;
     }
@@ -101,9 +109,11 @@ uint64_t DiversityEngine::TransformConstant(uint64_t value) {
             // Multiplication/division transformation
             // value = (value * multiplier) / multiplier
             // Use small multiplier to avoid overflow
+            // Note: This creates equivalent but not identical values due to integer division
             {
                 uint64_t multiplier = (Hash(value * 4) % 7) + 2; // 2-8
                 if (value < (UINT64_MAX / multiplier)) {
+                    // Safe to multiply without overflow
                     return (value * multiplier) / multiplier;
                 }
                 return value; // Fallback to identity if overflow risk
@@ -115,6 +125,9 @@ uint64_t DiversityEngine::TransformConstant(uint64_t value) {
 }
 
 size_t DiversityEngine::GetStructPadding(uint32_t structId) {
+    // Diversity padding
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
+    
     if (!IsEnabled()) {
         return 0;
     }
@@ -125,6 +138,9 @@ size_t DiversityEngine::GetStructPadding(uint32_t structId) {
 }
 
 void DiversityEngine::DiversifiedPath(uint32_t pathId) {
+    // Diversity padding
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
+    
     if (!IsEnabled()) {
         return;
     }
@@ -210,6 +226,9 @@ void DiversityEngine::DiversifiedPath(uint32_t pathId) {
 }
 
 void DiversityEngine::DiversifiedDelay(uint32_t baseMs) {
+    // Diversity padding
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
+    
     if (!IsEnabled()) {
         // No diversity, use base delay
         std::this_thread::sleep_for(std::chrono::milliseconds(baseMs));

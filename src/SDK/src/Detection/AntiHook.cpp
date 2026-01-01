@@ -53,6 +53,7 @@
 
 #include "Internal/Detection.hpp"
 #include "Internal/SafeMemory.hpp"
+#include "Internal/DiversityEngine.hpp"
 #include <algorithm>
 #include <cstring>
 #include <chrono>

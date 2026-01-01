@@ -12,6 +12,7 @@
  */
 
 #include "Internal/Detection.hpp"
+#include "Internal/DiversityEngine.hpp"
 #include "Internal/SafeMemory.hpp"
 #include "Internal/SignatureVerify.hpp"
 #include "Internal/JITSignature.hpp"
@@ -31,6 +32,8 @@
 #include <chrono>
 
 namespace Sentinel {
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
 namespace SDK {
 
 #ifdef _WIN32
@@ -42,11 +45,13 @@ static constexpr size_t PAGE_SIZE = 0x1000;  // 4KB page size
 static constexpr int MIN_THREAD_POOL_STACK_FRAMES = 2;  // Minimum valid thread pool frames required
 static constexpr int MAX_SUSPICIOUS_STACK_FRAMES = 1;   // Maximum private memory frames allowed
 
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
 // Helper function to convert address to hex string
 static std::string ToHex(uintptr_t value) {
     std::ostringstream oss;
     oss << std::hex << std::uppercase << value;
     return oss.str();
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
 }
 
 void InjectionDetector::Initialize() {
@@ -58,12 +63,14 @@ void InjectionDetector::Initialize() {
     // Capture baseline memory regions (RWX regions at startup)
 #ifdef _WIN32
     CaptureBaseline();
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
 #endif
 }
 
 void InjectionDetector::Shutdown() {
     known_modules_.clear();
 #ifdef _WIN32
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     baseline_regions_.clear();
 #endif
 }
@@ -81,6 +88,7 @@ void InjectionDetector::EnumerateKnownModules() {
             if (GetModuleFileNameExW(GetCurrentProcess(), hMods[i], 
                                      modName, MAX_PATH)) {
                 known_modules_.push_back(modName);
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
             }
         }
     }
@@ -197,6 +205,7 @@ std::vector<ViolationEvent> InjectionDetector::ScanLoadedModules() {
                 stats.guard_page_hits,
                 stats.stack_overflows,
                 stats.other_exceptions);
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     }
     #endif
     
@@ -230,6 +239,7 @@ bool InjectionDetector::IsSuspiciousRegion(const MEMORY_BASIC_INFORMATION& mbi) 
     // RWX permission is suspicious even for MEM_IMAGE
     if (mbi.Protect == PAGE_EXECUTE_READWRITE) {
         // Could be JIT, but should be rare
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
         // Check if it's in a known JIT region (e.g., .NET, V8)
         return !IsKnownJITRegion((uintptr_t)mbi.BaseAddress);
     }
@@ -264,6 +274,7 @@ bool InjectionDetector::IsKnownJITRegion(uintptr_t address) {
         return true;
     }
     
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     // All validation methods failed - not a known JIT region
     // This is the secure default: unknown = suspicious
     return false;
@@ -285,6 +296,7 @@ std::string InjectionDetector::DescribeRegion(const MEMORY_BASIC_INFORMATION& mb
         case MEM_MAPPED: desc += "MAPPED"; break;
         default: desc += "UNKNOWN"; break;
     }
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     
     desc += ", Protect: ";
     if (mbi.Protect & PAGE_EXECUTE_READWRITE) desc += "RWX";
@@ -320,6 +332,7 @@ std::vector<ViolationEvent> InjectionDetector::ScanThreads() {
                     ev.module_name = "";
                     ev.detection_id = static_cast<uint32_t>(te.th32ThreadID ^ ev.timestamp);
                     violations.push_back(ev);
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
                 }
             }
         } while (Thread32Next(snapshot, &te));
@@ -381,6 +394,7 @@ bool InjectionDetector::IsWindowsThreadPoolThread(uintptr_t startAddress) {
                 FARPROC pBaseThreadInitThunk = GetProcAddress(hKernel32, "BaseThreadInitThunk");
                 if (pBaseThreadInitThunk && (uintptr_t)pBaseThreadInitThunk == startAddress) {
                     return true;
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
                 }
             }
         }
@@ -412,6 +426,7 @@ bool InjectionDetector::IsWindowsThreadPoolThreadEnhanced(HANDLE hThread, uintpt
     // TASK 8: Check if this is a known submitted work item
     // This correlates the executing thread with registered work items
     if (!IsKnownThreadPoolWorkItem(startAddress)) {
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
         // Unknown work item - could be hijacked
         // However, we may not have visibility into all work items,
         // so we treat this as "suspicious but not definitive"
@@ -516,6 +531,7 @@ bool InjectionDetector::ValidateThreadPoolStackWalk(HANDLE hThread) {
     
     // Thread pool threads should have at least MIN_THREAD_POOL_STACK_FRAMES frames
     // in thread pool infrastructure and no more than MAX_SUSPICIOUS_STACK_FRAMES
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     // frames in private memory
     if (validFramesFound < MIN_THREAD_POOL_STACK_FRAMES) {
         return false;  // Not enough thread pool frames
@@ -621,6 +637,7 @@ bool InjectionDetector::ValidateThreadPoolTLS(HANDLE hThread) {
     // TLS should be in committed readable memory
     if (mbi.State != MEM_COMMIT) {
         return false;
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     }
     
     if (!(mbi.Protect & PAGE_READONLY) && 
@@ -696,6 +713,7 @@ bool InjectionDetector::IsLegitimateTrampoline(uintptr_t address,
                     // Verify the memory region is small (trampolines are typically small)
                     if (mbi.RegionSize <= 16 * 1024) {  // 16KB max for trampoline
                         return true;
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
                     }
                 }
                 if (address < modBase && (modBase - address) < trampoline_threshold) {
@@ -712,6 +730,7 @@ bool InjectionDetector::IsLegitimateTrampoline(uintptr_t address,
 
 // TASK 8: Thread pool work item tracking
 void InjectionDetector::RegisterThreadPoolWorkItem(uintptr_t work_function) {
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     std::lock_guard<std::mutex> lock(work_items_mutex_);
     
     // Clean up expired items first
@@ -722,6 +741,7 @@ void InjectionDetector::RegisterThreadPoolWorkItem(uintptr_t work_function) {
     item.submit_time = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
     // thread_id starts at 0 (unassigned) and can be updated when the work item
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     // is actually executed by a specific thread pool thread
     item.thread_id = 0;
     
@@ -739,6 +759,7 @@ void InjectionDetector::UnregisterThreadPoolWorkItem(uintptr_t work_function) {
         thread_pool_work_items_.end());
 }
 
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
 bool InjectionDetector::IsKnownThreadPoolWorkItem(uintptr_t address) const {
     // Note: We need to lock the mutex even in a const method, so it's declared mutable
     std::lock_guard<std::mutex> lock(work_items_mutex_);
@@ -752,6 +773,7 @@ bool InjectionDetector::IsKnownThreadPoolWorkItem(uintptr_t address) const {
             address < item.work_function + proximity) {
             return true;
         }
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     }
     
     return false;
@@ -847,6 +869,7 @@ bool InjectionDetector::IsThreadSuspicious(uint32_t threadId) {
             // Failed enhanced validation - likely hijacked thread pool thread
             return true;  // TASK 8: Detect hijacked thread pool threads
         }
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     }
     
     // Check for CLR managed threads
@@ -892,6 +915,7 @@ void InjectionDetector::CaptureBaseline() {
             address += PAGE_SIZE;
             continue;
         }
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
         
         // Record all executable private memory in baseline
         if (mbi.State == MEM_COMMIT && mbi.Type == MEM_PRIVATE) {
@@ -911,6 +935,7 @@ void InjectionDetector::CaptureBaseline() {
         
         address = (uintptr_t)mbi.BaseAddress + mbi.RegionSize;
     }
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
 }
 
 bool InjectionDetector::IsInBaseline(uintptr_t address, size_t size) const {
@@ -961,6 +986,7 @@ float InjectionDetector::CalculateSuspicionScore(const MEMORY_BASIC_INFORMATION&
         score -= 0.1f;
     }
     
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     // Contains PE header signature = +0.3
     if (HasPEHeader(address)) {
         score += 0.3f;
@@ -994,6 +1020,7 @@ bool InjectionDetector::HasPEHeader(uintptr_t address) const {
             return false;
         }
         
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
         // Get PE header offset (at 0x3C)
         uint32_t peOffset = *(uint32_t*)(ptr + 0x3C);
         
@@ -1029,6 +1056,7 @@ bool InjectionDetector::IsNearKnownModule(uintptr_t address) const {
         DWORD count = cbNeeded / sizeof(HMODULE);
         for (DWORD i = 0; i < count; i++) {
             MODULEINFO modInfo;
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
             if (GetModuleInformation(GetCurrentProcess(), hMods[i], 
                                     &modInfo, sizeof(modInfo))) {
                 uintptr_t modBase = (uintptr_t)modInfo.lpBaseOfDll;
@@ -1046,6 +1074,7 @@ bool InjectionDetector::IsNearKnownModule(uintptr_t address) const {
                 // After module end
                 if (address >= modEnd && (address - modEnd) < proximity_threshold) {
                     return true;
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
                 }
             }
         }
@@ -1055,6 +1084,7 @@ bool InjectionDetector::IsNearKnownModule(uintptr_t address) const {
 }
 
 Severity InjectionDetector::GetSeverityFromScore(float score) const {
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     // 0.5-0.7 = Warning
     if (score >= 0.5f && score < 0.7f) {
         return Severity::Warning;
@@ -1173,6 +1203,7 @@ std::vector<ViolationEvent> InjectionDetector::ScanModuleSignatures() {
             
             ev.module_name = module_name_utf8;
             ev.detection_id = static_cast<uint32_t>(ev.address ^ ev.timestamp);
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
             violations.push_back(ev);
         }
         

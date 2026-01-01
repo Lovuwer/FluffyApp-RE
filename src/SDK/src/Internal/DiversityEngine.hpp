@@ -14,6 +14,10 @@
 #include <cstring>
 #include <array>
 
+// Golden ratio constant for hash distribution (used in diversity padding macro)
+// This is a well-known constant in hash functions (also used in Rust's DefaultHasher)
+constexpr uint64_t SENTINEL_DIVERSITY_HASH_MULTIPLIER = 0x9e3779b97f4a7c15ULL;
+
 namespace Sentinel {
 namespace SDK {
 namespace Internal {
@@ -113,17 +117,75 @@ struct DiversifiedPadding {
         std::memset(padding, 0, sizeof(padding));
     }
 
-    // Get the actual padding size for this structure
-    static constexpr size_t GetSize() {
-        // This will be resolved at compile time
-        // In practice, we use runtime to allow seed-based variation
-        return 0; // Placeholder, actual implementation uses GetStructPadding
+    // Compile-time padding size based on diversity seed
+    // Uses simple hash of seed and struct ID
+    static constexpr size_t CalculatePaddingSize() {
+#ifndef SENTINEL_DIVERSITY_SEED
+        return 0;
+#else
+        // Simple compile-time hash: (seed ^ structId) * golden_ratio
+        constexpr uint64_t seed = SENTINEL_DIVERSITY_SEED;
+        constexpr uint64_t hash = ((seed ^ StructId) * SENTINEL_DIVERSITY_HASH_MULTIPLIER) >> 60;
+        return static_cast<size_t>(hash & 0xF); // 0-15 bytes
+#endif
     }
 
+    static constexpr size_t PaddingSize = CalculatePaddingSize();
+    
+    // Ensure PaddingSize is valid at compile time
+    static_assert(PaddingSize <= 15, "Padding size must not exceed 15 bytes");
+
 private:
-    // Maximum padding is 15 bytes to balance diversity with memory overhead
-    uint8_t padding[15];
+    // Padding array: sized at compile time, minimum 1 byte to avoid zero-size issues
+    uint8_t padding[PaddingSize > 0 ? PaddingSize : 1];
 };
+
+/**
+ * Compile-time diversity padding macro
+ * Injects variable-size padding based on diversity seed and line number
+ * Uses inline assembly for guaranteed code diversity
+ */
+#ifndef SENTINEL_DIVERSITY_SEED
+#define SENTINEL_DIVERSITY_PADDING(line) 
+#else
+
+// Use inline assembly to inject NOPs that vary by line number and seed
+// This creates actual code diversity that affects the binary
+#if defined(__GNUC__) || defined(__clang__)
+#define SENTINEL_DIVERSITY_PADDING(line) \
+    __asm__ __volatile__( \
+        ".rept %c0\n\t" \
+        "nop\n\t" \
+        ".endr" \
+        : : "i" ((((SENTINEL_DIVERSITY_SEED ^ line) * SENTINEL_DIVERSITY_HASH_MULTIPLIER) >> 56) & 0x1F) \
+    )
+#elif defined(_MSC_VER) && defined(_M_X64)
+// MSVC x64 - use __nop() intrinsic (0-15 NOPs for better compatibility)
+#define SENTINEL_DIVERSITY_PADDING(line) \
+    do { \
+        constexpr int nop_count = (((SENTINEL_DIVERSITY_SEED ^ line) * SENTINEL_DIVERSITY_HASH_MULTIPLIER) >> 60) & 0xF; \
+        if constexpr (nop_count >= 1) __nop(); \
+        if constexpr (nop_count >= 2) __nop(); \
+        if constexpr (nop_count >= 3) __nop(); \
+        if constexpr (nop_count >= 4) __nop(); \
+        if constexpr (nop_count >= 5) __nop(); \
+        if constexpr (nop_count >= 6) __nop(); \
+        if constexpr (nop_count >= 7) __nop(); \
+        if constexpr (nop_count >= 8) __nop(); \
+        if constexpr (nop_count >= 9) __nop(); \
+        if constexpr (nop_count >= 10) __nop(); \
+        if constexpr (nop_count >= 11) __nop(); \
+        if constexpr (nop_count >= 12) __nop(); \
+        if constexpr (nop_count >= 13) __nop(); \
+        if constexpr (nop_count >= 14) __nop(); \
+        if constexpr (nop_count >= 15) __nop(); \
+    } while(0)
+#else
+// Fallback for other compilers
+#define SENTINEL_DIVERSITY_PADDING(line) \
+    [[maybe_unused]] volatile char __diversity_pad_##line[(((SENTINEL_DIVERSITY_SEED ^ line) * SENTINEL_DIVERSITY_HASH_MULTIPLIER) >> 60) & 0x7] = {}
+#endif
+#endif
 
 /**
  * Macro to create diversified function stubs

@@ -11,7 +11,9 @@
  */
 
 #include "Internal/Detection.hpp"
+#include "Internal/DiversityEngine.hpp"
 #include "Internal/Context.hpp"
+#include "Internal/DiversityEngine.hpp"
 #include "Internal/SafeMemory.hpp"
 #include <mutex>
 #include <algorithm>
@@ -23,13 +25,17 @@
 #endif
 
 namespace Sentinel {
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
 namespace SDK {
 
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
 // Helper function to get current time in milliseconds
 static inline uint64_t GetCurrentTimeMs() {
     auto now = std::chrono::steady_clock::now();
     auto duration = now.time_since_epoch();
     return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
 }
 
 void IntegrityChecker::Initialize() {
@@ -229,6 +235,7 @@ void IntegrityChecker::Initialize() {
         
         importDesc++;
     }
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
 #endif
 }
 
@@ -239,10 +246,12 @@ void IntegrityChecker::Shutdown() {
     }
     {
         std::lock_guard<std::mutex> lock(iat_mutex_);
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
         iat_entries_.clear();
     }
 }
 
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
 void IntegrityChecker::RegisterRegion(const MemoryRegion& region) {
     std::lock_guard<std::mutex> lock(regions_mutex_);
     registered_regions_.push_back(region);
@@ -251,6 +260,7 @@ void IntegrityChecker::RegisterRegion(const MemoryRegion& region) {
 void IntegrityChecker::UnregisterRegion(uintptr_t address) {
     std::lock_guard<std::mutex> lock(regions_mutex_);
     registered_regions_.erase(
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
         std::remove_if(registered_regions_.begin(), registered_regions_.end(),
             [address](const MemoryRegion& r) { return r.address == address; }),
         registered_regions_.end()
@@ -280,6 +290,7 @@ void IntegrityChecker::UnregisterRegionsInModule(uintptr_t module_base) {
             [moduleStart, moduleEnd](const MemoryRegion& r) {
                 return r.address >= moduleStart && r.address < moduleEnd;
             }),
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
         registered_regions_.end()
     );
 #else
@@ -331,6 +342,7 @@ std::vector<ViolationEvent> IntegrityChecker::QuickCheck() {
                 ev.module_name = "";
                 ev.timestamp = timestamp;
                 ev.detection_id = static_cast<uint32_t>(ev.address ^ timestamp);
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
                 violations.push_back(ev);
             }
         }
@@ -381,6 +393,7 @@ std::vector<ViolationEvent> IntegrityChecker::FullScan() {
                 ev.details = "Protected region modified";
                 ev.module_name = "";
                 ev.timestamp = timestamp;
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
                 ev.detection_id = static_cast<uint32_t>(ev.address ^ timestamp);
                 violations.push_back(ev);
             }
@@ -394,6 +407,7 @@ bool IntegrityChecker::VerifyRegion(const MemoryRegion& region) {
     // Verify memory is readable before hashing
     if (!SafeMemory::IsReadable((void*)region.address, region.size)) {
         return false;  // Memory not accessible
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     }
     
     uint64_t currentHash;
@@ -423,6 +437,7 @@ bool IntegrityChecker::VerifyCodeSection() {
     if (!SafeMemory::IsReadable((void*)code_section_base_, code_section_size_)) {
         return false;  // Code section no longer accessible
     }
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
     
     uint64_t currentHash;
     if (!SafeMemory::SafeHash((void*)code_section_base_, 

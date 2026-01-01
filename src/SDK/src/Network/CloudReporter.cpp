@@ -8,6 +8,7 @@
  */
 
 #include "Internal/Detection.hpp"
+#include "Internal/DiversityEngine.hpp"
 #include <Sentinel/Core/HttpClient.hpp>
 #include <Sentinel/Core/RequestSigner.hpp>
 #include <Sentinel/Core/Crypto.hpp>

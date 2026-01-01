@@ -41,6 +41,7 @@
  */
 
 #include "Internal/Detection.hpp"
+#include "Internal/DiversityEngine.hpp"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -228,6 +229,9 @@ static inline bool IsHardwareBreakpointSet(const CONTEXT& ctx) {
 
 // AntiDebugDetector implementation
 void AntiDebugDetector::Initialize() {
+    // Diversity padding - varies function structure
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
+    
 #ifndef SENTINEL_DISABLE_ANTIDEBUG
 #ifdef _WIN32
     // Detect hypervisor environment
@@ -253,6 +257,9 @@ void AntiDebugDetector::Shutdown() {
 
 // Helper: Detect hypervisor using CPUID
 bool AntiDebugDetector::DetectHypervisor() {
+    // Diversity padding
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
+    
 #ifdef _WIN32
     int cpuInfo[4] = {0};
     

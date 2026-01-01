@@ -6,6 +6,7 @@
 
 #include "Internal/Context.hpp"
 #include "Internal/Whitelist.hpp"
+#include "DiversityEngine.hpp"
 #include <sstream>
 #include <iomanip>
 #include <random>
@@ -31,6 +32,9 @@ namespace Internal {
  * Generate a hardware fingerprint based on system characteristics
  */
 std::string GenerateHardwareId() {
+    // Diversity padding - varies function prologue across builds
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
+    
     std::stringstream ss;
     
 #ifdef _WIN32
@@ -58,6 +62,9 @@ std::string GenerateHardwareId() {
  * Generate a unique session token
  */
 std::string GenerateSessionToken() {
+    // Diversity padding - varies function prologue across builds
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
+    
     // Use random device for cryptographically secure randomness
     std::random_device rd;
     std::mt19937_64 gen(rd());

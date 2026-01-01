@@ -117,15 +117,39 @@ endif()
 # Generate diversity seed for release builds
 if(SENTINEL_ENABLE_DIVERSITY)
     # Generate a pseudo-random seed based on timestamp and random component
+    # Note: We use only the last 8 digits of timestamp to avoid overflow in CMAKE's 32-bit math
     string(TIMESTAMP BUILD_TIMESTAMP "%s")
+    string(LENGTH "${BUILD_TIMESTAMP}" TIMESTAMP_LEN)
+    
+    # Extract last 8 digits to fit in 32-bit integer safely
+    if(TIMESTAMP_LEN GREATER 8)
+        math(EXPR TIMESTAMP_OFFSET "${TIMESTAMP_LEN} - 8")
+        string(SUBSTRING "${BUILD_TIMESTAMP}" ${TIMESTAMP_OFFSET} 8 BUILD_TIMESTAMP_SHORT)
+    else()
+        set(BUILD_TIMESTAMP_SHORT "${BUILD_TIMESTAMP}")
+    endif()
+    
+    # Generate 6-digit random component
     string(RANDOM LENGTH 6 ALPHABET "0123456789" RANDOM_COMPONENT)
     
-    # Combine timestamp and random to create seed
-    # Use smaller random component to avoid overflow
-    math(EXPR DIVERSITY_SEED "${BUILD_TIMESTAMP} * 1000000 + ${RANDOM_COMPONENT}")
+    # Combine: use timestamp as upper part, random as lower part
+    # This avoids overflow while still providing good entropy
+    set(DIVERSITY_SEED "${BUILD_TIMESTAMP_SHORT}${RANDOM_COMPONENT}")
     
     list(APPEND SDK_COMPILE_DEFINITIONS SENTINEL_DIVERSITY_SEED=${DIVERSITY_SEED}ULL)
     message(STATUS "Client diversity enabled with seed: ${DIVERSITY_SEED}")
+    
+    # Generate build metadata file
+    string(TIMESTAMP BUILD_TIME_ISO "%Y-%m-%dT%H:%M:%SZ" UTC)
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/build_metadata.json"
+        "{\n"
+        "  \"diversity_seed\": ${DIVERSITY_SEED},\n"
+        "  \"build_timestamp\": \"${BUILD_TIME_ISO}\",\n"
+        "  \"build_type\": \"${CMAKE_BUILD_TYPE}\",\n"
+        "  \"compiler\": \"${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}\",\n"
+        "  \"diversity_enabled\": true\n"
+        "}\n"
+    )
     
     # For link-order randomization, we shuffle source files
     # This varies function addresses across builds
@@ -139,10 +163,58 @@ if(SENTINEL_ENABLE_DIVERSITY)
         # Use seed to create pseudo-random ordering
         set(SDK_SOURCES ${SHUFFLED_SOURCES})
     endif()
+    
+    # Additional compiler-level diversity techniques
+    # These increase structural diversity without affecting functionality
+    
+    # 1. Function section placement - each function in its own section
+    # This enables finer-grained link-time reordering
+    if(MSVC)
+        list(APPEND SDK_COMPILE_OPTIONS /Gy) # Enable function-level linking
+    else()
+        list(APPEND SDK_COMPILE_OPTIONS -ffunction-sections -fdata-sections)
+    endif()
+    
+    # 2. Disable aggressive inlining to preserve function boundaries
+    # This helps maintain diversity across builds
+    if(NOT MSVC)
+        # Limit inlining to preserve more function boundaries for diversity
+        math(EXPR INLINE_LIMIT "${DIVERSITY_SEED} % 100 + 50") # 50-149
+        list(APPEND SDK_COMPILE_OPTIONS -finline-limit=${INLINE_LIMIT})
+    endif()
+    
+    # 3. Linker randomization
+    # On GCC/Clang, randomize section ordering
+    if(NOT MSVC)
+        # Use --sort-section=name to get deterministic but seed-varied ordering
+        math(EXPR SECTION_ORDER "${DIVERSITY_SEED} % 2")
+        if(SECTION_ORDER EQUAL 0)
+            list(APPEND SDK_LINK_OPTIONS -Wl,--sort-section=name)
+        else()
+            list(APPEND SDK_LINK_OPTIONS -Wl,--sort-section=alignment)
+        endif()
+        
+        # Disable LTO for diversity builds to prevent optimization from removing diversity
+        # This trades some performance for better diversity
+        list(APPEND SDK_COMPILE_OPTIONS -fno-lto)
+        list(APPEND SDK_LINK_OPTIONS -fno-lto)
+    endif()
 else()
     # Debug builds: no diversity (seed = 0 for deterministic behavior)
     list(APPEND SDK_COMPILE_DEFINITIONS SENTINEL_DIVERSITY_SEED=0ULL)
     message(STATUS "Client diversity disabled (deterministic build)")
+    
+    # Generate build metadata for debug builds too
+    string(TIMESTAMP BUILD_TIME_ISO "%Y-%m-%dT%H:%M:%SZ" UTC)
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/build_metadata.json"
+        "{\n"
+        "  \"diversity_seed\": 0,\n"
+        "  \"build_timestamp\": \"${BUILD_TIME_ISO}\",\n"
+        "  \"build_type\": \"${CMAKE_BUILD_TYPE}\",\n"
+        "  \"compiler\": \"${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}\",\n"
+        "  \"diversity_enabled\": false\n"
+        "}\n"
+    )
 endif()
 
 # Platform-specific settings
