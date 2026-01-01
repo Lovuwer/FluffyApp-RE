@@ -109,9 +109,11 @@ uint64_t DiversityEngine::TransformConstant(uint64_t value) {
             // Multiplication/division transformation
             // value = (value * multiplier) / multiplier
             // Use small multiplier to avoid overflow
+            // Note: This creates equivalent but not identical values due to integer division
             {
                 uint64_t multiplier = (Hash(value * 4) % 7) + 2; // 2-8
                 if (value < (UINT64_MAX / multiplier)) {
+                    // Safe to multiply without overflow
                     return (value * multiplier) / multiplier;
                 }
                 return value; // Fallback to identity if overflow risk

@@ -117,12 +117,24 @@ endif()
 # Generate diversity seed for release builds
 if(SENTINEL_ENABLE_DIVERSITY)
     # Generate a pseudo-random seed based on timestamp and random component
+    # Note: We use only the last 8 digits of timestamp to avoid overflow in CMAKE's 32-bit math
     string(TIMESTAMP BUILD_TIMESTAMP "%s")
+    string(LENGTH "${BUILD_TIMESTAMP}" TIMESTAMP_LEN)
+    
+    # Extract last 8 digits to fit in 32-bit integer safely
+    if(TIMESTAMP_LEN GREATER 8)
+        math(EXPR TIMESTAMP_OFFSET "${TIMESTAMP_LEN} - 8")
+        string(SUBSTRING "${BUILD_TIMESTAMP}" ${TIMESTAMP_OFFSET} 8 BUILD_TIMESTAMP_SHORT)
+    else()
+        set(BUILD_TIMESTAMP_SHORT "${BUILD_TIMESTAMP}")
+    endif()
+    
+    # Generate 6-digit random component
     string(RANDOM LENGTH 6 ALPHABET "0123456789" RANDOM_COMPONENT)
     
-    # Combine timestamp and random to create seed
-    # Use smaller random component to avoid overflow
-    math(EXPR DIVERSITY_SEED "${BUILD_TIMESTAMP} * 1000000 + ${RANDOM_COMPONENT}")
+    # Combine: use timestamp as upper part, random as lower part
+    # This avoids overflow while still providing good entropy
+    set(DIVERSITY_SEED "${BUILD_TIMESTAMP_SHORT}${RANDOM_COMPONENT}")
     
     list(APPEND SDK_COMPILE_DEFINITIONS SENTINEL_DIVERSITY_SEED=${DIVERSITY_SEED}ULL)
     message(STATUS "Client diversity enabled with seed: ${DIVERSITY_SEED}")
