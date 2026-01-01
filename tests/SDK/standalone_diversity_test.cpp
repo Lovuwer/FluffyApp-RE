@@ -5,6 +5,12 @@
  * 
  * Simple standalone test to verify DiversityEngine functionality
  * Can be compiled independently without full SDK build
+ * 
+ * Compile: g++ -std=c++20 -I src/SDK/src tests/SDK/standalone_diversity_test.cpp \
+ *          src/SDK/src/Internal/DiversityEngine.cpp -o diversity_test
+ * 
+ * Note: Uses relative path for standalone compilation.
+ * For integrated builds, CMake should configure proper include directories.
  */
 
 #include <iostream>

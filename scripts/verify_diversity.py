@@ -11,7 +11,7 @@ This tool verifies that client diversity is working correctly by:
 4. Verifying the build time increase is acceptable
 
 Requirements:
-- Python 3.6+
+- Python 3.8+ (earlier versions are EOL)
 - objdump (or dumpbin on Windows)
 - cmake and build tools
 """

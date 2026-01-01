@@ -66,7 +66,7 @@ public:
      * - Cache-line friendly (stays within 64-byte cache lines)
      * 
      * @param structId Unique identifier for the structure
-     * @return Padding size in bytes (0-15)
+     * @return Padding size as size_t (0-15 bytes)
      */
     static size_t GetStructPadding(uint32_t structId);
 
