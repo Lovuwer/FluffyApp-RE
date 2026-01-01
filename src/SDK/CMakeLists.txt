@@ -127,6 +127,18 @@ if(SENTINEL_ENABLE_DIVERSITY)
     list(APPEND SDK_COMPILE_DEFINITIONS SENTINEL_DIVERSITY_SEED=${DIVERSITY_SEED}ULL)
     message(STATUS "Client diversity enabled with seed: ${DIVERSITY_SEED}")
     
+    # Generate build metadata file
+    string(TIMESTAMP BUILD_TIME_ISO "%Y-%m-%dT%H:%M:%SZ" UTC)
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/build_metadata.json"
+        "{\n"
+        "  \"diversity_seed\": ${DIVERSITY_SEED},\n"
+        "  \"build_timestamp\": \"${BUILD_TIME_ISO}\",\n"
+        "  \"build_type\": \"${CMAKE_BUILD_TYPE}\",\n"
+        "  \"compiler\": \"${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}\",\n"
+        "  \"diversity_enabled\": true\n"
+        "}\n"
+    )
+    
     # For link-order randomization, we shuffle source files
     # This varies function addresses across builds
     list(LENGTH SDK_SOURCES SOURCE_COUNT)
@@ -139,10 +151,59 @@ if(SENTINEL_ENABLE_DIVERSITY)
         # Use seed to create pseudo-random ordering
         set(SDK_SOURCES ${SHUFFLED_SOURCES})
     endif()
+    
+    # Additional compiler-level diversity techniques
+    # These increase structural diversity without affecting functionality
+    
+    # 1. Function section placement - each function in its own section
+    # This enables finer-grained link-time reordering
+    if(MSVC)
+        list(APPEND SDK_COMPILE_OPTIONS /Gy) # Enable function-level linking
+    else()
+        list(APPEND SDK_COMPILE_OPTIONS -ffunction-sections -fdata-sections)
+    endif()
+    
+    # 2. Add pseudo-random alignment padding
+    # Use diversity seed to vary structure alignment
+    math(EXPR ALIGNMENT_FACTOR "${DIVERSITY_SEED} % 3 + 1") # 1, 2, or 3
+    if(NOT MSVC)
+        # GCC/Clang: use different alignment defaults
+        if(ALIGNMENT_FACTOR EQUAL 1)
+            list(APPEND SDK_COMPILE_OPTIONS -fpack-struct=4)
+        elseif(ALIGNMENT_FACTOR EQUAL 2)
+            list(APPEND SDK_COMPILE_OPTIONS -fpack-struct=8)
+        else()
+            list(APPEND SDK_COMPILE_OPTIONS -fpack-struct=16)
+        endif()
+    endif()
+    
+    # 3. Linker randomization
+    # On GCC/Clang, randomize section ordering
+    if(NOT MSVC)
+        # Use --sort-section=name to get deterministic but seed-varied ordering
+        math(EXPR SECTION_ORDER "${DIVERSITY_SEED} % 2")
+        if(SECTION_ORDER EQUAL 0)
+            list(APPEND SDK_LINK_OPTIONS -Wl,--sort-section=name)
+        else()
+            list(APPEND SDK_LINK_OPTIONS -Wl,--sort-section=alignment)
+        endif()
+    endif()
 else()
     # Debug builds: no diversity (seed = 0 for deterministic behavior)
     list(APPEND SDK_COMPILE_DEFINITIONS SENTINEL_DIVERSITY_SEED=0ULL)
     message(STATUS "Client diversity disabled (deterministic build)")
+    
+    # Generate build metadata for debug builds too
+    string(TIMESTAMP BUILD_TIME_ISO "%Y-%m-%dT%H:%M:%SZ" UTC)
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/build_metadata.json"
+        "{\n"
+        "  \"diversity_seed\": 0,\n"
+        "  \"build_timestamp\": \"${BUILD_TIME_ISO}\",\n"
+        "  \"build_type\": \"${CMAKE_BUILD_TYPE}\",\n"
+        "  \"compiler\": \"${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}\",\n"
+        "  \"diversity_enabled\": false\n"
+        "}\n"
+    )
 endif()
 
 # Platform-specific settings
