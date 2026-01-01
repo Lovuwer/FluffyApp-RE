@@ -234,6 +234,21 @@ using EVPMACPtr = OpenSSLRAII<EVP_MAC, EVP_MAC_free>;
  */
 using EVPPKeyPtr = OpenSSLRAII<EVP_PKEY, EVP_PKEY_free>;
 
+/**
+ * @brief RAII wrapper for EVP_PKEY_CTX
+ * 
+ * Used for public key algorithm contexts (key derivation, signing, etc.).
+ * Ensures EVP_PKEY_CTX_free() is called on scope exit.
+ * 
+ * @example
+ * EVPPKeyCtxPtr ctx(EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, nullptr));
+ * if (!ctx) {
+ *     return ErrorCode::CryptoError;
+ * }
+ * // Automatic cleanup on scope exit
+ */
+using EVPPKeyCtxPtr = OpenSSLRAII<EVP_PKEY_CTX, EVP_PKEY_CTX_free>;
+
 } // namespace Sentinel::Crypto
 
 #endif // SENTINEL_CRYPTO_OPENSSL_RAII_HPP

@@ -46,6 +46,7 @@ if (!ctx) {
 | `EVPMACCtxPtr` | `EVP_MAC_CTX*` | MAC contexts (HMAC) | `EVP_MAC_CTX_free()` |
 | `EVPMACPtr` | `EVP_MAC*` | MAC algorithm objects | `EVP_MAC_free()` |
 | `EVPPKeyPtr` | `EVP_PKEY*` | Public/private keys (RSA, EC) | `EVP_PKEY_free()` |
+| `EVPPKeyCtxPtr` | `EVP_PKEY_CTX*` | Key derivation/signing contexts | `EVP_PKEY_CTX_free()` |
 
 ## Usage Examples
 
@@ -157,7 +158,8 @@ RAII patterns are verified through:
 - ✅ `HashEngine.cpp` - SHA-256/512 hashing  
 - ✅ `HMAC.cpp` - HMAC computation
 - ✅ `RSASigner.cpp` - RSA-PSS signing
-- ✅ `PacketEncryption.cpp` (SDK) - Packet encryption
+- ✅ `PacketEncryption.cpp` (SDK) - Packet encryption with HKDF
+- ✅ `CertificatePinning.cpp` - Certificate SPKI hash verification
 
 ## References
 
