@@ -45,6 +45,7 @@ if (!ctx) {
 | `EVPMDCtxPtr` | `EVP_MD_CTX*` | Message digests (SHA-256/512) | `EVP_MD_CTX_free()` |
 | `EVPMACCtxPtr` | `EVP_MAC_CTX*` | MAC contexts (HMAC) | `EVP_MAC_CTX_free()` |
 | `EVPMACPtr` | `EVP_MAC*` | MAC algorithm objects | `EVP_MAC_free()` |
+| `EVPPKeyPtr` | `EVP_PKEY*` | Public/private keys (RSA, EC) | `EVP_PKEY_free()` |
 
 ## Usage Examples
 
@@ -133,7 +134,11 @@ When adding new OpenSSL resource types, follow this pattern:
 
 3. **Use the wrapper in your code**
    ```cpp
-   EVPPKeyPtr pkey(EVP_PKEY_new());
+   EVPPKeyPtr pkey(d2i_PrivateKey(EVP_PKEY_RSA, nullptr, &p, derKey.size()));
+   if (!pkey) {
+       return ErrorCode::InvalidKey;
+   }
+   // Automatic cleanup on scope exit
    ```
 
 4. **Update this documentation** with the new wrapper type

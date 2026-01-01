@@ -34,57 +34,44 @@ namespace Sentinel::Crypto {
 
 class RSASigner::Impl {
 public:
-    Impl() : m_pkey(nullptr) {}
+    Impl() = default;
     
-    ~Impl() {
-        if (m_pkey) {
-            EVP_PKEY_free(m_pkey);
-            m_pkey = nullptr;
-        }
-    }
+    ~Impl() = default;
     
     Result<void> loadPrivateKey(ByteSpan derKey) {
         const unsigned char* p = derKey.data();
-        EVP_PKEY* pkey = d2i_PrivateKey(EVP_PKEY_RSA, nullptr, &p, derKey.size());
+        EVPPKeyPtr pkey(d2i_PrivateKey(EVP_PKEY_RSA, nullptr, &p, derKey.size()));
         if (!pkey) {
             SENTINEL_LOG_ERROR("Failed to parse RSA private key");
             return ErrorCode::InvalidKey;
         }
         
         // Validate key parameters
-        if (!validateKeyParams(pkey)) {
-            EVP_PKEY_free(pkey);
+        if (!validateKeyParams(pkey.get())) {
             SENTINEL_LOG_ERROR("RSA key failed validation (weak key or invalid parameters)");
             return ErrorCode::WeakKey;
         }
         
-        if (m_pkey) {
-            EVP_PKEY_free(m_pkey);
-        }
-        m_pkey = pkey;
+        m_pkey = std::move(pkey);
         SENTINEL_LOG_DEBUG("RSA private key loaded successfully");
         return ErrorCode::Success;
     }
     
     Result<void> loadPublicKey(ByteSpan derKey) {
         const unsigned char* p = derKey.data();
-        EVP_PKEY* pkey = d2i_PUBKEY(nullptr, &p, derKey.size());
+        EVPPKeyPtr pkey(d2i_PUBKEY(nullptr, &p, derKey.size()));
         if (!pkey) {
             SENTINEL_LOG_ERROR("Failed to parse RSA public key");
             return ErrorCode::InvalidKey;
         }
         
         // Validate key parameters
-        if (!validateKeyParams(pkey)) {
-            EVP_PKEY_free(pkey);
+        if (!validateKeyParams(pkey.get())) {
             SENTINEL_LOG_ERROR("RSA key failed validation (weak key or invalid parameters)");
             return ErrorCode::WeakKey;
         }
         
-        if (m_pkey) {
-            EVP_PKEY_free(m_pkey);
-        }
-        m_pkey = pkey;
+        m_pkey = std::move(pkey);
         SENTINEL_LOG_DEBUG("RSA public key loaded successfully");
         return ErrorCode::Success;
     }
@@ -103,7 +90,7 @@ public:
         
         // Initialize signing with SHA-256 hash
         if (EVP_DigestSignInit(mdCtx, &pkeyCtx, EVP_sha256(), 
-                                nullptr, m_pkey) != 1) {
+                                nullptr, m_pkey.get()) != 1) {
             return ErrorCode::CryptoError;
         }
         
@@ -152,7 +139,7 @@ public:
         
         // Initialize verification with SHA-256 hash
         if (EVP_DigestVerifyInit(mdCtx, &pkeyCtx, EVP_sha256(), 
-                                  nullptr, m_pkey) != 1) {
+                                  nullptr, m_pkey.get()) != 1) {
             return ErrorCode::CryptoError;
         }
         
@@ -191,7 +178,7 @@ public:
         // If we loaded a private key, this will succeed
         // If we loaded only a public key, this will fail
         BIGNUM* d = nullptr;
-        int result = EVP_PKEY_get_bn_param(m_pkey, OSSL_PKEY_PARAM_RSA_D, &d);
+        int result = EVP_PKEY_get_bn_param(m_pkey.get(), OSSL_PKEY_PARAM_RSA_D, &d);
         if (result == 1 && d != nullptr) {
             BN_free(d);
             return true;
@@ -204,7 +191,7 @@ public:
     }
 
 private:
-    EVP_PKEY* m_pkey;
+    EVPPKeyPtr m_pkey;
     
     bool validateKeyParams(EVP_PKEY* pkey) {
         // Require minimum 2048-bit key
