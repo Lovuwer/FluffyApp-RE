@@ -206,7 +206,7 @@ private:
      * Retry logic with exponential backoff
      */
     template<typename Func>
-    Result<typename std::invoke_result<Func>::type> retryWithBackoff(Func&& func);
+    auto retryWithBackoff(Func&& func) -> decltype(func());
 
 private:
     // Configuration

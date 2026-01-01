@@ -414,8 +414,8 @@ void UpdateClient::reportStatus(UpdateStatus status, const std::string& message)
 }
 
 template<typename Func>
-Result<typename std::invoke_result<Func>::type> UpdateClient::retryWithBackoff(Func&& func) {
-    using ReturnType = typename std::invoke_result<Func>::type;
+auto UpdateClient::retryWithBackoff(Func&& func) -> decltype(func()) {
+    using ReturnType = decltype(func());
     
     int attempts = 0;
     auto delay = m_config.retry_delay;
@@ -436,8 +436,8 @@ Result<typename std::invoke_result<Func>::type> UpdateClient::retryWithBackoff(F
         }
     }
     
-    // All retries failed
-    return ErrorCode::NetworkError;
+    // All retries failed - return last error or network error
+    return ReturnType(ErrorCode::NetworkError);
 }
 
 } // namespace SDK
