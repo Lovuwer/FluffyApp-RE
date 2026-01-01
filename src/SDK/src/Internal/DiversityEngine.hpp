@@ -146,8 +146,8 @@ private:
  * Must be used within function scope (not at global/namespace scope)
  */
 #ifndef SENTINEL_DIVERSITY_SEED
-// When diversity is disabled, macro expands to nothing
-#define SENTINEL_DIVERSITY_PADDING(line) ((void)0)
+// When diversity is disabled, macro expands to safe no-op
+#define SENTINEL_DIVERSITY_PADDING(line) do { (void)(line); } while(0)
 #else
 
 #if defined(__GNUC__) || defined(__clang__)
@@ -181,11 +181,12 @@ private:
         if constexpr (nop_count >= 15) __nop(); \
     } while(0)
 #else
-// Fallback: volatile padding (must be in function scope)
+// Fallback: volatile padding with fixed size (must be in function scope)
 #define SENTINEL_DIVERSITY_PADDING(line) \
     do { \
-        [[maybe_unused]] volatile char __diversity_pad[(((SENTINEL_DIVERSITY_SEED ^ (line)) * SENTINEL_DIVERSITY_HASH_MULTIPLIER) >> 60) & 0x7]; \
-        __diversity_pad[0] = 0; \
+        constexpr int pad_size = (((SENTINEL_DIVERSITY_SEED ^ (line)) * SENTINEL_DIVERSITY_HASH_MULTIPLIER) >> 60) & 0x7; \
+        [[maybe_unused]] volatile char __diversity_pad[8]; \
+        if (pad_size > 0) __diversity_pad[0] = 0; \
     } while(0)
 #endif
 
