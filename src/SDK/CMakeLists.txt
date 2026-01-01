@@ -36,6 +36,7 @@ set(SDK_SOURCES
     src/Internal/RuntimeConfig.cpp
     src/Internal/Watchdog.cpp
     src/Internal/ScanScheduler.cpp
+    src/Internal/IntegrityValidator.cpp
     src/Core/Heartbeat.cpp
     src/Core/MemoryProtection.cpp
     src/Core/FunctionProtection.cpp
@@ -70,6 +71,7 @@ set(SDK_HEADERS
     src/Internal/RuntimeConfig.hpp
     src/Internal/Watchdog.hpp
     src/Internal/ScanScheduler.hpp
+    src/Internal/IntegrityValidator.hpp
 )
 
 # Header files for IDE organization only (not compiled)

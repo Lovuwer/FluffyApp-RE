@@ -16,6 +16,7 @@
 #include "Internal/Watchdog.hpp"
 #include "Internal/SafeMemory.hpp"  // Task 09: For exception budget tracking
 #include "Internal/ScanScheduler.hpp"  // Task 09: Detection timing randomization
+#include "Internal/IntegrityValidator.hpp"  // Task 08: Memory integrity self-validation
 
 #include <atomic>
 #include <chrono>
@@ -88,6 +89,8 @@ struct SDKContext {
     
     // Task 09: Scan scheduler for randomized timing
     std::unique_ptr<ScanScheduler> scan_scheduler;
+    // Task 08: Memory integrity self-validation
+    std::unique_ptr<IntegrityValidator> self_integrity;
     
     // Session info
     std::string session_token;
@@ -277,6 +280,23 @@ void HeartbeatThreadFunc() {
             if (g_context->scan_scheduler && g_context->scan_scheduler->ShouldScan()) {
                 // Get next scan type (randomized order)
                 ScanType scan_type = g_context->scan_scheduler->GetNextScanType();
+            // Task 08: Validate SDK's own code integrity (distributed across heartbeats)
+            if (g_context->self_integrity) {
+                if (!g_context->self_integrity->ValidateQuick()) {
+                    // Self-integrity violation detected - report with high severity
+                    ViolationEvent event = IntegrityValidator::CreateGenericTamperEvent();
+                    event.timestamp = GetSecureTime();
+                    
+                    ReportViolation(event);
+                }
+            }
+            
+            // Perform background integrity checks
+            if (g_context->integrity) {
+                auto violations = RunDetectionWithTelemetry(
+                    DetectionType::MemoryIntegrity,
+                    [&]() { return g_context->integrity->QuickCheck(); }
+                );
                 
                 // Execute the appropriate scan based on type
                 switch (scan_type) {
@@ -528,6 +548,9 @@ SENTINEL_API ErrorCode SENTINEL_CALL Initialize(const Configuration* config) {
     scheduler_config.vary_scan_order = true;
     scheduler_config.vary_scan_scope = true;
     g_context->scan_scheduler->Initialize(scheduler_config);
+    // Task 08: Initialize memory integrity self-validation
+    g_context->self_integrity = std::make_unique<IntegrityValidator>();
+    g_context->self_integrity->Initialize();
     
     // Initialize network if cloud endpoint provided
     if (config->cloud_endpoint && strlen(config->cloud_endpoint) > 0) {
@@ -580,6 +603,11 @@ SENTINEL_API void SENTINEL_CALL Shutdown() {
         g_context->scan_scheduler->Shutdown();
     }
     g_context->scan_scheduler.reset();
+    // Task 08: Cleanup self-integrity validator
+    if (g_context->self_integrity) {
+        g_context->self_integrity->Shutdown();
+    }
+    g_context->self_integrity.reset();
     
     // Cleanup whitelist manager
     if (g_whitelist) {
@@ -653,6 +681,18 @@ SENTINEL_API ErrorCode SENTINEL_CALL Update() {
         }
     }
     
+    // Task 08: SDK self-integrity validation (distributed - check on some Updates)
+    // Check every 20 updates to distribute validation across multiple code paths
+    if (g_context->self_integrity && (g_context->stats.updates_performed % 20 == 0)) {
+        if (!g_context->self_integrity->ValidateQuick()) {
+            ViolationEvent event = IntegrityValidator::CreateGenericTamperEvent();
+            event.timestamp = GetSecureTime();
+            
+            ReportViolation(event);
+            result = ErrorCode::TamperingDetected;
+        }
+    }
+    
     // Hook check (sampling)
     if (g_context->anti_hook && (g_context->stats.updates_performed % 10 == 0)) {
         auto violations = g_context->anti_hook->QuickCheck();
@@ -714,6 +754,15 @@ SENTINEL_API ErrorCode SENTINEL_CALL FullScan() {
         for (const auto& v : violations) {
             ReportViolation(v);
             result = ErrorCode::IntegrityViolation;
+        }
+    }
+    
+    // Task 08: SDK self-integrity full validation
+    if (g_context->self_integrity) {
+        auto violations = g_context->self_integrity->ValidateFull();
+        for (const auto& v : violations) {
+            ReportViolation(v);
+            result = ErrorCode::TamperingDetected;
         }
     }
     
