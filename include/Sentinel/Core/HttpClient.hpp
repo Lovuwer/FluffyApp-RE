@@ -222,7 +222,7 @@ using ProgressCallback = std::function<void(size_t current, size_t total)>;
 class HttpClient {
 public:
     HttpClient();
-    ~HttpClient();
+    virtual ~HttpClient();
     
     // Non-copyable
     HttpClient(const HttpClient&) = delete;
@@ -237,7 +237,7 @@ public:
      * @param request Request configuration
      * @return Response or error
      */
-    Result<HttpResponse> send(const HttpRequest& request);
+    virtual Result<HttpResponse> send(const HttpRequest& request);
     
     /**
      * @brief Send GET request

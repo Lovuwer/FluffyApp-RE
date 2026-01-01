@@ -244,6 +244,7 @@ if(SENTINEL_SDK_BUILD_SHARED)
         SOVERSION ${PROJECT_VERSION_MAJOR}
         OUTPUT_NAME "SentinelSDK"
         DEBUG_POSTFIX "d"
+        POSITION_INDEPENDENT_CODE ON
     )
     
     # Hide internal symbols
