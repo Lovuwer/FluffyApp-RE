@@ -569,6 +569,23 @@ TEST_F(CloudReporterTest, MultipleGapsScenario) {
 // ============================================================================
 // Task 15: Integration Test for Gap Detection with Simulated Suppression
 // ============================================================================
+//
+// NOTE ON TEST APPROACH:
+// These tests document the gap detection scenario with extensive inline
+// comments because client-side unit tests cannot actually intercept HTTP
+// traffic or implement a filtering proxy. The tests verify that:
+// 1. Client correctly generates monotonic sequence numbers
+// 2. The sequence numbering mechanism is thread-safe
+// 3. Sequence numbers are included in report payloads
+//
+// The detailed documentation explains what WOULD happen server-side if a
+// proxy were filtering reports, which is critical for understanding the
+// security model and verifying the implementation against the specification
+// (SERVER_SIDE_DETECTION_CORRELATION.md).
+//
+// For end-to-end testing with actual proxy filtering and server-side gap
+// detection, see the integration test suite (requires server deployment).
+// ============================================================================
 
 TEST_F(CloudReporterTest, GapDetectionWithSimulatedSuppression) {
     /**
@@ -584,7 +601,7 @@ TEST_F(CloudReporterTest, GapDetectionWithSimulatedSuppression) {
      * This test simulates the sequence numbers that would be generated with
      * and without suppression to demonstrate server-side gap detection.
      * 
-     * Per SERVER_SIDE_DETECTION_CORRELATION.md (lines 950-976):
+     * Per SERVER_SIDE_DETECTION_CORRELATION.md (lines 954-977):
      * - Client sends reports with monotonically increasing sequence numbers
      * - If proxy filters report with sequence N, server receives gap
      * - Server detects: expected_seq=N, received_seq=N+1 (or higher)
