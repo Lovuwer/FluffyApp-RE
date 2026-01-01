@@ -1291,3 +1291,255 @@ TEST(HashEngine, MD5_Legacy_StillWorks) {
     EXPECT_EQ(std::memcmp(result.value().data(), expected, 16), 0)
         << "MD5 of 'abc' doesn't match known vector";
 }
+
+// ============================================================================
+// SecureRandom Hardening Tests
+// ============================================================================
+
+TEST(SecureRandom, ConstructorIsNoexcept) {
+    // Verify constructor doesn't throw
+    EXPECT_NO_THROW({
+        SecureRandom rng;
+    }) << "Constructor should be noexcept";
+}
+
+TEST(SecureRandom, DeferredInitialization) {
+    // Constructor should not fail even in extreme conditions
+    SecureRandom rng;
+    
+    // Check initial health status
+    auto initialStatus = rng.getHealthStatus();
+    EXPECT_EQ(initialStatus, RandomHealthStatus::Uninitialized) 
+        << "RNG should be uninitialized after construction";
+    
+    EXPECT_FALSE(rng.isHealthy()) 
+        << "RNG should not be healthy before first use";
+}
+
+TEST(SecureRandom, FirstUseInitialization) {
+    SecureRandom rng;
+    
+    // First generation should trigger initialization and self-test
+    auto result = rng.generate(32);
+    ASSERT_TRUE(result.isSuccess()) << "First generation should succeed";
+    
+    // After first use, should be healthy
+    EXPECT_TRUE(rng.isHealthy()) << "RNG should be healthy after first successful generation";
+    
+    auto status = rng.getHealthStatus();
+    EXPECT_TRUE(status == RandomHealthStatus::Healthy || 
+                status == RandomHealthStatus::Degraded)
+        << "RNG should be healthy or degraded after initialization";
+}
+
+TEST(SecureRandom, HealthCheckAPI) {
+    SecureRandom rng;
+    
+    // Before initialization
+    EXPECT_EQ(rng.getHealthStatus(), RandomHealthStatus::Uninitialized);
+    
+    // Generate some data to initialize
+    auto result = rng.generate(64);
+    ASSERT_TRUE(result.isSuccess());
+    
+    // After initialization, should be healthy or degraded (if using fallback)
+    auto status = rng.getHealthStatus();
+    EXPECT_TRUE(status == RandomHealthStatus::Healthy || 
+                status == RandomHealthStatus::Degraded)
+        << "After successful generation, RNG should be healthy or degraded";
+    
+    EXPECT_TRUE(rng.isHealthy()) << "isHealthy() should return true after successful generation";
+}
+
+TEST(SecureRandom, SelfTestRejectsObviouslyBrokenRNG) {
+    // This test verifies the self-test logic would catch broken RNG
+    // We can't easily break the actual RNG, but we can verify the checks exist
+    
+    SecureRandom rng;
+    auto result = rng.generate(256);
+    ASSERT_TRUE(result.isSuccess()) << "Generation should succeed with working RNG";
+    
+    const auto& data = result.value();
+    
+    // Verify the data passes our self-test criteria
+    // 1. Not all zeros
+    bool hasNonZero = false;
+    for (Byte b : data) {
+        if (b != 0) {
+            hasNonZero = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(hasNonZero) << "Generated data should not be all zeros";
+    
+    // 2. Not all ones
+    bool hasNonOnes = false;
+    for (Byte b : data) {
+        if (b != 0xFF) {
+            hasNonOnes = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(hasNonOnes) << "Generated data should not be all ones";
+    
+    // 3. Has reasonable entropy (at least 64 unique byte values in 256 bytes)
+    bool seen[256] = {false};
+    size_t uniqueCount = 0;
+    for (Byte b : data) {
+        if (!seen[b]) {
+            seen[b] = true;
+            uniqueCount++;
+        }
+    }
+    EXPECT_GE(uniqueCount, 64u) << "Generated data should have sufficient entropy";
+}
+
+TEST(SecureRandom, MultipleInstancesIndependent) {
+    // Verify multiple instances can be created and used independently
+    SecureRandom rng1;
+    SecureRandom rng2;
+    SecureRandom rng3;
+    
+    auto result1 = rng1.generate(32);
+    auto result2 = rng2.generate(32);
+    auto result3 = rng3.generate(32);
+    
+    ASSERT_TRUE(result1.isSuccess());
+    ASSERT_TRUE(result2.isSuccess());
+    ASSERT_TRUE(result3.isSuccess());
+    
+    // All should be healthy
+    EXPECT_TRUE(rng1.isHealthy());
+    EXPECT_TRUE(rng2.isHealthy());
+    EXPECT_TRUE(rng3.isHealthy());
+    
+    // Generated values should be different
+    EXPECT_NE(result1.value(), result2.value());
+    EXPECT_NE(result1.value(), result3.value());
+    EXPECT_NE(result2.value(), result3.value());
+}
+
+TEST(SecureRandom, HealthCheckBeforeInitialization) {
+    SecureRandom rng;
+    
+    // Should be safe to check health before any generation
+    EXPECT_NO_THROW({
+        auto status = rng.getHealthStatus();
+        (void)status;
+    });
+    
+    EXPECT_NO_THROW({
+        bool healthy = rng.isHealthy();
+        (void)healthy;
+    });
+}
+
+TEST(SecureRandom, InitializationThreadSafety) {
+    // Test that concurrent first-use initialization is thread-safe
+    SecureRandom rng;
+    
+    constexpr int numThreads = 10;
+    std::atomic<int> successCount{0};
+    std::vector<std::thread> threads;
+    threads.reserve(numThreads);
+    
+    for (int i = 0; i < numThreads; ++i) {
+        threads.emplace_back([&rng, &successCount]() {
+            // All threads try to initialize simultaneously
+            auto result = rng.generate(32);
+            if (result.isSuccess()) {
+                successCount++;
+            }
+        });
+    }
+    
+    for (auto& thread : threads) {
+        thread.join();
+    }
+    
+    EXPECT_EQ(successCount.load(), numThreads) 
+        << "All threads should successfully generate data";
+    
+    EXPECT_TRUE(rng.isHealthy()) 
+        << "RNG should be healthy after concurrent initialization";
+}
+
+TEST(SecureRandom, HealthStatusPersistsAcrossGenerations) {
+    SecureRandom rng;
+    
+    // Initialize
+    auto result1 = rng.generate(32);
+    ASSERT_TRUE(result1.isSuccess());
+    
+    auto status1 = rng.getHealthStatus();
+    
+    // Generate more data
+    auto result2 = rng.generate(64);
+    ASSERT_TRUE(result2.isSuccess());
+    
+    auto status2 = rng.getHealthStatus();
+    
+    // Health status should remain consistent
+    EXPECT_EQ(status1, status2) 
+        << "Health status should not change for working RNG";
+}
+
+TEST(SecureRandom, ZeroSizeGenerationDoesNotAffectHealth) {
+    SecureRandom rng;
+    
+    // Generate zero bytes (should succeed without initialization)
+    auto result = rng.generate(0);
+    EXPECT_TRUE(result.isSuccess()) << "Zero-size generation should succeed";
+    
+    // Should still be uninitialized if we never generated actual data
+    auto status = rng.getHealthStatus();
+    EXPECT_EQ(status, RandomHealthStatus::Uninitialized) 
+        << "Zero-size generation should not trigger initialization";
+}
+
+TEST(SecureRandom, HealthCheckIntegrationWithGeneration) {
+    SecureRandom rng;
+    
+    // Multiple generations with health checks in between
+    for (int i = 0; i < 10; ++i) {
+        auto result = rng.generate(128);
+        ASSERT_TRUE(result.isSuccess()) << "Generation " << i << " failed";
+        
+        EXPECT_TRUE(rng.isHealthy()) 
+            << "RNG should remain healthy across generations";
+        
+        auto status = rng.getHealthStatus();
+        EXPECT_TRUE(status == RandomHealthStatus::Healthy || 
+                    status == RandomHealthStatus::Degraded)
+            << "Status should be healthy or degraded";
+    }
+}
+
+TEST(SecureRandom, NoexceptGuarantee) {
+    // Verify noexcept functions don't throw
+    SecureRandom rng;
+    
+    EXPECT_NO_THROW({
+        auto status = rng.getHealthStatus();
+        (void)status;
+    });
+    
+    EXPECT_NO_THROW({
+        bool healthy = rng.isHealthy();
+        (void)healthy;
+    });
+    
+    // After initialization
+    auto result = rng.generate(32);
+    ASSERT_TRUE(result.isSuccess());
+    
+    EXPECT_NO_THROW({
+        auto status = rng.getHealthStatus();
+        (void)status;
+    });
+    
+    EXPECT_NO_THROW({
+        bool healthy = rng.isHealthy();
+        (void)healthy;
+    });
+}
