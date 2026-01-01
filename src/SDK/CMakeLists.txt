@@ -22,6 +22,7 @@ option(SENTINEL_SDK_BUILD_STATIC "Build as static library" ON)
 option(SENTINEL_SDK_BUILD_TESTS "Build unit tests" OFF)
 option(SENTINEL_SDK_BUILD_EXAMPLES "Build example projects" ON)
 option(SENTINEL_SDK_ENABLE_PROFILING "Enable performance profiling" OFF)
+option(SENTINEL_DISABLE_ANTIDEBUG "Disable anti-debug checks for development builds" OFF)
 
 # Source files
 set(SDK_SOURCES
@@ -85,6 +86,12 @@ set(SDK_COMPILE_DEFINITIONS
     SENTINEL_SDK_VERSION_MINOR=${PROJECT_VERSION_MINOR}
     SENTINEL_SDK_VERSION_PATCH=${PROJECT_VERSION_PATCH}
 )
+
+# Add SENTINEL_DISABLE_ANTIDEBUG flag if option is enabled
+if(SENTINEL_DISABLE_ANTIDEBUG)
+    list(APPEND SDK_COMPILE_DEFINITIONS SENTINEL_DISABLE_ANTIDEBUG)
+    message(STATUS "Anti-debug checks disabled (SENTINEL_DISABLE_ANTIDEBUG)")
+endif()
 
 # Platform-specific settings
 if(WIN32)

@@ -53,6 +53,7 @@ private:
     bool CheckPEB();
     bool CheckNtGlobalFlag();
     bool CheckHeapFlags();
+    bool CheckHoneypots();  // Task 10: Honeypot detection
     
     // Helper methods
     void CalibrateTimingBaseline();
