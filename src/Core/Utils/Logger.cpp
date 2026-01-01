@@ -7,8 +7,9 @@
  * 
  * @copyright Copyright (c) 2025 Sentinel Security. All rights reserved.
  * 
- * This implementation uses spdlog for high-performance async logging with
- * structured output support and automatic log rotation.
+ * This implementation uses spdlog for high-performance synchronous logging with
+ * structured output support and automatic log rotation. Synchronous logging is
+ * used for maximum reliability and immediate flush to disk.
  */
 
 #include "Sentinel/Core/Logger.hpp"
@@ -16,7 +17,6 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/sinks/callback_sink.h>
-#include <spdlog/async.h>
 #include <iostream>
 #include <filesystem>
 
@@ -101,8 +101,9 @@ bool Logger::Initialize(LogLevel minLevel, LogOutput outputs,
             sinks.push_back(console_sink);
         }
 
-        // Use synchronous logger for reliability (async can be enabled later for production)
-        // For now, prioritize correctness over performance
+        // Use synchronous logger for maximum reliability and immediate flush
+        // Synchronous logging ensures all logs are written before returning,
+        // which is critical for debugging production issues and crash analysis
         spdlogger_ = std::make_shared<spdlog::logger>(
             "sentinel", 
             sinks.begin(), 
