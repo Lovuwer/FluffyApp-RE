@@ -16,7 +16,7 @@
  */
 
 #include <Sentinel/Core/Crypto.hpp>
-#include "OpenSSLRAII.hpp"
+#include <Sentinel/Core/Crypto/OpenSSLRAII.hpp>
 #include <openssl/evp.h>
 #include <openssl/rsa.h>
 #include <openssl/pem.h>
