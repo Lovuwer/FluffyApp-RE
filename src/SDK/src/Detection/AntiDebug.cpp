@@ -1526,24 +1526,30 @@ bool AntiDebugDetector::CheckHoneypots() {
         detected = true;
     }
     
-    // Call honeypot 3: Fake admin access (try with suspicious ID)
-    // Note: This always returns false, but the timing check detects debugging
-    if (!GrantAdminAccess_Honeypot(0xADMIN001)) {
-        // Check if it failed due to timing (took too long)
-        // We need to call it again with a quick check to differentiate
-        LARGE_INTEGER freq, start, end;
-        QueryPerformanceFrequency(&freq);
-        QueryPerformanceCounter(&start);
-        GrantAdminAccess_Honeypot(0x00000001);  // Normal ID
-        QueryPerformanceCounter(&end);
-        
-        double elapsed_us = static_cast<double>(end.QuadPart - start.QuadPart)
-                           * 1000000.0 / static_cast<double>(freq.QuadPart);
-        
-        // If even the second call is slow, debugger is present
-        if (elapsed_us > 1000.0) {
-            detected = true;
-        }
+    // Call honeypot 3: Fake admin access
+    // This honeypot performs internal timing checks, so we just need to call it
+    // and check if it returns false due to timing anomaly (it always returns false
+    // but the timing is embedded in the function itself)
+    // We call it twice to see if there's a significant slowdown indicating debugging
+    LARGE_INTEGER freq, start1, end1, start2, end2;
+    QueryPerformanceFrequency(&freq);
+    
+    QueryPerformanceCounter(&start1);
+    GrantAdminAccess_Honeypot(0xADMIN001);  // Suspicious ID
+    QueryPerformanceCounter(&end1);
+    
+    QueryPerformanceCounter(&start2);
+    GrantAdminAccess_Honeypot(0x00000001);  // Normal ID
+    QueryPerformanceCounter(&end2);
+    
+    double elapsed1_us = static_cast<double>(end1.QuadPart - start1.QuadPart)
+                       * 1000000.0 / static_cast<double>(freq.QuadPart);
+    double elapsed2_us = static_cast<double>(end2.QuadPart - start2.QuadPart)
+                       * 1000000.0 / static_cast<double>(freq.QuadPart);
+    
+    // If either call is slow, debugger is present
+    if (elapsed1_us > 1000.0 || elapsed2_us > 1000.0) {
+        detected = true;
     }
     
     return detected;
