@@ -116,6 +116,7 @@ add_executable(SDKTests
     SDK/test_handle_generation.cpp
     SDK/test_watchdog.cpp
     SDK/test_cloud_reporter.cpp
+    SDK/test_integrity_validator.cpp
 )
 
 target_include_directories(SDKTests
