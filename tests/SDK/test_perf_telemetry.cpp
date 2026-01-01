@@ -324,11 +324,12 @@ TEST_F(PerformanceTelemetryTest, ArtificialDelayDemonstration) {
 }
 
 TEST_F(PerformanceTelemetryTest, ThrottleHysteresis) {
-    // Configure with throttling
+    // Configure with throttling and smaller max_samples for faster test
     PerfTelemetryConfig config = PerfTelemetryConfig::Default();
     config.enable_self_throttling = true;
     config.p95_threshold_ms = 10.0;
     config.window_size = 50;
+    config.max_samples = 150;  // Limit samples so new data dominates
     telemetry.Shutdown();
     telemetry.Initialize(config);
     
@@ -342,22 +343,24 @@ TEST_F(PerformanceTelemetryTest, ThrottleHysteresis) {
     EXPECT_TRUE(metrics_high.is_throttled);
     
     // Record better performance (but not below hysteresis threshold)
+    // With 150 max samples, these will partially replace old samples
     for (int i = 0; i < 100; i++) {
         telemetry.RecordOperation(OperationType::Update, 9.0);  // Just below threshold
     }
     telemetry.RecalculatePercentiles();
     
     // Should still be throttled due to hysteresis (threshold * 0.8 = 8.0)
+    // With mix of 15.0 and 9.0, P95 should still be above 8.0
     auto metrics_medium = telemetry.GetMetrics(OperationType::Update);
     EXPECT_TRUE(metrics_medium.is_throttled);
     
-    // Record performance well below hysteresis threshold
-    for (int i = 0; i < 100; i++) {
+    // Record many samples well below hysteresis threshold to dominate the distribution
+    for (int i = 0; i < 200; i++) {
         telemetry.RecordOperation(OperationType::Update, 5.0);  // Well below 8.0
     }
     telemetry.RecalculatePercentiles();
     
-    // Should no longer be throttled
+    // Should no longer be throttled - 200 samples at 5.0 should dominate
     auto metrics_low = telemetry.GetMetrics(OperationType::Update);
     EXPECT_FALSE(metrics_low.is_throttled);
 }

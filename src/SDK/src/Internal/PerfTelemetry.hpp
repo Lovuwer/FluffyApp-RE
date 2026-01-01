@@ -19,6 +19,7 @@
 #include <mutex>
 #include <array>
 #include <algorithm>
+#include <random>
 
 namespace Sentinel {
 namespace SDK {
@@ -298,11 +299,13 @@ private:
         uint64_t last_throttle_check_ms; // Last time throttling was evaluated
         double sum_duration;          // Sum for mean calculation
         mutable std::mutex mutex;     // Thread-safe access (mutable for const GetMetrics methods)
+        std::mt19937 rng;             // Random number generator for throttling
         
         OperationData() 
             : window_start_ms(0)
             , last_throttle_check_ms(0)
             , sum_duration(0.0)
+            , rng(std::random_device{}())
         {}
     };
     

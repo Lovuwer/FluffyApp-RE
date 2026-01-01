@@ -168,10 +168,9 @@ bool PerformanceTelemetry::ShouldThrottle(OperationType operation) {
     }
     
     // Probabilistic throttling
-    static thread_local std::mt19937 rng(std::random_device{}());
     std::uniform_real_distribution<double> dist(0.0, 1.0);
     
-    bool should_skip = dist(rng) < config_.throttle_probability;
+    bool should_skip = dist(op_data.rng) < config_.throttle_probability;
     if (should_skip) {
         op_data.metrics.throttled_operations++;
     }
@@ -212,7 +211,8 @@ std::vector<PerformanceAlert> PerformanceTelemetry::GetAlerts() {
 void PerformanceTelemetry::RecalculatePercentiles() {
     if (!initialized_) return;
     
-    for (auto& op_data : operations_) {
+    for (size_t i = 0; i < operations_.size(); ++i) {
+        auto& op_data = operations_[i];
         std::lock_guard<std::mutex> lock(op_data.mutex);
         
         if (op_data.samples.empty()) continue;
@@ -226,6 +226,9 @@ void PerformanceTelemetry::RecalculatePercentiles() {
         if (op_data.metrics.total_operations > 0) {
             op_data.metrics.lifetime.mean_ms = op_data.sum_duration / op_data.metrics.total_operations;
         }
+        
+        // Update throttling state based on new percentiles
+        UpdateThrottling(static_cast<OperationType>(i), op_data.metrics);
     }
 }
 
