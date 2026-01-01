@@ -695,38 +695,58 @@ TEST_F(CloudReporterTest, ConsecutiveGapsTriggersChallenge) {
      * Scenario:
      * Attacker's proxy aggressively filters multiple violation types,
      * creating consecutive gaps. Server detects pattern and challenges client.
+     * 
+     * Note: This is a client-side test demonstrating the intended behavior.
+     * In a real attack scenario with a filtering proxy:
+     * - Client would generate sequences: 0, 1, 2, 3, 4, 5, 6, 7, 8, 9
+     * - Proxy would filter sequences: 1, 3, 5 (creating 3 gaps)
+     * - Server would receive: 0, [gap], 2, [gap], 4, [gap], 6, 7, 8, 9
+     * - Server would detect 3 consecutive gaps and trigger challenge
+     * 
+     * This test sends sequential events to demonstrate the client correctly
+     * generates monotonic sequence numbers. The gap detection would occur
+     * server-side when comparing received vs expected sequences.
      */
     
     reporter->SetBatchSize(1);
     
-    // Simulate scenario where gaps occur repeatedly
-    // Normal flow: 0, 1, 2, 3, 4, 5, 6, 7, 8, 9
-    // With suppression: 0, [1 gap], 2, [3 gap], 4, [5 gap], 6, ...
-    // Server would trigger challenge after 3rd gap
-    
+    // Send events that would generate sequential numbers
+    // In an attack: some of these would be filtered by proxy
     auto event_0 = CreateTestEvent(ViolationType::DebuggerAttached, Severity::Info);
-    reporter->QueueEvent(event_0);  // seq=0
+    reporter->QueueEvent(event_0);  // Client generates seq=0
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     
-    // Event with seq=1 would be filtered by proxy (gap 1)
+    // In attack scenario: next event (seq=1) would be filtered by proxy
+    // Server would receive seq=0, then seq=2 (GAP DETECTED: expected=1, got=2)
     
-    auto event_2 = CreateTestEvent(ViolationType::SpeedHack, Severity::Info);
-    reporter->QueueEvent(event_2);  // seq=1 actually, but server expects 1
+    auto event_1 = CreateTestEvent(ViolationType::SpeedHack, Severity::Info);
+    reporter->QueueEvent(event_1);  // Client generates seq=1
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     
-    // Event with seq=2 (really seq=2) 
-    
-    auto event_3 = CreateTestEvent(ViolationType::MemoryWrite, Severity::Info);
-    reporter->QueueEvent(event_3);  // seq=2
+    auto event_2 = CreateTestEvent(ViolationType::MemoryWrite, Severity::Info);
+    reporter->QueueEvent(event_2);  // Client generates seq=2
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     
-    // Event with seq=3 would be filtered (gap 2)
+    // In attack scenario: next event (seq=3) would be filtered by proxy
+    // Server would receive seq=2, then seq=4 (GAP DETECTED: expected=3, got=4)
     
-    auto event_4 = CreateTestEvent(ViolationType::InlineHook, Severity::Info);
-    reporter->QueueEvent(event_4);  // seq=3
+    auto event_3 = CreateTestEvent(ViolationType::InlineHook, Severity::Info);
+    reporter->QueueEvent(event_3);  // Client generates seq=3
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     
-    // After 3 gaps, server should respond with HTTP 503 + challenge payload
+    auto event_4 = CreateTestEvent(ViolationType::CodeInjection, Severity::Info);
+    reporter->QueueEvent(event_4);  // Client generates seq=4
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    
+    // In attack scenario: next event (seq=5) would be filtered by proxy
+    // Server would receive seq=4, then seq=6 (GAP DETECTED: expected=5, got=6)
+    // This is the 3rd consecutive gap - server triggers challenge
+    
+    auto event_5 = CreateTestEvent(ViolationType::ModuleModified, Severity::Info);
+    reporter->QueueEvent(event_5);  // Client generates seq=5
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    
+    // After 3 consecutive gaps, server would respond with HTTP 503 + challenge payload
     // Per SERVER_SIDE_DETECTION_CORRELATION.md lines 812-813:
     // 503 Service Unavailable (+ Challenge message in response body):
     //     Server requires challenge-response before accepting more reports
@@ -734,7 +754,7 @@ TEST_F(CloudReporterTest, ConsecutiveGapsTriggersChallenge) {
     reporter->Flush();
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
     
-    // In production, CloudReporter would:
+    // In production with a real server, CloudReporter would:
     // 1. Receive HTTP 503 response from server
     // 2. Parse challenge JSON from response body
     // 3. Execute requested detection checks
