@@ -146,13 +146,11 @@ else()
     add_compile_options(-fstack-protector-strong)
     
     # Position Independent Executable (for ASLR)
-    # Note: -fPIC is already set globally and works for both libraries and executables.
-    # -fPIE is more restrictive and provides better ASLR for executables.
-    # CMake automatically handles the distinction between shared libraries (which use -fPIC)
-    # and executables (which can use -fPIE). Modern CMake will override -fPIE with -fPIC
-    # for shared library targets as needed.
-    add_compile_options(-fPIE)
-    add_link_options(-pie)
+    # NOTE: -fPIE and -pie are disabled because they conflict with shared library builds.
+    # Shared libraries use -fPIC (position independent code) which is already set above.
+    # Executables can set CMAKE_POSITION_INDEPENDENT_CODE ON or use -fPIE individually.
+    # add_compile_options(-fPIE)
+    # add_link_options(-pie)
     
     # Fortify source (buffer overflow detection)
     add_compile_options(-D_FORTIFY_SOURCE=2)

@@ -231,8 +231,26 @@ if(SENTINEL_SDK_BUILD_SHARED)
             ${SDK_COMPILE_DEFINITIONS}
     )
     
+    # Shared libraries should not use -fPIE (PIE is for executables only)
+    # Override the global -fPIE with -fPIC for this shared library target
+    if(NOT WIN32)
+        # Get the current compile options
+        get_target_property(CURRENT_COMPILE_OPTIONS SentinelSDK COMPILE_OPTIONS)
+        # Add -fPIC (which overrides -fPIE)
+        target_compile_options(SentinelSDK PRIVATE -fPIC)
+    endif()
+    
     target_compile_options(SentinelSDK PRIVATE ${SDK_COMPILE_OPTIONS})
     target_link_options(SentinelSDK PRIVATE ${SDK_LINK_OPTIONS})
+    # Shared libraries should not use -pie (PIE is for executables only)
+    # Remove the -pie flag that was added globally
+    if(NOT WIN32)
+        get_target_property(CURRENT_LINK_OPTIONS SentinelSDK LINK_OPTIONS)
+        if(CURRENT_LINK_OPTIONS)
+            list(REMOVE_ITEM CURRENT_LINK_OPTIONS "-pie")
+            set_target_properties(SentinelSDK PROPERTIES LINK_OPTIONS "${CURRENT_LINK_OPTIONS}")
+        endif()
+    endif()
     target_link_libraries(SentinelSDK 
         PRIVATE 
             ${SDK_PLATFORM_LIBS}
@@ -244,6 +262,7 @@ if(SENTINEL_SDK_BUILD_SHARED)
         SOVERSION ${PROJECT_VERSION_MAJOR}
         OUTPUT_NAME "SentinelSDK"
         DEBUG_POSTFIX "d"
+        POSITION_INDEPENDENT_CODE ON
     )
     
     # Hide internal symbols
