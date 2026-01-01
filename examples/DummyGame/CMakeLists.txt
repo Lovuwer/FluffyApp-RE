@@ -28,9 +28,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Find Sentinel SDK
 # When built as part of main project, libraries are available
 # When built standalone, need to find them
-if(NOT TARGET SentinelSDK)
+if(NOT TARGET SentinelSDK AND NOT TARGET SentinelSDK_static)
     find_library(SENTINEL_SDK_LIB
-        NAMES SentinelSDK
+        NAMES SentinelSDK SentinelSDK_static
         PATHS ${CMAKE_BINARY_DIR}/lib
               ${CMAKE_SOURCE_DIR}/../../build/lib
         NO_DEFAULT_PATH
@@ -63,9 +63,15 @@ target_include_directories(DummyGame PRIVATE
 # ============================================================================
 
 if(TARGET SentinelSDK)
-    # Building as part of main project
+    # Building as part of main project (shared library)
     target_link_libraries(DummyGame PRIVATE
         SentinelSDK
+        SentinelCore
+    )
+elseif(TARGET SentinelSDK_static)
+    # Building as part of main project (static library)
+    target_link_libraries(DummyGame PRIVATE
+        SentinelSDK_static
         SentinelCore
     )
 else()
