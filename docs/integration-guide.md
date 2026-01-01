@@ -13,6 +13,7 @@
 3. [Integration by Game Engine](#integration-by-game-engine)
    - [Unreal Engine](#unreal-engine-integration)
    - [Unity](#unity-integration)
+   - [Godot Engine](#godot-engine-integration)
    - [Custom C++ Engine](#custom-c-engine-integration)
 4. [Configuration](#configuration)
 5. [Performance Tuning](#performance-tuning)
@@ -647,6 +648,289 @@ public class PlayerData : MonoBehaviour
         SDK.SetProtected(scoreHandle, score);
     }
 }
+```
+
+---
+
+### Godot Engine Integration
+
+**Tested with:** Godot 4.2+
+
+Godot uses GDExtension for native C++ integration. We'll create a GDExtension wrapper.
+
+#### Step 1: Project Setup
+
+Create a GDExtension module structure:
+
+```
+your-godot-project/
+├── addons/
+│   └── sentinel_sdk/
+│       ├── bin/
+│       │   └── libsentinel_gdextension.so (or .dll)
+│       ├── sentinel_sdk.gdextension
+│       └── LICENSE
+```
+
+#### Step 2: Create GDExtension Wrapper
+
+**sentinel_gdextension.cpp:**
+
+```cpp
+#include <godot_cpp/classes/node.hpp>
+#include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/variant/utility_functions.hpp>
+#include <SentinelSDK.hpp>
+
+using namespace godot;
+
+class SentinelSDKNode : public Node {
+    GDCLASS(SentinelSDKNode, Node)
+
+private:
+    bool initialized = false;
+    String license_key;
+    String game_id;
+
+protected:
+    static void _bind_methods() {
+        ClassDB::bind_method(D_METHOD("initialize", "license", "game_id"), &SentinelSDKNode::initialize);
+        ClassDB::bind_method(D_METHOD("update"), &SentinelSDKNode::update);
+        ClassDB::bind_method(D_METHOD("shutdown"), &SentinelSDKNode::shutdown);
+        ClassDB::bind_method(D_METHOD("is_initialized"), &SentinelSDKNode::is_initialized);
+        
+        ClassDB::bind_method(D_METHOD("create_protected_int", "value"), &SentinelSDKNode::create_protected_int);
+        ClassDB::bind_method(D_METHOD("get_protected_int", "handle"), &SentinelSDKNode::get_protected_int);
+        ClassDB::bind_method(D_METHOD("set_protected_int", "handle", "value"), &SentinelSDKNode::set_protected_int);
+        ClassDB::bind_method(D_METHOD("destroy_protected", "handle"), &SentinelSDKNode::destroy_protected);
+    }
+
+public:
+    bool initialize(String p_license_key, String p_game_id) {
+        using namespace Sentinel::SDK;
+        
+        Configuration config = Configuration::Default();
+        config.license_key = p_license_key.utf8().get_data();
+        config.game_id = p_game_id.utf8().get_data();
+        config.features = DetectionFeatures::Standard;
+        config.default_action = ResponseAction::Log | ResponseAction::Report;
+        
+        ErrorCode result = Initialize(&config);
+        if (result == ErrorCode::Success) {
+            initialized = true;
+            UtilityFunctions::print("Sentinel SDK initialized successfully");
+            return true;
+        } else {
+            UtilityFunctions::printerr("Failed to initialize Sentinel SDK: ", GetLastError());
+            return false;
+        }
+    }
+    
+    void update() {
+        if (initialized) {
+            Sentinel::SDK::Update();
+        }
+    }
+    
+    void shutdown() {
+        if (initialized) {
+            Sentinel::SDK::Shutdown();
+            initialized = false;
+            UtilityFunctions::print("Sentinel SDK shut down");
+        }
+    }
+    
+    bool is_initialized() const {
+        return initialized;
+    }
+    
+    int64_t create_protected_int(int64_t value) {
+        // Note: Returns 0 on failure, which matches SDK behavior
+        // SDK CreateProtectedInt returns 0 (invalid handle) on failure
+        if (!initialized) {
+            UtilityFunctions::printerr("Sentinel SDK not initialized");
+            return 0;
+        }
+        return Sentinel::SDK::CreateProtectedInt(value);
+    }
+    
+    int64_t get_protected_int(int64_t handle) {
+        if (!initialized || handle == 0) {
+            UtilityFunctions::printerr("Invalid handle or SDK not initialized");
+            return 0;
+        }
+        return Sentinel::SDK::GetProtectedInt(handle);
+    }
+    
+    void set_protected_int(int64_t handle, int64_t value) {
+        if (!initialized || handle == 0) {
+            UtilityFunctions::printerr("Invalid handle or SDK not initialized");
+            return;
+        }
+        Sentinel::SDK::SetProtectedInt(handle, value);
+    }
+    
+    void destroy_protected(int64_t handle) {
+        if (!initialized || handle == 0) return;
+        Sentinel::SDK::DestroyProtectedValue(handle);
+    }
+    
+    void _process(double delta) override {
+        update();
+    }
+};
+
+void initialize_sentinel_module(ModuleInitializationLevel p_level) {
+    if (p_level != MODULE_INITIALIZATION_LEVEL_SCENE) return;
+    ClassDB::register_class<SentinelSDKNode>();
+}
+
+void uninitialize_sentinel_module(ModuleInitializationLevel p_level) {
+    if (p_level != MODULE_INITIALIZATION_LEVEL_SCENE) return;
+}
+
+extern "C" {
+    GDExtensionBool GDE_EXPORT sentinel_gdextension_init(
+        GDExtensionInterfaceGetProcAddress p_get_proc_address,
+        const GDExtensionClassLibraryPtr p_library,
+        GDExtensionInitialization *r_initialization
+    ) {
+        godot::GDExtensionBinding::InitObject init_obj(p_get_proc_address, p_library, r_initialization);
+        init_obj.register_initializer(initialize_sentinel_module);
+        init_obj.register_terminator(uninitialize_sentinel_module);
+        init_obj.set_minimum_library_initialization_level(MODULE_INITIALIZATION_LEVEL_SCENE);
+        return init_obj.init();
+    }
+}
+```
+
+#### Step 3: Configure GDExtension
+
+**sentinel_sdk.gdextension:**
+
+```ini
+[configuration]
+entry_symbol = "sentinel_gdextension_init"
+compatibility_minimum = "4.2"
+
+[libraries]
+linux.x86_64 = "res://addons/sentinel_sdk/bin/libsentinel_gdextension.so"
+windows.x86_64 = "res://addons/sentinel_sdk/bin/sentinel_gdextension.dll"
+```
+
+#### Step 4: Use in GDScript
+
+**Main.gd:**
+
+```gdscript
+extends Node
+
+var sentinel: SentinelSDKNode = null
+var health_handle: int = 0
+var score_handle: int = 0
+
+func _ready():
+    # Create and add Sentinel SDK node
+    sentinel = SentinelSDKNode.new()
+    add_child(sentinel)
+    
+    # Load license key from environment or config (DO NOT hardcode in production!)
+    var license_key = OS.get_environment("SENTINEL_LICENSE_KEY")
+    if license_key.is_empty():
+        # For development only - use environment variable in production
+        license_key = "TRIAL-KEY-DEV"
+    
+    # Initialize SDK
+    if sentinel.initialize(license_key, "your-godot-game"):
+        print("Sentinel SDK ready")
+        
+        # Create protected values
+        health_handle = sentinel.create_protected_int(100)
+        score_handle = sentinel.create_protected_int(0)
+        
+        # Validate handles (SDK returns 0 on failure)
+        if health_handle == 0 or score_handle == 0:
+            push_error("Failed to create protected values")
+    else:
+        push_error("Failed to initialize Sentinel SDK")
+
+func _process(delta):
+    # SDK.update() is automatically called in SentinelSDKNode._process()
+    pass
+
+func take_damage(amount: int):
+    if health_handle > 0:
+        var health = sentinel.get_protected_int(health_handle)
+        health = max(0, health - amount)
+        sentinel.set_protected_int(health_handle, health)
+        print("Health: ", health)
+
+func add_score(points: int):
+    if score_handle > 0:
+        var score = sentinel.get_protected_int(score_handle)
+        score += points
+        sentinel.set_protected_int(score_handle, score)
+        print("Score: ", score)
+
+func _exit_tree():
+    # Cleanup
+    if sentinel and sentinel.is_initialized():
+        if health_handle > 0:
+            sentinel.destroy_protected(health_handle)
+        if score_handle > 0:
+            sentinel.destroy_protected(score_handle)
+        sentinel.shutdown()
+```
+
+#### Step 5: Build GDExtension
+
+**SConstruct:**
+
+```python
+#!/usr/bin/env python
+import os
+
+env = Environment()
+
+# Paths
+sentinel_sdk_path = "../../../"  # Path to Sentinel SDK
+godot_cpp_path = "godot-cpp"     # godot-cpp submodule
+
+# Include paths
+env.Append(CPPPATH=[
+    godot_cpp_path + "/include",
+    godot_cpp_path + "/gen/include",
+    sentinel_sdk_path + "/include",
+])
+
+# Library paths
+env.Append(LIBPATH=[
+    godot_cpp_path + "/bin",
+    sentinel_sdk_path + "/build/lib",
+])
+
+# Libraries
+env.Append(LIBS=[
+    "godot-cpp",
+    "SentinelSDK",
+    "SentinelCore",
+    "ssl",
+    "crypto",
+])
+
+# Build
+sources = ["sentinel_gdextension.cpp"]
+library = env.SharedLibrary("bin/libsentinel_gdextension", sources)
+
+Default(library)
+```
+
+Build with:
+
+```bash
+scons platform=linux target=template_release
+# or
+scons platform=windows target=template_release
 ```
 
 ---
