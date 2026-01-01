@@ -285,16 +285,17 @@ Result<uint32_t> UpdateClient::fetchLatestVersion() {
     std::string body = response.value().bodyAsString();
     
     // Simple JSON parsing - extract "version" field
-    size_t pos = body.find("\"version\":");
+    const std::string search = "\"version\":";
+    size_t pos = body.find(search);
     if (pos == std::string::npos) {
         return ErrorCode::JsonInvalid;
     }
     
-    pos += 10;  // strlen("\"version\":")
-    while (pos < body.length() && std::isspace(body[pos])) pos++;
+    pos += search.length();
+    while (pos < body.length() && std::isspace(static_cast<unsigned char>(body[pos]))) pos++;
     
     std::string num_str;
-    while (pos < body.length() && std::isdigit(body[pos])) {
+    while (pos < body.length() && std::isdigit(static_cast<unsigned char>(body[pos]))) {
         num_str += body[pos++];
     }
     
