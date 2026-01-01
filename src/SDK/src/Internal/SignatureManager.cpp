@@ -98,16 +98,15 @@ std::chrono::system_clock::time_point parseTimestamp(const std::string& iso_time
 }
 
 // Helper to convert SignatureType enum to string
-std::string signatureTypeToString(Sentinel::SDK::SignatureType type) {
-    using Sentinel::SDK::SignatureType;
+const char* signatureTypeToString(Sentinel::SDK::SignatureType type) {
     switch (type) {
-        case SignatureType::MemoryPattern:
+        case Sentinel::SDK::SignatureType::MemoryPattern:
             return "MemoryPattern";
-        case SignatureType::HashSignature:
+        case Sentinel::SDK::SignatureType::HashSignature:
             return "HashSignature";
-        case SignatureType::BehaviorSignature:
+        case Sentinel::SDK::SignatureType::BehaviorSignature:
             return "BehaviorSignature";
-        case SignatureType::ModuleSignature:
+        case Sentinel::SDK::SignatureType::ModuleSignature:
             return "ModuleSignature";
         default:
             return "Unknown";
