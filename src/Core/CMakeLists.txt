@@ -35,6 +35,7 @@ target_sources(SentinelCore
         Network/CertPinner.cpp
         Network/RequestSigner.cpp
         Network/CertificatePinning.cpp
+        Network/Heartbeat.cpp
         
         # Configuration
         Config/SecureConfigLoader.cpp

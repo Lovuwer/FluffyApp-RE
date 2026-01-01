@@ -77,6 +77,18 @@ if(CURL_FOUND)
             gtest
             gtest_main
     )
+    
+    # Heartbeat tests (depends on HttpClient and RequestSigner)
+    add_executable(HeartbeatTests
+        Core/test_heartbeat.cpp
+    )
+    
+    target_link_libraries(HeartbeatTests
+        PRIVATE
+            SentinelCore
+            gtest
+            gtest_main
+    )
 endif()
 
 # SDK tests
@@ -196,6 +208,7 @@ if(CURL_FOUND)
     gtest_discover_tests(HttpClientTests)
     gtest_discover_tests(RequestSignerTests)
     gtest_discover_tests(RequestSigningIntegrationTests)
+    gtest_discover_tests(HeartbeatTests)
 endif()
 
 if(SENTINEL_BUILD_CORTEX)
