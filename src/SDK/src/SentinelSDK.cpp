@@ -17,6 +17,7 @@
 #include "Internal/SafeMemory.hpp"  // Task 09: For exception budget tracking
 #include "Internal/ScanScheduler.hpp"  // Task 09: Detection timing randomization
 #include "Internal/IntegrityValidator.hpp"  // Task 08: Memory integrity self-validation
+#include "Internal/TimingRandomizer.hpp"  // Task 22: Runtime behavior variation
 #include "Sentinel/Core/Logger.hpp"  // Comprehensive logging infrastructure
 // Note: Internal/PerfTelemetry.hpp will be available after merge with main
 #include "Internal/PerfTelemetry.hpp"  // Task 17: Performance telemetry
@@ -97,6 +98,9 @@ struct SDKContext {
     
     // Task 17: Performance telemetry
     std::unique_ptr<PerformanceTelemetry> perf_telemetry;
+    
+    // Task 22: Timing randomizer for runtime behavior variation
+    std::unique_ptr<TimingRandomizer> timing_randomizer;
     
     // Session info
     std::string session_token;
@@ -383,7 +387,7 @@ void HeartbeatThreadFunc() {
             heartbeat_counter++;
         }
         
-        // Task 09: Use scan scheduler for dynamic sleep intervals
+        // Task 22: Use timing randomizer for sleep intervals to prevent predictable patterns
         uint32_t sleep_ms = g_context->config.heartbeat_interval_ms;
         if (g_context->scan_scheduler) {
             // Use a fraction of time until next scan to check more frequently
@@ -393,6 +397,16 @@ void HeartbeatThreadFunc() {
                 // Sleep for a fraction of the remaining time, max heartbeat interval
                 sleep_ms = std::min(sleep_ms, std::max(50u, time_until_scan / 2));
             }
+        }
+        
+        // Task 22: Add cryptographic jitter to sleep interval (30% variation)
+        // This prevents timing-based detection of heartbeat patterns
+        // Minimum threshold ensures we don't add jitter to very short sleeps
+        constexpr uint32_t HEARTBEAT_JITTER_PERCENT = 30;
+        constexpr uint32_t MIN_SLEEP_FOR_JITTER_MS = 100;
+        
+        if (g_context->timing_randomizer && sleep_ms > MIN_SLEEP_FOR_JITTER_MS) {
+            sleep_ms = g_context->timing_randomizer->AddJitter(sleep_ms, HEARTBEAT_JITTER_PERCENT);
         }
         
         std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
@@ -611,6 +625,13 @@ SENTINEL_API ErrorCode SENTINEL_CALL Initialize(const Configuration* config) {
     perf_config.enable_self_throttling = true;
     g_context->perf_telemetry->Initialize(perf_config);
     
+    // Task 22: Initialize timing randomizer for runtime behavior variation
+    SENTINEL_LOG_DEBUG("Initializing Timing randomizer");
+    g_context->timing_randomizer = std::make_unique<TimingRandomizer>();
+    if (!g_context->timing_randomizer->IsHealthy()) {
+        SENTINEL_LOG_WARNING("Timing randomizer initialization failed - timing patterns may be more predictable");
+    }
+    
     // Initialize network if cloud endpoint provided
     if (config->cloud_endpoint && strlen(config->cloud_endpoint) > 0) {
         SENTINEL_LOG_INFO_F("Initializing cloud reporting to: %s", config->cloud_endpoint);
@@ -689,6 +710,9 @@ SENTINEL_API void SENTINEL_CALL Shutdown() {
         g_context->perf_telemetry->Shutdown();
     }
     g_context->perf_telemetry.reset();
+    
+    // Task 22: Cleanup timing randomizer
+    g_context->timing_randomizer.reset();
     
     // Cleanup whitelist manager
     if (g_whitelist) {
