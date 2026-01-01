@@ -163,18 +163,12 @@ if(SENTINEL_ENABLE_DIVERSITY)
         list(APPEND SDK_COMPILE_OPTIONS -ffunction-sections -fdata-sections)
     endif()
     
-    # 2. Add pseudo-random alignment padding
-    # Use diversity seed to vary structure alignment
-    math(EXPR ALIGNMENT_FACTOR "${DIVERSITY_SEED} % 3 + 1") # 1, 2, or 3
+    # 2. Disable aggressive inlining to preserve function boundaries
+    # This helps maintain diversity across builds
     if(NOT MSVC)
-        # GCC/Clang: use different alignment defaults
-        if(ALIGNMENT_FACTOR EQUAL 1)
-            list(APPEND SDK_COMPILE_OPTIONS -fpack-struct=4)
-        elseif(ALIGNMENT_FACTOR EQUAL 2)
-            list(APPEND SDK_COMPILE_OPTIONS -fpack-struct=8)
-        else()
-            list(APPEND SDK_COMPILE_OPTIONS -fpack-struct=16)
-        endif()
+        # Limit inlining to preserve more function boundaries for diversity
+        math(EXPR INLINE_LIMIT "${DIVERSITY_SEED} % 100 + 50") # 50-149
+        list(APPEND SDK_COMPILE_OPTIONS -finline-limit=${INLINE_LIMIT})
     endif()
     
     # 3. Linker randomization
@@ -187,6 +181,11 @@ if(SENTINEL_ENABLE_DIVERSITY)
         else()
             list(APPEND SDK_LINK_OPTIONS -Wl,--sort-section=alignment)
         endif()
+        
+        # Disable LTO for diversity builds to prevent optimization from removing diversity
+        # This trades some performance for better diversity
+        list(APPEND SDK_COMPILE_OPTIONS -fno-lto)
+        list(APPEND SDK_LINK_OPTIONS -fno-lto)
     endif()
 else()
     # Debug builds: no diversity (seed = 0 for deterministic behavior)

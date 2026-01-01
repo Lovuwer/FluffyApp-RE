@@ -68,6 +68,9 @@ uint32_t DiversityEngine::Hash32(uint32_t value) {
 }
 
 uint64_t DiversityEngine::TransformConstant(uint64_t value) {
+    // Diversity padding - varies function structure
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
+    
     if (!IsEnabled()) {
         return value;
     }
@@ -115,6 +118,9 @@ uint64_t DiversityEngine::TransformConstant(uint64_t value) {
 }
 
 size_t DiversityEngine::GetStructPadding(uint32_t structId) {
+    // Diversity padding
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
+    
     if (!IsEnabled()) {
         return 0;
     }
@@ -125,6 +131,9 @@ size_t DiversityEngine::GetStructPadding(uint32_t structId) {
 }
 
 void DiversityEngine::DiversifiedPath(uint32_t pathId) {
+    // Diversity padding
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
+    
     if (!IsEnabled()) {
         return;
     }
@@ -210,6 +219,9 @@ void DiversityEngine::DiversifiedPath(uint32_t pathId) {
 }
 
 void DiversityEngine::DiversifiedDelay(uint32_t baseMs) {
+    // Diversity padding
+    SENTINEL_DIVERSITY_PADDING(__LINE__);
+    
     if (!IsEnabled()) {
         // No diversity, use base delay
         std::this_thread::sleep_for(std::chrono::milliseconds(baseMs));
