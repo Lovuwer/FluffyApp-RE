@@ -263,7 +263,7 @@ Or run all Core tests:
 
 ## References
 
-- [Task 11: String and Constant Obfuscation Framework](https://github.com/Lovuwer/Sentiel-RE)
+- [Task 11: String and Constant Obfuscation Framework](https://github.com/Lovuwer/Sentinel-RE)
 - Compile-time string encryption techniques
 - C++20 template metaprogramming
 - RAII memory safety patterns

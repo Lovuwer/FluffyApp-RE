@@ -43,7 +43,7 @@ namespace Obfuscation {
 /**
  * @brief Generate compile-time pseudo-random seed from build metadata
  * 
- * Uses __TIME__, __DATE__, and __COUNTER__ to create per-build variation.
+ * Uses __TIME__ and __DATE__ to create per-build variation.
  * This prevents static decryption tools from working across builds.
  */
 constexpr uint64_t compileSeed() noexcept {
@@ -63,9 +63,6 @@ constexpr uint64_t compileSeed() noexcept {
         seed ^= static_cast<uint64_t>(date_str[i]);
         seed *= 0x100000001b3ULL;
     }
-    
-    // Mix in counter for uniqueness per macro invocation
-    seed ^= __COUNTER__;
     
     return seed;
 }
