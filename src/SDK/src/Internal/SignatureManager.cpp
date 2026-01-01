@@ -19,6 +19,23 @@
 // Production code should use a proper JSON library like nlohmann/json
 namespace {
 
+// Helper to convert SignatureType to string
+const char* signatureTypeToString(Sentinel::SDK::SignatureType type) {
+    using Sentinel::SDK::SignatureType;
+    switch (type) {
+        case SignatureType::MemoryPattern:
+            return "MemoryPattern";
+        case SignatureType::HashSignature:
+            return "HashSignature";
+        case SignatureType::BehaviorSignature:
+            return "BehaviorSignature";
+        case SignatureType::ModuleSignature:
+            return "ModuleSignature";
+        default:
+            return "Unknown";
+    }
+}
+
 // Helper to extract JSON string value
 std::string extractJsonString(const std::string& json, const std::string& key) {
     std::string search = "\"" + key + "\":";
@@ -643,7 +660,7 @@ Result<std::string> SignatureManager::serializeSignatureSet(
         oss << "      \"id\": \"" << sig.id << "\",\n";
         oss << "      \"name\": \"" << sig.name << "\",\n";
         oss << "      \"version\": " << sig.version << ",\n";
-        oss << "      \"type\": \"" << sig.type << "\",\n";
+        oss << "      \"type\": \"" << signatureTypeToString(sig.type) << "\",\n";
         oss << "      \"threat_family\": \"" << sig.threat_family << "\",\n";
         oss << "      \"severity\": " << static_cast<int>(sig.severity) << ",\n";
         oss << "      \"pattern\": \"" << bytesToHex(sig.pattern_data) << "\",\n";

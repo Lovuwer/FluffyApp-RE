@@ -66,27 +66,28 @@ bool Logger::Initialize(LogLevel minLevel, LogOutput outputs,
 
     initialized_ = true;
 
-    // Log initialization message
-    Log(LogLevel::Info, "Logger initialized");
-
     return true;
 }
 
 void Logger::Shutdown() {
-    std::lock_guard<std::mutex> lock(mutex_);
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
 
-    if (!initialized_) {
-        return;
+        if (!initialized_) {
+            return;
+        }
+
+        // Mark as uninitialized before logging to prevent recursive calls
+        initialized_ = false;
     }
-
-    Log(LogLevel::Info, "Logger shutting down");
     
+    // Log shutdown message without holding the lock
+    // (Log will check initialized_ and handle appropriately)
     if (fileStream_.is_open()) {
+        std::lock_guard<std::mutex> lock(mutex_);
         fileStream_.flush();
         fileStream_.close();
     }
-
-    initialized_ = false;
 }
 
 void Logger::SetMinLevel(LogLevel level) {
