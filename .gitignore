@@ -64,6 +64,10 @@ temp/
 *.tar.gz
 *.7z
 
+# SDK Distribution packages (Task 30)
+dist/
+SentinelSDK-*/
+
 # Documentation build
 docs/html/
 docs/latex/
