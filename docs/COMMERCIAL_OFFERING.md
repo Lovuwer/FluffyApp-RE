@@ -327,7 +327,7 @@ Sentinel is a **user-mode anti-cheat**. It provides **deterrence** against casua
 1. **Sign Up**: Create account at [sentinel.example.com](https://sentinel.example.com) *(placeholder)*
 2. **Choose Plan**: Select Community, Professional, or Enterprise tier
 3. **Download SDK**: Get the SDK package for your platform
-4. **Integrate**: Follow [STUDIO_INTEGRATION_GUIDE.md](STUDIO_INTEGRATION_GUIDE.md)
+4. **Integrate**: Follow [integration/quickstart.md](integration/quickstart.md)
 5. **Configure**: Set license key and configure telemetry endpoint
 6. **Deploy**: Ship your game with Sentinel protection
 7. **Monitor**: Use Cortex dashboard to monitor threats
@@ -342,7 +342,7 @@ Sentinel is a **user-mode anti-cheat**. It provides **deterrence** against casua
 2. **Negotiation**: Discuss studio size, player counts, custom features
 3. **Contract**: Sign studio license agreement
 4. **Deployment**: Choose SaaS or self-hosted infrastructure
-5. **Integration**: Follow [STUDIO_INTEGRATION_GUIDE.md](STUDIO_INTEGRATION_GUIDE.md)
+5. **Integration**: Follow [integration/quickstart.md](integration/quickstart.md)
 6. **Training**: Optional on-site training and integration support
 7. **Go-Live**: Deploy with dedicated enterprise support
 
@@ -395,7 +395,7 @@ A: Yes. Enterprise customers can migrate between deployment models. Migration su
 A: No. Sentinel is user-mode only and cannot prevent kernel-mode attacks. See [DEFENSIVE_GAPS.md](DEFENSIVE_GAPS.md) for limitations.
 
 **Q: What's the performance impact?**  
-A: <1ms per frame on modern hardware. Detailed benchmarks in [STUDIO_INTEGRATION_GUIDE.md](STUDIO_INTEGRATION_GUIDE.md).
+A: <1ms per frame on modern hardware. Detailed benchmarks in [integration/quickstart.md](integration/quickstart.md).
 
 **Q: Does it work on Linux?**  
 A: Partial support. Windows x64 is primary platform. Linux support is experimental.
@@ -444,5 +444,5 @@ A: Credit card, wire transfer, purchase orders (Enterprise). Monthly or annual b
 - [SUPPORT_TIERS.md](SUPPORT_TIERS.md) - Support level definitions
 - [DATA_PRIVACY_POLICY.md](DATA_PRIVACY_POLICY.md) - Privacy and data handling
 - [COMPETITIVE_COMPARISON.md](COMPETITIVE_COMPARISON.md) - Market positioning
-- [STUDIO_INTEGRATION_GUIDE.md](STUDIO_INTEGRATION_GUIDE.md) - Integration instructions
+- [integration/quickstart.md](integration/quickstart.md) - Integration instructions
 - [DEFENSIVE_GAPS.md](DEFENSIVE_GAPS.md) - Security limitations

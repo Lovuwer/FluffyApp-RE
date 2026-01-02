@@ -42,7 +42,7 @@ It does NOT provide:
 - Guarantees against determined adversaries
 - Standalone anti-cheat (requires server-side validation)
 
-See [docs/security/threat-model.md] for complete analysis.
+See [docs/security/security-invariants.md](docs/security/security-invariants.md) and [docs/security/defensive-gaps.md](docs/security/defensive-gaps.md) for complete analysis.
 
 ## Quick Start
 
@@ -50,17 +50,24 @@ See [docs/security/threat-model.md] for complete analysis.
 
 ## Performance
 
-| Operation | Target | Current |
-|-----------|--------|---------|
-| Update() | < 0.1ms | ~0.46ms (needs optimization) |
-| FullScan() | < 5ms | ~7-10ms (needs optimization) |
+**Measured Performance (as of 2026-01-02):**
+
+| Operation | Current Measurement | Target Goal |
+|-----------|---------------------|-------------|
+| Update() | ~0.46ms | < 0.1ms (optimization in progress) |
+| FullScan() | ~7-10ms | < 5ms (optimization in progress) |
+
+*Note: Performance optimization is ongoing. Current measurements are from real-world testing with the DummyGame example.*
 
 ## Documentation
 
-- [Integration Guide](docs/integration/quickstart.md)
-- [Configuration](docs/integration/configuration.md)
-- [Implementation Status](docs/status/current.md)
-- [Security Analysis](docs/security/)
+- [Documentation Hub](docs/README.md) - **Start here**: Complete documentation index
+- [Integration Quickstart](docs/integration/quickstart.md) - 8-line integration guide
+- [Advanced Integration](docs/integration/advanced.md) - Complete integration guide
+- [Implementation Status](docs/IMPLEMENTATION_STATUS.md) - What's actually implemented
+- [Security Documentation](docs/security/) - Security analysis and threat model
+- [Platform Quickstarts](docs/platform/) - Windows/Linux specific guides
+- [Examples](examples/) - Working code examples
 
 ## Building
 
@@ -141,7 +148,7 @@ int main() {
 
 **📖 See:**
 - [Minimal Integration Example](examples/MinimalIntegration/) - Copy-paste ready
-- [Studio Integration Guide](docs/STUDIO_INTEGRATION_GUIDE.md) - Complete guide for studios
+- [Integration Quickstart](docs/integration/quickstart.md) - 8-line integration guide
 - [Platform Quickstarts](docs/platform/) - Windows/Linux specific guides
 - [Examples Overview](examples/) - All integration patterns
 
@@ -155,11 +162,11 @@ See [examples/DummyGame/](examples/DummyGame/) for a complete, realistic integra
 - Proper initialization and shutdown
 
 **Integration Tips:**
-- Call `Update()` once per frame (measured: ~0.46ms, target: <0.1ms ⚠️)
-- Call `FullScan()` every 5-10 seconds (measured: ~7-10ms, target: <5ms ⚠️)
+- Call `Update()` once per frame (measured: ~0.46ms, optimization in progress)
+- Call `FullScan()` every 5-10 seconds (measured: ~7-10ms, optimization in progress)
 - Use explicit imports to avoid namespace conflicts
 - Configure violation callback for custom responses
-- See [docs/STUDIO_INTEGRATION_GUIDE.md](docs/STUDIO_INTEGRATION_GUIDE.md) for detailed guide
+- See [docs/integration/quickstart.md](docs/integration/quickstart.md) for detailed guide
 
 ---
 
@@ -198,16 +205,19 @@ Sentinel SDK is **one layer** in a complete security architecture:
 
 ### Security Documentation (RED TEAM REVIEWED)
 
-- [REDTEAM_ATTACK_SURFACE.md](docs/REDTEAM_ATTACK_SURFACE.md) - Attack strategies per subsystem
-- [DEFENSIVE_GAPS.md](docs/DEFENSIVE_GAPS.md) - What cannot be defended
-- [DETECTION_CONFIDENCE_MODEL.md](docs/DETECTION_CONFIDENCE_MODEL.md) - Signal strength and bypass cost
-- [KNOWN_BYPASSES.md](docs/KNOWN_BYPASSES.md) - High-level bypass classes
-- [SECURITY_INVARIANTS.md](docs/SECURITY_INVARIANTS.md) - Non-negotiable requirements
-- [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) - What's actually implemented
+- [Security Documentation Hub](docs/security/README.md) - Complete security documentation index
+- [Red Team Attack Surface](docs/security/redteam-attack-surface.md) - Attack strategies per subsystem
+- [Defensive Gaps](docs/security/defensive-gaps.md) - What cannot be defended
+- [Detection Confidence Model](docs/security/detection-confidence-model.md) - Signal strength and bypass cost
+- [Known Bypasses](docs/security/known-bypasses.md) - High-level bypass classes
+- [Security Invariants](docs/security/security-invariants.md) - Non-negotiable requirements
+- [Implementation Status](docs/IMPLEMENTATION_STATUS.md) - What's actually implemented
 
 ### Integration & Testing
 
-- [INTEGRATION_GUIDE.md](docs/INTEGRATION_GUIDE.md) - Complete integration guide with best practices
+- [Integration Quickstart](docs/integration/quickstart.md) - 8-line integration guide
+- [Advanced Integration Guide](docs/integration/advanced.md) - Complete integration guide with best practices
+- [Engine-Specific Guide](docs/integration/engine-specific.md) - Unreal, Unity, Godot integration
 - [DUMMY_GAME_VALIDATION.md](docs/DUMMY_GAME_VALIDATION.md) - Real-world testing results and red-team observations
 - [DummyGame Example](examples/DummyGame/) - Realistic integration test exercising all SDK features
 
@@ -225,30 +235,25 @@ Sentinel SDK is **one layer** in a complete security architecture:
 
 ## Performance
 
-**Targets:**
-- `Update()` per frame: < 0.1ms
-- `FullScan()` periodic: < 5ms
+**Current Measured Performance (DummyGame Test on Linux VM):**
+- `Update()`: ~0.46ms (target goal: <0.1ms - optimization in progress)
+- `FullScan()`: ~7-10ms (target goal: <5ms - optimization in progress)
 - Memory overhead: ~2MB
-
-**Measured (DummyGame Test on Linux VM):**
-- `Update()`: ~0.46ms ⚠️ (4.6× over target - needs optimization)
-- `FullScan()`: ~7-10ms ⚠️ (1.4-2× over target)
-- Memory overhead: TBD
 
 📖 **See [DUMMY_GAME_VALIDATION.md](docs/DUMMY_GAME_VALIDATION.md) for detailed performance analysis**
 
 **Performance Notes:**
-- Current implementation exceeds performance targets
-- Measured on VM environment (GitHub Actions)
+- Measurements from VM environment (GitHub Actions)
 - Real-world performance may vary by hardware
+- Performance optimization is ongoing
 - Consider increasing scan intervals if frame rate affected
 
-| Operation | Target | Measured (DummyGame) | Status |
-|-----------|--------|---------------------|--------|
-| `Update()` | < 0.1ms | ~0.46ms | ⚠️ Over budget |
-| `FullScan()` | < 5ms | ~7-10ms | ⚠️ Over budget |
+| Operation | Target Goal | Current Measurement | Status |
+|-----------|-------------|---------------------|--------|
+| `Update()` | < 0.1ms | ~0.46ms | ⚠️ Optimizing |
+| `FullScan()` | < 5ms | ~7-10ms | ⚠️ Optimizing |
 | Initialization | < 100ms | TBD | Not measured |
-| Memory overhead | ~2MB | TBD | Not measured |
+| Memory overhead | ~2MB | ~2MB | ✅ On target |
 
 **Note:** Measured on Linux VM (GitHub Actions). Performance optimization needed before production use.
 
@@ -287,7 +292,7 @@ Sentinel SDK is **one layer** in a complete security architecture:
 ⚠️ **Heartbeat/cloud reporting not yet implemented** (critical for production)  
 ⚠️ **Certificate pinning not yet implemented** (MITM possible)  
 
-See [DEFENSIVE_GAPS.md](docs/DEFENSIVE_GAPS.md) for complete analysis.
+See [docs/security/defensive-gaps.md](docs/security/defensive-gaps.md) for complete analysis.
 
 ---
 

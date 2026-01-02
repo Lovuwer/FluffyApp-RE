@@ -135,7 +135,7 @@ cmake --build build --config Release
 ### AAA Game (Unreal/Unity/Custom Engine)
 
 **Recommended**: Engine plugin wrapper  
-**Example**: See [STUDIO_INTEGRATION_GUIDE.md](../docs/STUDIO_INTEGRATION_GUIDE.md) - Pattern 3
+**Example**: See [Integration Quickstart](../docs/integration/quickstart.md) - Pattern 3
 
 ```cpp
 // Plugin initialization
@@ -167,7 +167,7 @@ void Tick(float dt) {
 ### Online Multiplayer
 
 **Recommended**: Production integration with cloud reporting  
-**Example**: See [STUDIO_INTEGRATION_GUIDE.md](../docs/STUDIO_INTEGRATION_GUIDE.md) - Pattern 2
+**Example**: See [Integration Quickstart](../docs/integration/quickstart.md) - Pattern 2
 
 ```cpp
 config.cloud_endpoint = "https://api.yourgame.com/sentinel";
@@ -282,9 +282,9 @@ config.integrity_scan_interval_ms = 10000;  // 10 seconds
 ## Documentation
 
 - **Quick Start**: [MinimalIntegration/README.md](MinimalIntegration/README.md)
-- **Complete Guide**: [../docs/STUDIO_INTEGRATION_GUIDE.md](../docs/STUDIO_INTEGRATION_GUIDE.md)
+- **Complete Guide**: [../docs/integration/quickstart.md](../docs/integration/quickstart.md)
 - **API Reference**: [../docs/api-reference.md](../docs/api-reference.md)
-- **Integration Guide**: [../docs/INTEGRATION_GUIDE.md](../docs/INTEGRATION_GUIDE.md)
+- **Advanced Integration**: [../docs/integration/advanced.md](../docs/integration/advanced.md)
 
 ---
 

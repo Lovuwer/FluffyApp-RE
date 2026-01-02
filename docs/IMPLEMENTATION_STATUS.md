@@ -2,7 +2,7 @@
 
 **Classification:** Internal Engineering Reference  
 **Purpose:** Honest assessment of what's implemented vs. documented  
-**Last Updated:** 2025-01-29  
+**Last Updated:** 2026-01-02  
 **Based On:** Code review of `/src/SDK` and `/src/Core` directories
 
 ---
@@ -95,6 +95,41 @@ This document categorizes all security features by actual implementation status,
 - Pattern matching incomplete for all hooking libraries
 
 **Production Readiness:** ✅ **IMPLEMENTED** - Solid implementation with documented limitations
+
+---
+
+### CorrelationEngine (`src/SDK/src/Internal/CorrelationEngine.cpp`)
+
+**Status:** 🟡 **PARTIAL** (with known test failures)
+
+**What's Implemented:**
+- 🟡 Correlation score calculation with confidence weights
+- 🟡 Multi-signal correlation logic
+- 🟡 Enforcement threshold evaluation
+- 🟡 Cooling-off period tracking
+- 🟡 Sub-threshold telemetry
+
+**Known Issues:**
+- ⚠️ **7 test failures** - Segmentation faults in CorrelationEnhancementTest
+- ⚠️ Null pointer dereference in specific configuration paths
+- ⚠️ Crashes on `GetCorrelationScore()` with certain confidence weight combinations
+- ⚠️ Memory access violations in correlation state management
+
+**Test Failures:**
+1. `CorrelationEnhancementTest.NewConfidenceWeights` - Crashes on score retrieval
+2. `CorrelationEnhancementTest.EnforcementThreshold` - Crashes on ProcessViolation
+3. `CorrelationEnhancementTest.CoolingOffPeriod` - Crashes on state access
+4. `CorrelationEnhancementTest.SubThresholdTelemetry` - Crashes on violation processing
+5. `CorrelationEnhancementTest.MultiSignalCorrelation` - Crashes on correlation logic
+6. `CorrelationEnhancementTest.ScoreDecay` - Crashes on score calculation
+7. `CorrelationEnhancementTest.PersistedState` - Crashes on state persistence
+
+**What's Missing:**
+- ❌ Null pointer checks in initialization
+- ❌ Proper ViolationEvent module_name handling
+- ❌ Defensive programming for edge cases
+
+**Production Readiness:** 🔴 **NOT PRODUCTION-READY** - Critical test failures must be fixed
 
 ---
 
@@ -280,7 +315,10 @@ This document categorizes all security features by actual implementation status,
 - ❌ Perfect forward secrecy (ECDHE)
 - ❌ Certificate pinning implementation
 
-**Production Readiness:** ✅ **IMPLEMENTED** - Solid crypto primitives, missing key management
+**Security Considerations:**
+- ⚠️ **AESCipher TestAccess Class**: The `TestAccess` friend class in AESCipher provides test access to internal state. While necessary for testing, this could be a security concern if exposed in production builds. Ensure test code is properly excluded from release builds.
+
+**Production Readiness:** ✅ **IMPLEMENTED** - Solid crypto primitives, missing key management. Exercise caution with TestAccess in production builds.
 
 ---
 
@@ -326,42 +364,72 @@ This document categorizes all security features by actual implementation status,
 
 ## Network & Cloud
 
-### Heartbeat (`src/SDK/src/Core/Heartbeat.cpp`)
+### Heartbeat - Core Implementation (`src/Core/Network/Heartbeat.cpp`)
 
-**Status:** 🔴 **STUB**
+**Status:** ✅ **IMPLEMENTED** (full implementation)
 
 **What's Implemented:**
-- 🔴 Stub only
+- ✅ Heartbeat thread with configurable intervals
+- ✅ Session management with sequence numbers
+- ✅ Cloud endpoint communication
+- ✅ Request signing integration
+- ✅ Jitter for timing randomization
+- ✅ Success/failure tracking
+- ✅ Graceful shutdown and cleanup
+- ✅ Thread-safe operations with mutex protection
+- ✅ Condition variable for efficient waiting
 
-**What's Missing:**
-- ❌ Cloud endpoint configuration
-- ❌ Heartbeat thread
-- ❌ Violation reporting
-- ❌ Threat intelligence sync
-- ❌ Session token management
-
-**Production Readiness:** ❌ **NOT IMPLEMENTED**
-
-**Note:** All cloud functionality is stubbed
+**Production Readiness:** ✅ **IMPLEMENTED** - Core library has full heartbeat implementation
 
 ---
 
-### HTTP Client (`src/Core/Network/HttpClient.cpp`)
+### Heartbeat - SDK Integration (`src/SDK/src/Core/Heartbeat.cpp`)
 
-**Status:** 🟡 **PARTIAL**
+**Status:** 🔴 **STUB** (pending integration)
 
 **What's Implemented:**
-- 🟡 Basic HTTP client structure
-- 🟡 TLS support via OpenSSL/WinHTTP
+- 🔴 Stub only - placeholder file
 
 **What's Missing:**
-- ❌ Certificate pinning
-- ❌ Request signing (HMAC)
+- ❌ SDK wrapper for Core::Network::Heartbeat
+- ❌ Configuration bridging between SDK and Core
+- ❌ Violation reporting integration
+- ❌ Threat intelligence sync
+
+**Note:** Core library (`src/Core/Network/Heartbeat.cpp`) has full implementation. SDK needs integration layer to expose this functionality to SDK users.
+
+**Production Readiness:** 🔴 **SDK INTEGRATION PENDING** - Core is ready, SDK wrapper needed
+
+---
+
+### HTTP Client (`src/Core/Network/HttpClientImpl.cpp`)
+
+**Status:** ✅ **IMPLEMENTED** (with cURL)
+
+**What's Implemented:**
+- ✅ Full HTTP client using libcurl
+- ✅ TLS support via OpenSSL
+- ✅ Request/response handling
+- ✅ Timeout configuration
+- ✅ HTTP methods (GET, POST, PUT, DELETE, etc.)
+- ✅ Custom headers support
+- ✅ Response body and header callbacks
+- ✅ Thread-safe global initialization
+- ✅ TLS version configuration
+- ✅ TLS verification options
+
+**Implementation Notes:**
+- **With cURL** (`SENTINEL_USE_CURL` defined): Full production implementation
+- **Without cURL**: Falls back to basic stub implementation
+
+**What's Missing:**
+- ❌ Certificate pinning (stub exists, not fully implemented)
+- ❌ Request signing integration (RequestSigner exists separately)
 - ❌ Replay protection (nonce/timestamp)
 - ❌ Connection pooling
-- ❌ Timeout configuration
+- ❌ Advanced retry logic
 
-**Production Readiness:** 🟡 **PARTIAL** - Basic functionality, missing security features
+**Production Readiness:** ✅ **IMPLEMENTED WITH CURL** - Production-ready HTTP client when compiled with cURL support. Missing security features (certificate pinning) for hardened production use.
 
 ---
 
@@ -379,6 +447,32 @@ This document categorizes all security features by actual implementation status,
 - ❌ Certificate rotation handling
 
 **Production Readiness:** ❌ **NOT IMPLEMENTED**
+
+---
+
+### CloudReporter (`src/SDK/src/Network/CloudReporter.cpp`)
+
+**Status:** 🟡 **PARTIAL** (~80% implemented)
+
+**What's Implemented:**
+- ✅ Thread-safe violation queuing
+- ✅ Batch reporting with configurable batch size
+- ✅ Offline buffering to encrypted storage
+- ✅ Retry logic with exponential backoff
+- ✅ Server directive polling (Task 24)
+- ✅ HTTP client integration
+- ✅ Request signing integration
+- ✅ JSON serialization of violations
+- ✅ Sequence number tracking
+- ✅ Custom event reporting
+- ✅ Graceful shutdown with flush
+
+**What's Missing:**
+- ❌ Certificate pinning (depends on CertPinner)
+- ❌ Advanced compression for large batches
+- ❌ Full error recovery testing
+
+**Production Readiness:** 🟡 **PARTIAL** - ~80% implemented, functional for reporting, missing certificate pinning for hardened production use
 
 ---
 
@@ -454,6 +548,7 @@ This document categorizes all security features by actual implementation status,
 |-----------|--------|------------------|-------|
 | AntiDebug | ✅ Implemented | 🟡 Partial | High FP in VMs, needs tuning |
 | AntiHook | ✅ Implemented | ✅ Yes | TOCTOU in periodic scan, use inline macro for critical |
+| CorrelationEngine | 🟡 Partial | 🔴 No | **7 test failures - segfaults, not production-ready** |
 | Integrity Check | ✅ Implemented | 🟡 Partial | Basic hashing only, no signing |
 | Injection Detection | ✅ Implemented | ✅ Yes | Needs JIT whitelist configuration |
 | Speed Hack (Client) | 🟡 Partial | 🔴 No | **Requires server validation** |
@@ -471,11 +566,13 @@ This document categorizes all security features by actual implementation status,
 
 | Subsystem | Status | Production Ready | Notes |
 |-----------|--------|------------------|-------|
-| Cryptography | ✅ Implemented | ✅ Yes | Missing key management |
+| Cryptography | ✅ Implemented | ✅ Yes | AESCipher TestAccess security concern, missing key management |
 | Safe Memory | ✅ Implemented | ✅ Yes | Production-ready |
 | JIT Signatures | ✅ Implemented | 🟡 Partial | Database incomplete |
-| Heartbeat | 🔴 Stub | ❌ No | Not implemented |
-| HTTP Client | 🟡 Partial | 🟡 Partial | Missing security features |
+| Heartbeat (Core) | ✅ Implemented | ✅ Yes | Core library fully implemented |
+| Heartbeat (SDK) | 🔴 Stub | ❌ No | SDK integration pending |
+| CloudReporter | 🟡 Partial (~80%) | 🟡 Partial | Functional, missing cert pinning |
+| HTTP Client | ✅ Implemented | ✅ Yes (with cURL) | Full implementation with cURL, missing cert pinning |
 | Cert Pinning | 🔴 Stub | ❌ No | Not implemented |
 
 ---
@@ -484,10 +581,10 @@ This document categorizes all security features by actual implementation status,
 
 ### High Priority (Production Blockers)
 
-1. **Implement Server-Side Speed Validation** - Client-side is insufficient
-2. **Complete Certificate Pinning** - Required for secure cloud communication
-3. **Implement Request Signing & Replay Protection** - Prevent forgery
-4. **Complete Heartbeat System** - Required for cloud reporting
+1. **Fix CorrelationEngine Test Failures** - 7 segfaults must be resolved before production
+2. **Complete SDK Heartbeat Integration** - Core is implemented, SDK wrapper needed
+3. **Implement Server-Side Speed Validation** - Client-side is insufficient
+4. **Complete Certificate Pinning** - Required for secure cloud communication
 5. **Tune JIT Signature Database** - Reduce false positives with game engines
 
 ### Medium Priority (Security Hardening)
@@ -524,8 +621,9 @@ A subsystem is production-ready when:
 **Current Overall Status: 🟡 PARTIAL PRODUCTION READINESS**
 
 **Blocking Issues:**
-1. Speed hack detection requires server validation
-2. Cloud/Heartbeat system not implemented
-3. Network security features incomplete
+1. **CorrelationEngine has 7 test failures** - Segmentation faults must be fixed
+2. Speed hack detection requires server validation
+3. SDK Heartbeat integration pending (Core implemented)
+4. Network security features incomplete (certificate pinning)
 
-**Recommended Action:** Complete server-side validation and network security before production deployment.
+**Recommended Action:** Fix CorrelationEngine crashes, complete SDK Heartbeat integration, and implement certificate pinning before production deployment.
