@@ -117,6 +117,13 @@ Testing and validation documentation:
 - [Troubleshooting](troubleshooting.md) - Common issues and solutions
 - [Repository Audit](repo_audit/) - Internal code audit results
 
+### Project Status & History
+Understanding project status and history:
+- [Implementation Status](IMPLEMENTATION_STATUS.md) - Current implementation status
+- [Changelog](status/changelog.md) - Version history and changes
+- [Release Policy](operations/releases.md) - Versioning and release process
+- [Internal Archive](internal/task-archive/) - Historical task documentation
+
 ### Roadmap & Future
 Future development plans:
 - [Phase 3: Cortex GUI](phase3-cortex-gui.md) - Future dashboard plans
@@ -127,8 +134,10 @@ Future development plans:
 
 ### Most Common Tasks
 - **Integrate SDK**: Start with [Studio Integration Guide](STUDIO_INTEGRATION_GUIDE.md)
-- **Understand Security**: Read [Red Team Attack Surface](REDTEAM_ATTACK_SURFACE.md)
+- **Understand Security**: Read [Security Documentation Hub](security/README.md)
 - **Check Status**: See [Implementation Status](IMPLEMENTATION_STATUS.md)
+- **Review Changes**: See [Changelog](status/changelog.md)
+- **Understand Versioning**: See [Release Policy](operations/releases.md)
 - **Configure Backend**: Start with [Operator Dashboard](OPERATOR_DASHBOARD_SPECIFICATION.md)
 - **API Reference**: See [api-reference.md](api-reference.md)
 
@@ -145,9 +154,13 @@ Future development plans:
 Documentation is organized into subdirectories by topic:
 - `architecture/` - System architecture and design
 - `platform/` - Platform-specific guides
+- `security/` - Security documentation hub
+- `operations/` - Operations and deployment documentation
+- `status/` - Project status and changelog
 - `telemetry/` - Telemetry schemas and guides
 - `examples/` - Code examples
 - `repo_audit/` - Internal audit documentation
+- `internal/` - Internal documentation and archives
 
 ---
 
