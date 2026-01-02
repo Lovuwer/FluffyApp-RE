@@ -418,6 +418,31 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 
 ---
 
+## Commercial Offering
+
+Sentinel is available as a commercial anti-cheat solution with flexible pricing options:
+
+- **SaaS Platform**: Per-user monthly subscription starting at $0.08/user
+- **Studio Licensing**: Perpetual licenses starting at $25,000
+- **Free Tier**: Up to 1,000 monthly active users at no cost
+
+**Key Features:**
+- 8-line integration (production-ready in 4 hours)
+- Self-hosted deployment options
+- 24/7 enterprise support available
+- Transparent pricing and limitations
+
+📖 **Commercial Documentation:**
+- [Commercial Offering Overview](docs/COMMERCIAL_OFFERING.md) - Pricing, packaging, and SLAs
+- [Pricing & Packaging](docs/PRICING_PACKAGING.md) - Detailed pricing tiers and features
+- [Support Tiers](docs/SUPPORT_TIERS.md) - Support levels and response times
+- [Data Privacy Policy](docs/DATA_PRIVACY_POLICY.md) - Privacy commitments and data handling
+- [Competitive Comparison](docs/COMPETITIVE_COMPARISON.md) - How Sentinel compares to alternatives
+
+**Contact Sales:** sales@sentinel.example.com *(placeholder)*
+
+---
+
 ## License
 
 Copyright © 2025 Sentinel Security. All rights reserved.

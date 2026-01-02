@@ -1,0 +1,300 @@
+Sentinel Proprietary Software License
+
+Copyright (c) 2025-2026 Sentinel Security. All rights reserved.
+
+================================================================================
+IMPORTANT - READ CAREFULLY
+================================================================================
+
+This Sentinel Proprietary Software License Agreement ("Agreement") is a legal
+agreement between you (either an individual or a single entity) ("Licensee")
+and Sentinel Security ("Licensor") for the Sentinel SDK and related software
+components, documentation, and materials (collectively, the "Software").
+
+BY DOWNLOADING, INSTALLING, COPYING, OR OTHERWISE USING THE SOFTWARE, YOU AGREE
+TO BE BOUND BY THE TERMS OF THIS AGREEMENT. IF YOU DO NOT AGREE TO THE TERMS OF
+THIS AGREEMENT, DO NOT INSTALL OR USE THE SOFTWARE.
+
+================================================================================
+1. LICENSE GRANT
+================================================================================
+
+Subject to the terms and conditions of this Agreement and payment of applicable
+fees, Licensor grants Licensee a limited, non-exclusive, non-transferable,
+revocable license to:
+
+(a) Integrate the Software into Licensee's game applications ("Integrated
+    Product")
+(b) Distribute the Software as an embedded component of the Integrated Product
+(c) Access and use the Sentinel Cloud platform (SaaS customers)
+(d) Access documentation and support materials
+
+The scope and duration of this license depends on the license type acquired:
+
+- SaaS Subscription: License valid during active subscription term
+- Perpetual Studio License: License valid perpetually with active support term
+- Community Tier: License valid for non-commercial use up to 1,000 MAU
+
+================================================================================
+2. LICENSE RESTRICTIONS
+================================================================================
+
+Licensee shall NOT:
+
+(a) Reverse engineer, decompile, disassemble, or attempt to derive source code
+    from the Software
+(b) Remove, modify, or obscure any copyright, trademark, or other proprietary
+    notices contained in the Software
+(c) Distribute, sublicense, rent, lease, or lend the Software as a standalone
+    product separate from the Integrated Product
+(d) Use the Software to develop competing anti-cheat or security products
+(e) Use the Software for benchmarking or competitive analysis purposes
+(f) Circumvent, disable, or tamper with any licensing or technical protection
+    measures in the Software
+(g) Distribute the Software's headers, libraries, or documentation separately
+    from the Integrated Product
+(h) Use the Software in any manner that violates applicable laws or regulations
+
+================================================================================
+3. INTELLECTUAL PROPERTY
+================================================================================
+
+3.1 Ownership
+The Software is licensed, not sold. Licensor retains all right, title, and
+interest in and to the Software, including all intellectual property rights.
+
+3.2 Feedback
+Any feedback, suggestions, or ideas provided by Licensee regarding the Software
+may be used by Licensor without obligation or compensation to Licensee.
+
+3.3 Trademarks
+Licensee may not use Licensor's trademarks, trade names, or logos without prior
+written consent, except as required to comply with Section 1(b).
+
+================================================================================
+4. DATA COLLECTION AND PRIVACY
+================================================================================
+
+4.1 Telemetry
+The Software collects telemetry data as described in the Data Privacy Policy
+(docs/DATA_PRIVACY_POLICY.md), including:
+- Detection events and security violations
+- System information (OS, hardware specs)
+- Performance metrics
+- Threat intelligence
+
+4.2 No Personal Information
+The Software does NOT collect personal information of end users (players) such
+as names, email addresses, or financial information.
+
+4.3 Data Rights
+Licensee retains ownership of all data collected from their Integrated Product.
+For SaaS customers, data is stored and processed as described in the Data
+Privacy Policy. For self-hosted deployments, Licensee has complete control.
+
+4.4 Privacy Compliance
+Licensee is responsible for:
+- Disclosing data collection to end users in their privacy policy
+- Obtaining necessary consents under applicable laws (GDPR, CCPA, COPPA, etc.)
+- Complying with all data protection regulations
+
+================================================================================
+5. WARRANTY DISCLAIMER
+================================================================================
+
+THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+
+LICENSOR DOES NOT WARRANT THAT:
+(a) The Software will detect or prevent all cheating or security threats
+(b) The Software will operate uninterrupted or error-free
+(c) All defects in the Software will be corrected
+(d) The Software will meet Licensee's specific requirements
+
+LICENSOR EXPLICITLY DISCLAIMS ANY WARRANTY THAT THE SOFTWARE WILL PREVENT
+KERNEL-MODE ATTACKS, HYPERVISOR-BASED CHEATS, OR SOPHISTICATED ADVERSARIES.
+SEE docs/DEFENSIVE_GAPS.md FOR DOCUMENTED LIMITATIONS.
+
+================================================================================
+6. LIMITATION OF LIABILITY
+================================================================================
+
+6.1 Maximum Liability
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, LICENSOR'S TOTAL LIABILITY UNDER THIS
+AGREEMENT SHALL NOT EXCEED THE FEES PAID BY LICENSEE IN THE TWELVE (12) MONTHS
+PRECEDING THE CLAIM.
+
+6.2 Excluded Damages
+IN NO EVENT SHALL LICENSOR BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL,
+CONSEQUENTIAL, OR PUNITIVE DAMAGES, INCLUDING BUT NOT LIMITED TO:
+- Loss of profits or revenue
+- Loss of data or data corruption
+- Cost of procuring substitute software
+- Damages arising from cheating in Licensee's game
+- Damages from third-party cheat development
+- Reputational harm or player complaints
+
+6.3 Security Limitations
+LICENSOR SHALL NOT BE LIABLE FOR DAMAGES RESULTING FROM:
+- Bypass of user-mode detection by kernel-mode cheats
+- False positives or false negatives in detection
+- Sophisticated attacks beyond documented capabilities
+- Cheating that occurs despite Software deployment
+
+================================================================================
+7. INDEMNIFICATION
+================================================================================
+
+7.1 By Licensor
+Licensor shall indemnify Licensee against third-party claims that the Software
+infringes intellectual property rights, provided Licensee:
+(a) Promptly notifies Licensor of the claim
+(b) Grants Licensor sole control of defense and settlement
+(c) Provides reasonable assistance in the defense
+
+7.2 By Licensee
+Licensee shall indemnify Licensor against third-party claims arising from:
+(a) Licensee's use of the Software in violation of this Agreement
+(b) Licensee's Integrated Product (excluding the Software)
+(c) Licensee's violation of applicable laws or regulations
+(d) End user complaints or damages related to cheating in Licensee's game
+
+================================================================================
+8. TERM AND TERMINATION
+================================================================================
+
+8.1 Term
+This Agreement is effective upon acceptance and continues until terminated.
+
+For SaaS Subscriptions:
+- Term is month-to-month or annual as selected
+- Auto-renews unless cancelled 30 days before renewal
+
+For Perpetual Studio Licenses:
+- License is perpetual
+- Support term is annual and must be renewed
+
+8.2 Termination for Convenience
+Licensee may terminate this Agreement at any time by:
+(a) Ceasing all use of the Software
+(b) Destroying all copies of the Software
+(c) Notifying Licensor of termination
+
+SaaS subscriptions may be cancelled with 30 days notice.
+
+8.3 Termination for Cause
+Licensor may terminate this Agreement immediately if Licensee:
+(a) Breaches any material term of this Agreement
+(b) Fails to pay fees when due (30-day cure period)
+(c) Engages in reverse engineering or prohibited activities
+(d) Uses the Software for illegal purposes
+
+8.4 Effect of Termination
+Upon termination:
+(a) All licenses granted herein immediately terminate
+(b) Licensee must cease all use of the Software
+(c) Licensee must destroy all copies of the Software
+(d) Perpetual license holders retain rights if termination not for cause
+(e) Sections 2, 3, 5, 6, 7, and 9 survive termination
+
+================================================================================
+9. GENERAL PROVISIONS
+================================================================================
+
+9.1 Governing Law
+This Agreement shall be governed by the laws of the State of California, USA,
+without regard to conflicts of law principles.
+
+9.2 Dispute Resolution
+Any disputes arising under this Agreement shall be resolved through:
+(a) Good faith negotiation (30 days)
+(b) Mediation if negotiation fails (60 days)
+(c) Binding arbitration under AAA Commercial Arbitration Rules
+(d) Arbitration shall be conducted in San Francisco, California
+
+9.3 Entire Agreement
+This Agreement, together with:
+- Data Privacy Policy (docs/DATA_PRIVACY_POLICY.md)
+- Support Tiers (docs/SUPPORT_TIERS.md)
+- Pricing and Packaging (docs/PRICING_PACKAGING.md)
+
+constitutes the entire agreement between the parties and supersedes all prior
+agreements, whether written or oral, relating to the Software.
+
+9.4 Amendments
+Licensor may modify this Agreement with 30 days notice to Licensee. Continued
+use of the Software after notice period constitutes acceptance of modifications.
+
+9.5 Severability
+If any provision of this Agreement is held invalid or unenforceable, the
+remaining provisions shall remain in full force and effect.
+
+9.6 Waiver
+Failure to enforce any provision of this Agreement shall not constitute a
+waiver of that or any other provision.
+
+9.7 Assignment
+Licensee may not assign this Agreement without prior written consent from
+Licensor. Licensor may assign this Agreement without consent.
+
+9.8 Export Control
+Licensee agrees to comply with all applicable export control laws and
+regulations. The Software may not be exported to countries subject to U.S.
+trade embargoes without proper authorization.
+
+9.9 Government Use
+If Licensee is a U.S. Government agency, the Software is provided with
+"Restricted Rights" as defined in FAR 52.227-14 and DFARS 227.7202.
+
+================================================================================
+10. CONTACT INFORMATION
+================================================================================
+
+Licensor: Sentinel Security
+Website: https://github.com/Lovuwer/Sentiel-RE
+Email: legal@sentinel.example.com (placeholder)
+
+For license inquiries: sales@sentinel.example.com (placeholder)
+For support: support@sentinel.example.com (placeholder)
+For security issues: security@sentinel.example.com (placeholder)
+
+================================================================================
+ACKNOWLEDGMENT
+================================================================================
+
+BY USING THE SOFTWARE, YOU ACKNOWLEDGE THAT YOU HAVE READ THIS AGREEMENT,
+UNDERSTAND IT, AND AGREE TO BE BOUND BY ITS TERMS AND CONDITIONS.
+
+================================================================================
+LICENSE TYPES
+================================================================================
+
+This license covers:
+
+1. Community Tier (Free)
+   - Up to 1,000 monthly active users
+   - Non-commercial or small commercial use
+   - Community support only
+   - No SLA guarantees
+
+2. Professional SaaS Subscription
+   - Per-user monthly billing
+   - Professional support with SLA
+   - Cloud-hosted platform
+
+3. Enterprise SaaS Subscription
+   - Custom pricing
+   - Enterprise support with enhanced SLA
+   - Self-hosted deployment options
+
+4. Perpetual Studio License
+   - One-time license fee
+   - Unlimited users
+   - Requires annual support subscription
+
+See docs/PRICING_PACKAGING.md for detailed pricing and feature comparison.
+
+================================================================================
+END OF LICENSE
+================================================================================
