@@ -433,6 +433,7 @@ struct Configuration {
         config.report_interval_ms = 30000;
         config.directive_poll_interval_ms = 5000;  // Task 24: Poll every 5 seconds
         config.debug_mode = false;
+        config.cache_dir = nullptr;  // Task 25: Null means use default
         return config;
     }
 };

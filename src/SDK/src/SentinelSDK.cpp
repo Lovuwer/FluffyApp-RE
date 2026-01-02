@@ -693,7 +693,7 @@ SENTINEL_API ErrorCode SENTINEL_CALL Initialize(const Configuration* config) {
     }
     
     // Task 25: Initialize dynamic signature update system
-    SENTINEL_LOG_DEBUG("Initializing Signature manager");
+    SENTINEL_LOG_DEBUG("Initializing signature manager");
     g_context->signature_manager = std::make_shared<SignatureManager>();
     
     // Create cache directory for signatures
@@ -702,9 +702,11 @@ SENTINEL_API ErrorCode SENTINEL_CALL Initialize(const Configuration* config) {
         cache_dir = config->cache_dir;
     }
     
-    // TODO: Load actual RSA public key for signature verification
-    // For now, use a placeholder key that will be replaced with actual key
-    ByteBuffer placeholder_key = {0x01, 0x02, 0x03, 0x04};  // Placeholder
+    // TODO: Load actual RSA public key for signature verification from secure storage
+    // SECURITY WARNING: This placeholder key MUST be replaced with production key
+    // The key should be embedded in the binary or loaded from a secure configuration
+    // For now, signature verification is disabled until proper key is configured
+    ByteBuffer placeholder_key = {0x01, 0x02, 0x03, 0x04};  // PLACEHOLDER - REPLACE IN PRODUCTION
     
     auto sig_init_result = g_context->signature_manager->initialize(cache_dir, placeholder_key);
     if (sig_init_result.isFailure()) {
@@ -715,7 +717,7 @@ SENTINEL_API ErrorCode SENTINEL_CALL Initialize(const Configuration* config) {
         
         // Initialize update client if cloud endpoint is provided
         if (config->cloud_endpoint && strlen(config->cloud_endpoint) > 0) {
-            SENTINEL_LOG_DEBUG("Initializing Update client");
+            SENTINEL_LOG_DEBUG("Initializing update client");
             g_context->update_client = std::make_unique<UpdateClient>();
             
             UpdateClientConfig update_config;
@@ -734,9 +736,15 @@ SENTINEL_API ErrorCode SENTINEL_CALL Initialize(const Configuration* config) {
             
             if (update_init_result.isSuccess()) {
                 // Set update callback to track version
+                // Note: Callback is called from update client thread - must be thread-safe
                 g_context->update_client->setProgressCallback(
                     [](UpdateStatus status, const std::string& message) {
-                        if (status == UpdateStatus::Success && g_context) {
+                        // Access g_context with proper null check to avoid use-after-free
+                        if (!g_context || !g_context->initialized.load()) {
+                            return;
+                        }
+                        
+                        if (status == UpdateStatus::Success) {
                             auto stats = g_context->signature_manager->getStatistics();
                             g_context->current_signature_version = stats.current_version;
                             SENTINEL_LOG_INFO_F("Signature update successful - version %u", 
