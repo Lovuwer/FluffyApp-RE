@@ -13,6 +13,7 @@
 #include <Sentinel/Core/ServerDirective.hpp>
 #include <Sentinel/Core/RequestSigner.hpp>
 #include <Sentinel/Core/Crypto.hpp>
+#include <Sentinel/Core/HttpClient.hpp>  // Task 24: For HttpMethod enum
 #include <nlohmann/json.hpp>
 #include <sstream>
 #include <cstring>
@@ -41,38 +42,33 @@ public:
     Result<bool> validate(const ServerDirective& directive) {
         // Check 1: Session ID must match
         if (directive.session_id != session_id_) {
-            return Err<ErrorCode>(ErrorCode::AuthenticationFailed,
-                "Directive session ID does not match current session");
+            return ErrorCode::AuthenticationFailed;
         }
         
         // Check 2: Timestamp must be within tolerance
         if (!directive.isTimestampValid(60)) {
-            return Err<ErrorCode>(ErrorCode::AuthenticationFailed,
-                "Directive timestamp outside valid window");
+            return ErrorCode::AuthenticationFailed;
         }
         
         // Check 3: Directive must not be expired
         if (directive.isExpired()) {
-            return Err<ErrorCode>(ErrorCode::AuthenticationFailed,
-                "Directive has expired");
+            return ErrorCode::AuthenticationFailed;
         }
         
         // Check 4: Sequence must be higher than last seen (prevents replay)
         if (directive.sequence <= last_sequence_) {
-            return Err<ErrorCode>(ErrorCode::ReplayDetected,
-                "Directive sequence number is not monotonically increasing");
+            return ErrorCode::AuthenticationFailed;  // Replay attack
         }
         
         // Check 5: Verify HMAC signature
         if (!verifySignature(directive)) {
-            return Err<ErrorCode>(ErrorCode::SignatureMismatch,
-                "Directive HMAC signature validation failed");
+            return ErrorCode::AuthenticationFailed;  // Signature mismatch
         }
         
         // All checks passed - update sequence tracker
         last_sequence_ = directive.sequence;
         
-        return Ok(true);
+        return true;
     }
     
     uint64_t getLastSequence() const {
@@ -193,11 +189,10 @@ Result<ServerDirective> parseDirective(const std::string& json_str) {
         directive.message = j.value("message", "");
         directive.signature = j.value("signature", "");
         
-        return Ok(directive);
+        return directive;
         
-    } catch (const json::exception& e) {
-        return Err<ErrorCode>(ErrorCode::ConfigurationParseError,
-            std::string("Failed to parse directive JSON: ") + e.what());
+    } catch (const json::exception&) {
+        return ErrorCode::JsonParseFailed;
     }
 }
 

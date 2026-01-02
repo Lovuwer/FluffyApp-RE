@@ -19,6 +19,7 @@
 #include "Internal/IntegrityValidator.hpp"  // Task 08: Memory integrity self-validation
 #include "Internal/TimingRandomizer.hpp"  // Task 22: Runtime behavior variation
 #include "Sentinel/Core/Logger.hpp"  // Comprehensive logging infrastructure
+#include <Sentinel/Core/ServerDirective.hpp>  // Task 24: Server directive protocol
 // Note: Internal/PerfTelemetry.hpp will be available after merge with main
 #include "Internal/PerfTelemetry.hpp"  // Task 17: Performance telemetry
 
@@ -1333,33 +1334,6 @@ SENTINEL_API const char* SENTINEL_CALL GetHardwareId() {
 
 // ==================== Server Directives (Task 24) ====================
 
-namespace {
-// Internal helper for directive callback
-void InternalDirectiveCallback(const Sentinel::Network::ServerDirective& directive, void* user_data) {
-    if (!g_context) return;
-    
-    // Store the directive
-    {
-        std::lock_guard<std::mutex> lock(g_context->directive_mutex);
-        
-        // Convert from Sentinel::Network::ServerDirective to SDK::ServerDirective
-        g_context->last_directive.type = static_cast<ServerDirectiveType>(directive.type);
-        g_context->last_directive.reason = static_cast<ServerDirectiveReason>(directive.reason);
-        g_context->last_directive.sequence = directive.sequence;
-        g_context->last_directive.timestamp = directive.timestamp;
-        g_context->last_directive.session_id = directive.session_id.c_str();
-        g_context->last_directive.message = directive.message.c_str();
-        g_context->has_directive = true;
-    }
-    
-    // Call user callback if registered
-    if (g_context->config.directive_callback) {
-        g_context->config.directive_callback(&g_context->last_directive, 
-                                            g_context->config.directive_user_data);
-    }
-}
-} // anonymous namespace
-
 SENTINEL_API ErrorCode SENTINEL_CALL PollServerDirectives() {
     if (!g_context || !g_context->initialized.load()) {
         return ErrorCode::NotInitialized;
@@ -1397,11 +1371,9 @@ SENTINEL_API void SENTINEL_CALL SetServerDirectiveCallback(
     g_context->config.directive_callback = callback;
     g_context->config.directive_user_data = user_data;
     
-    // Set internal callback in reporter if available
+    // Set callback in reporter if available
     if (g_context->reporter) {
-        // Note: We need to convert between SDK and Network directive types
-        // For now, we'll handle this in the CloudReporter implementation
-        // The reporter will call InternalDirectiveCallback which converts types
+        g_context->reporter->SetDirectiveCallback(callback, user_data);
     }
 }
 

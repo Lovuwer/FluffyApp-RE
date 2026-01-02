@@ -521,7 +521,8 @@ private:
     ServerDirectiveCallback directive_callback_ = nullptr;
     void* directive_user_data_ = nullptr;
     std::mutex directive_mutex_;
-    std::optional<ServerDirective> last_directive_;
+    std::optional<SDK::ServerDirective> last_directive_;
+    std::optional<Sentinel::Network::ServerDirective> last_network_directive_;  // Store full network directive for string lifetime
     std::unique_ptr<DirectiveValidator> directive_validator_;
     
 public:
@@ -553,7 +554,7 @@ public:
             }
             
             if (!response.value().isSuccess()) {
-                if (response.value().status_code == 404) {
+                if (response.value().statusCode == 404) {
                     // No directives available - this is normal
                     return ErrorCode::Success;
                 }
@@ -580,15 +581,31 @@ public:
                 }
             }
             
-            // Store directive and notify callback
+            // Convert Network::ServerDirective to SDK::ServerDirective for storage and callback
+            SDK::ServerDirective sdk_directive{};
+            sdk_directive.type = static_cast<SDK::ServerDirectiveType>(directive.type);
+            sdk_directive.reason = static_cast<SDK::ServerDirectiveReason>(directive.reason);
+            sdk_directive.sequence = directive.sequence;
+            sdk_directive.timestamp = directive.timestamp;
+            // Note: session_id and message are std::string in Network::ServerDirective
+            // but const char* in SDK::ServerDirective. We store the full directive
+            // and will return pointers to the stored strings.
+            
+            // Store directive
             {
                 std::lock_guard<std::mutex> lock(directive_mutex_);
-                last_directive_ = directive;
+                last_network_directive_ = directive;  // Store full directive
+                
+                // Update SDK directive to point to stored strings
+                sdk_directive.session_id = last_network_directive_->session_id.c_str();
+                sdk_directive.message = last_network_directive_->message.c_str();
+                
+                last_directive_ = sdk_directive;
             }
             
             // Call callback if registered
             if (directive_callback_) {
-                directive_callback_(directive, directive_user_data_);
+                directive_callback_(&sdk_directive, directive_user_data_);
             }
             
             return ErrorCode::Success;
