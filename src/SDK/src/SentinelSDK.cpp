@@ -103,6 +103,12 @@ struct SDKContext {
     // Task 22: Timing randomizer for runtime behavior variation
     std::unique_ptr<TimingRandomizer> timing_randomizer;
     
+    // Task 24: Server directive support
+    std::mutex directive_mutex;
+    ServerDirective last_directive{};
+    bool has_directive = false;
+    uint64_t last_directive_poll_time = 0;
+    
     // Session info
     std::string session_token;
     std::string hardware_id;
@@ -293,6 +299,16 @@ void HeartbeatThreadFunc() {
                 g_context->watchdog->Ping();
             }
             
+            // Task 24: Poll server for enforcement directives
+            uint64_t current_time = GetSecureTime();
+            if (g_context->reporter && !g_context->session_token.empty()) {
+                uint64_t time_since_last_poll = current_time - g_context->last_directive_poll_time;
+                if (time_since_last_poll >= g_context->config.directive_poll_interval_ms) {
+                    g_context->reporter->PollDirectives(g_context->session_token);
+                    g_context->last_directive_poll_time = current_time;
+                }
+            }
+            
             // Task 14: Check for runtime config updates periodically
             if (g_context->runtime_config && heartbeat_counter % 300 == 0) {  // Every 5 minutes at 1s intervals
                 g_context->runtime_config->CheckForUpdates();
@@ -460,7 +476,9 @@ void ReportViolation(const ViolationEvent& event) {
             g_context->config.violation_callback(&correlated_event, g_context->config.callback_user_data);
         }
         
-        // Only report to cloud if correlation engine approves
+        // Task 24: ONLY report to server - NO LOCAL ENFORCEMENT
+        // Server makes all enforcement decisions via ServerDirective callbacks
+        // Ban, Kick, Terminate actions are DEPRECATED - server issues directives instead
         if (should_report && g_context->reporter && 
             (static_cast<uint32_t>(g_context->config.default_action) & 
              static_cast<uint32_t>(ResponseAction::Report))) {
@@ -476,6 +494,7 @@ void ReportViolation(const ViolationEvent& event) {
             g_context->config.violation_callback(&event, g_context->config.callback_user_data);
         }
         
+        // Task 24: ONLY report to server - NO LOCAL ENFORCEMENT
         // Report to cloud if configured
         if (g_context->reporter && 
             (static_cast<uint32_t>(g_context->config.default_action) & 
@@ -484,6 +503,9 @@ void ReportViolation(const ViolationEvent& event) {
             g_context->stats.violations_reported++;
         }
     }
+    
+    // Task 24: Local enforcement actions (Ban, Kick, Terminate) are REMOVED
+    // All enforcement decisions come from server via PollServerDirectives()
 }
 
 } // anonymous namespace
@@ -1307,6 +1329,80 @@ SENTINEL_API const char* SENTINEL_CALL GetSessionToken() {
 SENTINEL_API const char* SENTINEL_CALL GetHardwareId() {
     if (!g_context) return "";
     return g_context->hardware_id.c_str();
+}
+
+// ==================== Server Directives (Task 24) ====================
+
+namespace {
+// Internal helper for directive callback
+void InternalDirectiveCallback(const Sentinel::Network::ServerDirective& directive, void* user_data) {
+    if (!g_context) return;
+    
+    // Store the directive
+    {
+        std::lock_guard<std::mutex> lock(g_context->directive_mutex);
+        
+        // Convert from Sentinel::Network::ServerDirective to SDK::ServerDirective
+        g_context->last_directive.type = static_cast<ServerDirectiveType>(directive.type);
+        g_context->last_directive.reason = static_cast<ServerDirectiveReason>(directive.reason);
+        g_context->last_directive.sequence = directive.sequence;
+        g_context->last_directive.timestamp = directive.timestamp;
+        g_context->last_directive.session_id = directive.session_id.c_str();
+        g_context->last_directive.message = directive.message.c_str();
+        g_context->has_directive = true;
+    }
+    
+    // Call user callback if registered
+    if (g_context->config.directive_callback) {
+        g_context->config.directive_callback(&g_context->last_directive, 
+                                            g_context->config.directive_user_data);
+    }
+}
+} // anonymous namespace
+
+SENTINEL_API ErrorCode SENTINEL_CALL PollServerDirectives() {
+    if (!g_context || !g_context->initialized.load()) {
+        return ErrorCode::NotInitialized;
+    }
+    
+    if (!g_context->reporter) {
+        return ErrorCode::InvalidConfiguration;
+    }
+    
+    return g_context->reporter->PollDirectives(g_context->session_token);
+}
+
+SENTINEL_API bool SENTINEL_CALL GetLastServerDirective(ServerDirective* out_directive) {
+    if (!g_context || !out_directive) {
+        return false;
+    }
+    
+    std::lock_guard<std::mutex> lock(g_context->directive_mutex);
+    
+    if (!g_context->has_directive) {
+        return false;
+    }
+    
+    *out_directive = g_context->last_directive;
+    return true;
+}
+
+SENTINEL_API void SENTINEL_CALL SetServerDirectiveCallback(
+    ServerDirectiveCallback callback,
+    void* user_data)
+{
+    if (!g_context) return;
+    
+    // Store callback in config
+    g_context->config.directive_callback = callback;
+    g_context->config.directive_user_data = user_data;
+    
+    // Set internal callback in reporter if available
+    if (g_context->reporter) {
+        // Note: We need to convert between SDK and Network directive types
+        // For now, we'll handle this in the CloudReporter implementation
+        // The reporter will call InternalDirectiveCallback which converts types
+    }
 }
 
 // ==================== Statistics ====================
