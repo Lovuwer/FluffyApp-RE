@@ -44,6 +44,11 @@ target_link_libraries(CoreTests
         gtest_main
 )
 
+target_compile_definitions(CoreTests
+    PRIVATE
+        SENTINEL_TESTING
+)
+
 # HTTP Client integration tests (separate executable)
 if(CURL_FOUND)
     add_executable(HttpClientTests
@@ -55,6 +60,11 @@ if(CURL_FOUND)
             SentinelCore
             gtest
             gtest_main
+    )
+    
+    target_compile_definitions(HttpClientTests
+        PRIVATE
+            SENTINEL_TESTING
     )
     
     # Request Signer tests (depends on crypto)
@@ -69,6 +79,11 @@ if(CURL_FOUND)
             gtest_main
     )
     
+    target_compile_definitions(RequestSignerTests
+        PRIVATE
+            SENTINEL_TESTING
+    )
+    
     # Request Signing Integration tests
     add_executable(RequestSigningIntegrationTests
         Core/test_request_signing_integration.cpp
@@ -81,6 +96,11 @@ if(CURL_FOUND)
             gtest_main
     )
     
+    target_compile_definitions(RequestSigningIntegrationTests
+        PRIVATE
+            SENTINEL_TESTING
+    )
+    
     # Heartbeat tests (depends on HttpClient and RequestSigner)
     add_executable(HeartbeatTests
         Core/test_heartbeat.cpp
@@ -91,6 +111,11 @@ if(CURL_FOUND)
             SentinelCore
             gtest
             gtest_main
+    )
+    
+    target_compile_definitions(HeartbeatTests
+        PRIVATE
+            SENTINEL_TESTING
     )
 endif()
 
@@ -143,6 +168,11 @@ target_link_libraries(SDKTests
         gtest_main
 )
 
+target_compile_definitions(SDKTests
+    PRIVATE
+        SENTINEL_TESTING
+)
+
 # Cortex component tests (built independently of Qt GUI)
 # PatchGenerator tests
 add_executable(PatchGeneratorTests
@@ -162,6 +192,11 @@ target_link_libraries(PatchGeneratorTests
         SentinelTestHarness
         gtest
         gtest_main
+)
+
+target_compile_definitions(PatchGeneratorTests
+    PRIVATE
+        SENTINEL_TESTING
 )
 
 # VMDeobfuscator tests
@@ -188,6 +223,11 @@ target_link_libraries(VMDeobfuscatorTests
         gtest_main
 )
 
+target_compile_definitions(VMDeobfuscatorTests
+    PRIVATE
+        SENTINEL_TESTING
+)
+
 # BinaryDiffer tests (existing, only if Cortex is being built)
 if(SENTINEL_BUILD_CORTEX)
     add_executable(CortexTests
@@ -206,6 +246,11 @@ if(SENTINEL_BUILD_CORTEX)
             capstone
             gtest
             gtest_main
+    )
+    
+    target_compile_definitions(CortexTests
+        PRIVATE
+            SENTINEL_TESTING
     )
 endif()
 
