@@ -223,6 +223,15 @@ SectionEnd
 - `Update()`: 0.3-0.5ms
 - `FullScan()`: 5-7ms
 
+**Measured on Linux VM (GitHub Actions)**:
+- `Update()`: 0.5-0.8ms (⚠️ VM overhead)
+- `FullScan()`: 7-10ms (⚠️ VM overhead)
+
+**Performance Notes**:
+- VM environments show higher overhead than bare metal
+- Actual hardware typically performs 30-50% better than VM metrics
+- Profile on your target platform for accurate measurements
+
 **Recommended**:
 - Call `Update()` once per frame
 - Call `FullScan()` every 5-10 seconds

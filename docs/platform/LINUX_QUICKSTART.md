@@ -291,21 +291,23 @@ parts:
 
 ## Docker
 
+**Note**: This example is for runtime-only (pre-built game). For building in Docker, install `libssl-dev`.
+
 ### Dockerfile
 
 ```dockerfile
 FROM ubuntu:22.04
 
-# Install dependencies
+# Install runtime dependencies only
 RUN apt-get update && apt-get install -y \
     libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy SDK
+# Copy SDK libraries
 COPY SentinelSDK-linux-x64/lib/* /usr/local/lib/
 RUN ldconfig
 
-# Copy game
+# Copy pre-built game
 COPY YourGame /app/
 WORKDIR /app
 

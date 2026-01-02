@@ -17,6 +17,8 @@
 
 #include <SentinelSDK.hpp>
 #include <iostream>
+#include <thread>
+#include <chrono>
 
 // Optional: Violation callback (can be nullptr for silent monitoring)
 bool SENTINEL_CALL OnViolation(const Sentinel::SDK::ViolationEvent* event, void*) {
@@ -44,14 +46,22 @@ int main() {
     
     // Line 6-7: Game loop
     bool game_running = true;
+    int frame_count = 0;
     while (game_running) {
         Sentinel::SDK::Update();  // Call once per frame
         
         // Your game code here
-        // ...
+        // UpdatePhysics();
+        // RenderFrame();
+        // ProcessInput();
         
-        // Exit after some condition
-        game_running = false;
+        // Exit after 10 frames for demo purposes
+        if (++frame_count >= 10) {
+            game_running = false;
+        }
+        
+        // Simulate frame delay (60 FPS)
+        std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
     
     // Line 8: Cleanup
