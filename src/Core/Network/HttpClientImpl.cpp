@@ -572,26 +572,35 @@ namespace {
     };
     
     bool parseUrl(const std::string& url, UrlComponents& out) {
-        // Convert to wide string
-        std::wstring wurl(url.begin(), url.end());
+        // Convert to wide string using proper Windows API
+        int wideLength = MultiByteToWideChar(CP_UTF8, 0, url.c_str(), -1, nullptr, 0);
+        if (wideLength <= 0) {
+            return false;
+        }
+        
+        std::wstring wurl(wideLength - 1, L'\0');  // -1 to exclude null terminator
+        if (MultiByteToWideChar(CP_UTF8, 0, url.c_str(), -1, &wurl[0], wideLength) == 0) {
+            return false;
+        }
         
         URL_COMPONENTS components = {};
         components.dwStructSize = sizeof(components);
         
-        wchar_t hostBuffer[256] = {};
-        wchar_t pathBuffer[2048] = {};
+        // Use dynamic buffers with larger sizes
+        std::vector<wchar_t> hostBuffer(1024);
+        std::vector<wchar_t> pathBuffer(4096);
         
-        components.lpszHostName = hostBuffer;
-        components.dwHostNameLength = 256;
-        components.lpszUrlPath = pathBuffer;
-        components.dwUrlPathLength = 2048;
+        components.lpszHostName = hostBuffer.data();
+        components.dwHostNameLength = static_cast<DWORD>(hostBuffer.size());
+        components.lpszUrlPath = pathBuffer.data();
+        components.dwUrlPathLength = static_cast<DWORD>(pathBuffer.size());
         
         if (!WinHttpCrackUrl(wurl.c_str(), 0, 0, &components)) {
             return false;
         }
         
-        out.host = hostBuffer;
-        out.path = pathBuffer[0] ? pathBuffer : L"/";
+        out.host = components.lpszHostName;
+        out.path = components.lpszUrlPath[0] ? components.lpszUrlPath : L"/";
         out.port = components.nPort;
         out.secure = (components.nScheme == INTERNET_SCHEME_HTTPS);
         
@@ -658,9 +667,15 @@ public:
         
         // Set timeouts
         DWORD timeout = static_cast<DWORD>(request.timeout.count());
-        WinHttpSetOption(httpRequest.get(), WINHTTP_OPTION_CONNECT_TIMEOUT, &timeout, sizeof(timeout));
-        WinHttpSetOption(httpRequest.get(), WINHTTP_OPTION_SEND_TIMEOUT, &timeout, sizeof(timeout));
-        WinHttpSetOption(httpRequest.get(), WINHTTP_OPTION_RECEIVE_TIMEOUT, &timeout, sizeof(timeout));
+        if (!WinHttpSetOption(httpRequest.get(), WINHTTP_OPTION_CONNECT_TIMEOUT, &timeout, sizeof(timeout))) {
+            SENTINEL_LOG_WARNING("Failed to set connect timeout");
+        }
+        if (!WinHttpSetOption(httpRequest.get(), WINHTTP_OPTION_SEND_TIMEOUT, &timeout, sizeof(timeout))) {
+            SENTINEL_LOG_WARNING("Failed to set send timeout");
+        }
+        if (!WinHttpSetOption(httpRequest.get(), WINHTTP_OPTION_RECEIVE_TIMEOUT, &timeout, sizeof(timeout))) {
+            SENTINEL_LOG_WARNING("Failed to set receive timeout");
+        }
         
         // Build headers string
         std::wostringstream headerStream;
@@ -668,17 +683,29 @@ public:
         allHeaders.insert(request.headers.begin(), request.headers.end());
         
         for (const auto& [name, value] : allHeaders) {
-            std::wstring wname(name.begin(), name.end());
-            std::wstring wvalue(value.begin(), value.end());
-            headerStream << wname << L": " << wvalue << L"\r\n";
+            // Proper UTF-8 to UTF-16 conversion
+            int nameLen = MultiByteToWideChar(CP_UTF8, 0, name.c_str(), -1, nullptr, 0);
+            int valueLen = MultiByteToWideChar(CP_UTF8, 0, value.c_str(), -1, nullptr, 0);
+            
+            if (nameLen > 0 && valueLen > 0) {
+                std::wstring wname(nameLen - 1, L'\0');
+                std::wstring wvalue(valueLen - 1, L'\0');
+                
+                if (MultiByteToWideChar(CP_UTF8, 0, name.c_str(), -1, &wname[0], nameLen) > 0 &&
+                    MultiByteToWideChar(CP_UTF8, 0, value.c_str(), -1, &wvalue[0], valueLen) > 0) {
+                    headerStream << wname << L": " << wvalue << L"\r\n";
+                }
+            }
         }
         std::wstring headers = headerStream.str();
         
         // Add headers
         if (!headers.empty()) {
-            WinHttpAddRequestHeaders(httpRequest.get(), headers.c_str(), 
-                                     static_cast<DWORD>(headers.length()),
-                                     WINHTTP_ADDREQ_FLAG_ADD);
+            if (!WinHttpAddRequestHeaders(httpRequest.get(), headers.c_str(), 
+                                          static_cast<DWORD>(headers.length()),
+                                          WINHTTP_ADDREQ_FLAG_ADD)) {
+                SENTINEL_LOG_WARNING("Failed to add request headers");
+            }
         }
         
         // Send request
