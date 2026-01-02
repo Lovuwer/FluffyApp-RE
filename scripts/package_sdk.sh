@@ -885,14 +885,18 @@ fi
 # Step 12: Generate checksum
 echo ""
 echo "Step 12: Generating checksum..."
-if command -v sha256sum &> /dev/null; then
-    cd "${DIST_DIR}"
-    sha256sum "${ARCHIVE_NAME}" > "${ARCHIVE_NAME}.sha256"
-    echo -e "${GREEN}Checksum: $(cat ${ARCHIVE_NAME}.sha256)${NC}"
-elif command -v shasum &> /dev/null; then
-    cd "${DIST_DIR}"
-    shasum -a 256 "${ARCHIVE_NAME}" > "${ARCHIVE_NAME}.sha256"
-    echo -e "${GREEN}Checksum: $(cat ${ARCHIVE_NAME}.sha256)${NC}"
+if [ -f "${DIST_DIR}/${ARCHIVE_NAME}" ]; then
+    if command -v sha256sum &> /dev/null; then
+        cd "${DIST_DIR}"
+        sha256sum "${ARCHIVE_NAME}" > "${ARCHIVE_NAME}.sha256"
+        echo -e "${GREEN}Checksum: $(cat ${ARCHIVE_NAME}.sha256)${NC}"
+    elif command -v shasum &> /dev/null; then
+        cd "${DIST_DIR}"
+        shasum -a 256 "${ARCHIVE_NAME}" > "${ARCHIVE_NAME}.sha256"
+        echo -e "${GREEN}Checksum: $(cat ${ARCHIVE_NAME}.sha256)${NC}"
+    fi
+else
+    echo -e "${YELLOW}Warning: Archive not found, skipping checksum generation.${NC}"
 fi
 
 # Summary
