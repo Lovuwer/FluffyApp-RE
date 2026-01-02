@@ -181,7 +181,7 @@ This distribution package contains the Sentinel Anti-Cheat SDK for integration i
 
 ### Directory Structure
 
-``````
+```
 SentinelSDK-{version}-{platform}-{arch}/
 ├── lib/                    # Compiled libraries (release builds, symbols stripped)
 │   ├── SentinelSDK.dll     # Dynamic library
@@ -196,7 +196,7 @@ SentinelSDK-{version}-{platform}-{arch}/
 ├── examples/               # Example integration code
 │   └── MinimalIntegration.cpp
 └── README.md              # This file
-``````
+```
 
 ## Quick Start
 
@@ -248,11 +248,11 @@ License keys contain:
 
 Pass your license key during SDK initialization:
 
-``````cpp
+```cpp
 Sentinel::SDK::Configuration config = Sentinel::SDK::Configuration::Default();
 config.license_key = "YOUR-LICENSE-KEY";
 config.game_id = "your-game-id";
-``````
+```
 
 ## Validation Process
 

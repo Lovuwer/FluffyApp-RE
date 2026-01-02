@@ -127,13 +127,13 @@ if [ "$PLATFORM" = "linux" ]; then
         strip --strip-debug --strip-unneeded "${PACKAGE_DIR}/lib/libSentinelSDK.so"
         
         # Create versioned symlinks for proper soname resolution
-        cd "${PACKAGE_DIR}/lib"
-        if readelf -d libSentinelSDK.so | grep -q "SONAME.*libSentinelSDK.so.1"; then
+        if readelf -d "${PACKAGE_DIR}/lib/libSentinelSDK.so" | grep -q "SONAME.*libSentinelSDK.so.1"; then
             echo "  - Creating versioned library links"
+            cd "${PACKAGE_DIR}/lib"
             ln -sf libSentinelSDK.so libSentinelSDK.so.1
             ln -sf libSentinelSDK.so.1 libSentinelSDK.so.1.0.0
+            cd - > /dev/null
         fi
-        cd - > /dev/null
     fi
     
     if [ -f "${BUILD_DIR}/lib/libSentinelCore.so" ]; then
@@ -142,13 +142,13 @@ if [ "$PLATFORM" = "linux" ]; then
         echo "  - Stripping debug symbols from libSentinelCore.so"
         strip --strip-debug --strip-unneeded "${PACKAGE_DIR}/lib/libSentinelCore.so"
         
-        # Create versioned symlinks for proper soname resolution
-        cd "${PACKAGE_DIR}/lib"
-        if readelf -d libSentinelCore.so | grep -q "SONAME.*libSentinelCore.so"; then
+        # Create versioned symlinks for proper soname resolution  
+        if readelf -d "${PACKAGE_DIR}/lib/libSentinelCore.so" | grep -q "SONAME.*libSentinelCore.so\.[0-9]"; then
             echo "  - Creating versioned library links for Core"
+            cd "${PACKAGE_DIR}/lib"
             ln -sf libSentinelCore.so libSentinelCore.so.1 2>/dev/null || true
+            cd - > /dev/null
         fi
-        cd - > /dev/null
     fi
     
     # Static libraries
@@ -169,14 +169,14 @@ elif [ "$PLATFORM" = "macos" ]; then
         strip -S "${PACKAGE_DIR}/lib/libSentinelSDK.dylib"
         
         # Create versioned symlinks for dylib
-        cd "${PACKAGE_DIR}/lib"
         # Check install name with otool
-        if otool -D libSentinelSDK.dylib | grep -q "libSentinelSDK.1.dylib"; then
+        if otool -D "${PACKAGE_DIR}/lib/libSentinelSDK.dylib" | grep -q "libSentinelSDK.1.dylib"; then
             echo "  - Creating versioned library links"
+            cd "${PACKAGE_DIR}/lib"
             ln -sf libSentinelSDK.dylib libSentinelSDK.1.dylib
             ln -sf libSentinelSDK.1.dylib libSentinelSDK.1.0.0.dylib
+            cd - > /dev/null
         fi
-        cd - > /dev/null
     fi
     
     if [ -f "${BUILD_DIR}/lib/libSentinelCore.dylib" ]; then
@@ -273,10 +273,10 @@ if [ -f "${PROJECT_ROOT}/docs/INTEGRATION_GUIDE.md" ]; then
 fi
 
 # Create SDK distribution README
-cat > "${PACKAGE_DIR}/README.md" << 'EOF'
+cat > "${PACKAGE_DIR}/README.md" << EOF
 # Sentinel SDK Distribution Package
 
-**Version:** 1.0.0  
+**Version:** ${VERSION}  
 **License:** Proprietary - Commercial Use Only
 
 ## Contents
