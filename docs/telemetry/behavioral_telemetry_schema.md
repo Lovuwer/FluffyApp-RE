@@ -144,7 +144,7 @@ This document defines the JSON schema for behavioral telemetry data transmitted 
 | `unit` | string | No | Unit description (optional, max 32 chars) |
 
 ### Constraints
-- Maximum 100 custom metrics per window
+- Maximum 100 custom metrics per window (excess metrics are silently ignored)
 - Metric names must be unique within a window
 - Total custom metrics size should not exceed 200 bytes
 
@@ -312,7 +312,7 @@ Servers should flag:
 - `snap_count` > 10 per minute (potential aimbot)
 - `teleport_count` > 5 per minute (potential speed hack)
 - `headshot_percentage` > 80% (potential aimbot)
-- Impossible velocity values
+- Impossible velocity values (> 5x game's max legitimate velocity)
 
 ## References
 

@@ -294,7 +294,9 @@ def update_player_baseline(player_id, new_telemetry):
         baseline = accumulate_sample(baseline, new_telemetry)
     else:
         # Use exponential moving average for rolling baseline
-        alpha = 0.1  # Weight for new data
+        alpha = 0.1  # Weight for new data (tunable: 0.05-0.2)
+                     # Lower = more stable, slower adaptation
+                     # Higher = faster adaptation, less stable
         
         for metric_category in ['input', 'movement', 'aim']:
             if metric_category in new_telemetry:
@@ -323,6 +325,8 @@ def update_player_baseline(player_id, new_telemetry):
 ### Initial Learning Period
 
 - **Duration:** First 20 telemetry samples (typically 20-60 minutes of gameplay)
+  - The threshold of 20 samples provides enough data for statistical significance while keeping learning time reasonable
+  - Configurable per game based on session lengths and variance in player behavior
 - **Behavior:** Build baseline without triggering anomaly alerts
 - **Grace period:** No enforcement actions during learning
 
