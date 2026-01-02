@@ -21,16 +21,6 @@ namespace Sentinel {
 namespace SDK {
 
 /**
- * Redundancy level for detection categories (Task 29)
- */
-enum class RedundancyLevel : uint8_t {
-    None = 0,       ///< Single implementation (default, legacy behavior)
-    Standard = 1,   ///< Two implementations with different approaches
-    High = 2,       ///< Three or more implementations
-    Maximum = 3     ///< All available implementations (performance impact)
-};
-
-/**
  * Per-detection configuration
  */
 struct DetectionConfig {

@@ -1587,15 +1587,8 @@ SENTINEL_API void SENTINEL_CALL RemoveThreadOriginWhitelist(const char* module_n
 
 // ==================== Redundant Detection Configuration (Task 29) ====================
 
-namespace {
-    // Helper to convert public DetectionCategory to internal DetectionType
-    DetectionType CategoryToType(DetectionCategory category) {
-        return static_cast<DetectionType>(static_cast<uint8_t>(category));
-    }
-}
-
 SENTINEL_API ErrorCode SENTINEL_CALL SetRedundancy(
-    DetectionCategory category,
+    uint8_t category,
     RedundancyLevel level)
 {
     if (!g_context || !g_context->detection_registry) {
@@ -1607,7 +1600,7 @@ SENTINEL_API ErrorCode SENTINEL_CALL SetRedundancy(
     }
     
     // Convert category to internal type
-    DetectionType det_type = CategoryToType(category);
+    DetectionType det_type = static_cast<DetectionType>(category);
     
     // Update runtime config
     bool enabled = (level != RedundancyLevel::None);
@@ -1620,12 +1613,12 @@ SENTINEL_API ErrorCode SENTINEL_CALL SetRedundancy(
     return ErrorCode::Success;
 }
 
-SENTINEL_API RedundancyLevel SENTINEL_CALL GetRedundancy(DetectionCategory category) {
+SENTINEL_API RedundancyLevel SENTINEL_CALL GetRedundancy(uint8_t category) {
     if (!g_context || !g_context->runtime_config) {
         return RedundancyLevel::None;
     }
     
-    DetectionType det_type = CategoryToType(category);
+    DetectionType det_type = static_cast<DetectionType>(category);
     bool enabled = false;
     RedundancyLevel level = RedundancyLevel::None;
     
@@ -1635,14 +1628,14 @@ SENTINEL_API RedundancyLevel SENTINEL_CALL GetRedundancy(DetectionCategory categ
 }
 
 SENTINEL_API bool SENTINEL_CALL GetRedundancyStatistics(
-    DetectionCategory category,
+    uint8_t category,
     RedundancyStatistics* stats)
 {
     if (!g_context || !g_context->detection_registry || !stats) {
         return false;
     }
     
-    DetectionType det_type = CategoryToType(category);
+    DetectionType det_type = static_cast<DetectionType>(category);
     auto internal_stats = g_context->detection_registry->GetStatistics(det_type);
     
     // Copy to output structure
@@ -1656,12 +1649,12 @@ SENTINEL_API bool SENTINEL_CALL GetRedundancyStatistics(
     return true;
 }
 
-SENTINEL_API uint32_t SENTINEL_CALL GetImplementationCount(DetectionCategory category) {
+SENTINEL_API uint32_t SENTINEL_CALL GetImplementationCount(uint8_t category) {
     if (!g_context || !g_context->detection_registry) {
         return 0;
     }
     
-    DetectionType det_type = CategoryToType(category);
+    DetectionType det_type = static_cast<DetectionType>(category);
     return static_cast<uint32_t>(g_context->detection_registry->GetImplementationCount(det_type));
 }
 

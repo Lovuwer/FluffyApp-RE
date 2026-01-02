@@ -33,16 +33,6 @@ namespace Sentinel {
 namespace SDK {
 
 /**
- * Redundancy level for detection categories
- */
-enum class RedundancyLevel : uint8_t {
-    None = 0,       ///< Single implementation (default, legacy behavior)
-    Standard = 1,   ///< Two implementations with different approaches
-    High = 2,       ///< Three or more implementations
-    Maximum = 3     ///< All available implementations (performance impact)
-};
-
-/**
  * Configuration for redundant detection per category
  */
 struct RedundancyConfig {
@@ -114,7 +104,7 @@ public:
 /**
  * Statistics for redundant detection performance tracking
  */
-struct RedundancyStatistics {
+struct RedundancyStatisticsInternal {
     DetectionType category;
     uint32_t active_implementations;
     uint32_t total_checks_performed;
@@ -123,7 +113,7 @@ struct RedundancyStatistics {
     float avg_overhead_us;              ///< Average per-check overhead in microseconds
     float max_overhead_us;              ///< Maximum per-check overhead in microseconds
     
-    RedundancyStatistics()
+    RedundancyStatisticsInternal()
         : category(DetectionType::Unknown)
         , active_implementations(0)
         , total_checks_performed(0)
@@ -193,7 +183,7 @@ public:
      * @param category Detection category
      * @return Performance statistics
      */
-    RedundancyStatistics GetStatistics(DetectionType category) const;
+    RedundancyStatisticsInternal GetStatistics(DetectionType category) const;
     
     /**
      * Reset statistics counters
@@ -268,7 +258,7 @@ private:
     std::unordered_map<DetectionType, RedundancyConfig> redundancy_configs_;
     
     // Performance statistics per category
-    std::unordered_map<DetectionType, RedundancyStatistics> statistics_;
+    std::unordered_map<DetectionType, RedundancyStatisticsInternal> statistics_;
     
     // Thread safety
     mutable std::mutex registry_mutex_;

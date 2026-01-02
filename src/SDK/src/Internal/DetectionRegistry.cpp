@@ -19,7 +19,7 @@ DetectionRegistry::DetectionRegistry() {
     for (uint8_t i = 0; i < static_cast<uint8_t>(DetectionType::Unknown); ++i) {
         DetectionType type = static_cast<DetectionType>(i);
         redundancy_configs_[type] = RedundancyConfig(type, RedundancyLevel::None, false);
-        statistics_[type] = RedundancyStatistics();
+        statistics_[type] = RedundancyStatisticsInternal();
         statistics_[type].category = type;
     }
 }
@@ -126,7 +126,7 @@ std::vector<ViolationEvent> DetectionRegistry::ExecuteChecks(
 
 std::vector<ViolationEvent> DetectionRegistry::AggregateViolations(
     const std::vector<std::vector<ViolationEvent>>& violations,
-    DetectionType category)
+    DetectionType /* category */)  // Marked unused
 {
     if (violations.empty()) {
         return std::vector<ViolationEvent>();
@@ -279,19 +279,19 @@ size_t DetectionRegistry::GetImplementationCount(DetectionType category) const {
     return 0;
 }
 
-RedundancyStatistics DetectionRegistry::GetStatistics(DetectionType category) const {
+RedundancyStatisticsInternal DetectionRegistry::GetStatistics(DetectionType category) const {
     std::lock_guard<std::mutex> lock(stats_mutex_);
     auto it = statistics_.find(category);
     if (it != statistics_.end()) {
         return it->second;
     }
-    return RedundancyStatistics();
+    return RedundancyStatisticsInternal();
 }
 
 void DetectionRegistry::ResetStatistics() {
     std::lock_guard<std::mutex> lock(stats_mutex_);
     for (auto& pair : statistics_) {
-        pair.second = RedundancyStatistics();
+        pair.second = RedundancyStatisticsInternal();
         pair.second.category = pair.first;
     }
 }

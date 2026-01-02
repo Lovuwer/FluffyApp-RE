@@ -803,18 +803,6 @@ struct RedundancyStatistics {
 };
 
 /**
- * Detection categories that support redundancy
- */
-enum class DetectionCategory : uint8_t {
-    AntiDebug = 0,          ///< Anti-debugging detections
-    AntiHook = 1,           ///< Hook detection
-    MemoryIntegrity = 2,    ///< Memory integrity checks
-    SpeedHack = 3,          ///< Speed hack detection
-    InjectionDetect = 4,    ///< Injection detection
-    NetworkAnomaly = 5      ///< Network anomaly detection
-};
-
-/**
  * Enable redundant detection for a category
  * 
  * Task 29: Redundant Detection Architecture
@@ -822,40 +810,40 @@ enum class DetectionCategory : uint8_t {
  * Enables multiple detection implementations for defense in depth.
  * Redundancy is disabled by default (opt-in).
  * 
- * @param category Detection category to configure
+ * @param category Detection category to configure (use DetectionType values)
  * @param level Redundancy level (None, Standard, High, Maximum)
  * @return Error code
  */
 SENTINEL_API ErrorCode SENTINEL_CALL SetRedundancy(
-    DetectionCategory category,
+    uint8_t category,  // Use uint8_t to match DetectionType
     RedundancyLevel level);
 
 /**
  * Get redundancy configuration for a category
  * 
- * @param category Detection category
+ * @param category Detection category (use DetectionType values)
  * @return Current redundancy level
  */
-SENTINEL_API RedundancyLevel SENTINEL_CALL GetRedundancy(DetectionCategory category);
+SENTINEL_API RedundancyLevel SENTINEL_CALL GetRedundancy(uint8_t category);
 
 /**
  * Get redundancy statistics for a category
  * 
- * @param category Detection category
+ * @param category Detection category (use DetectionType values)
  * @param stats Output statistics structure
  * @return true if statistics are available
  */
 SENTINEL_API bool SENTINEL_CALL GetRedundancyStatistics(
-    DetectionCategory category,
+    uint8_t category,
     RedundancyStatistics* stats);
 
 /**
  * Get number of implementations available for a category
  * 
- * @param category Detection category
+ * @param category Detection category (use DetectionType values)
  * @return Number of implementations registered
  */
-SENTINEL_API uint32_t SENTINEL_CALL GetImplementationCount(DetectionCategory category);
+SENTINEL_API uint32_t SENTINEL_CALL GetImplementationCount(uint8_t category);
 
 // ==================== Helper Macros ====================
 
