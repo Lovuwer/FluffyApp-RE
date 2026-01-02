@@ -1,166 +1,83 @@
-# Sentinel Security Ecosystem
+# Sentinel SDK
 
-[![Build Status](https://github.com/Lovuwer/Sentiel-RE/actions/workflows/build.yml/badge.svg)](https://github.com/Lovuwer/Sentiel-RE/actions)
+A user-mode anti-cheat detection and telemetry SDK for Windows games.
 
-**Version:** 1.0.0  
-**License:** Proprietary  
-**Platform:** Windows x64, Linux (partial support)
+## Current Status:  Alpha (Not Production-Ready)
 
----
+Sentinel is in active development.  Core detection systems work, but cloud 
+infrastructure and network security features are incomplete.
 
-## ⚠️ Security Notice: Read Before Using
+**What Works Today:**
+- Anti-debug detection (IsDebuggerPresent, PEB, debug ports, timing)
+- Anti-hook detection (inline hooks, IAT hooks, honeypots)
+- Integrity checking (code section hashing)
+- Injection detection (DLL injection, manual mapping)
+- Cryptographic primitives (AES-256-GCM, SHA-256, RSA, HMAC)
 
-**Sentinel SDK is a USER-MODE defensive toolkit.** It provides **deterrence** against casual attackers but **cannot prevent** determined adversaries with kernel-mode access.
+**In Progress:**
+- Cloud/Heartbeat reporting (Core implemented, SDK integration pending)
+- HTTP client security (certificate pinning, request signing)
+- Correlation engine stability (known test failures)
 
-### What This System IS:
-✅ A detection and telemetry platform for cheating behaviors  
-✅ Effective against public cheat tools and casual attackers  
-✅ A framework for collecting security intelligence  
-✅ A complement to server-side validation  
+**Not Yet Implemented:**
+- Memory protection API
+- Value protection API
+- Server-side speed validation (client-side only)
+- Production-grade network security
 
-### What This System IS NOT:
-❌ A guarantee against all cheating  
-❌ Protection against kernel-mode exploits  
-❌ A replacement for server-side validation  
-❌ "Unbreakable" or "military-grade" security  
+**Explicitly Out of Scope:**
+- Kernel-mode protection
+- Hypervisor-based detection
+- Hardware-based attestation
 
-**For production games:** Combine with server-side validation, behavioral analysis, and economic disincentives (HWID bans, delayed ban waves).
+## Security Model
 
-📖 **Read the complete security analysis:** [docs/DEFENSIVE_GAPS.md](docs/DEFENSIVE_GAPS.md)
+Sentinel operates entirely in user-mode (Ring 3). It provides:
+- Detection of casual/public cheat tools
+- Telemetry for security intelligence
+- Deterrence, not prevention
 
----
+It does NOT provide:
+- Protection against kernel-mode attackers
+- Guarantees against determined adversaries
+- Standalone anti-cheat (requires server-side validation)
 
-## 🚧 Development Status
-
-This project is in **early development**. Core detection systems are implemented but not all protection features are complete.
-
-**Current Status:**
-- ✅ AntiDebug detection (user-mode checks)
-- ✅ AntiHook detection (inline + IAT)
-- ✅ Integrity checking (code section hashing)
-- ✅ Injection detection (DLL + manual mapping)
-- 🟡 Speed hack detection (client-side only - **requires server validation**)
-- 🔴 Heartbeat/Cloud reporting (stub only)
-- 🔴 Memory/Value protection (stub only)
-
-📖 **Detailed status:** [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md)
-
----
-
-## Overview
-
-Sentinel is a C++ game security ecosystem that detects runtime manipulation, memory hacking, and binary patching. It combines client-side detection, cloud telemetry, and analysis tools.
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        SENTINEL SECURITY ECOSYSTEM                          │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐        │
-│   │ SENTINEL CORTEX │    │  SENTINEL SDK   │    │   WATCHTOWER    │        │
-│   │  (Workbench)    │    │   (Shield)      │    │  (Roblox Mod)   │        │
-│   │                 │    │                 │    │                 │        │
-│   │ • Disassembly   │    │ • Detection     │    │ • Net Fuzzer    │        │
-│   │ • Fuzzy Hashing │    │ • Integrity     │    │ • Lua Bridge    │        │
-│   │ • Diff Engine   │    │ • Telemetry     │    │ • Event Monitor │        │
-│   └────────┬────────┘    └────────┬────────┘    └────────┬────────┘        │
-│            │                      │                      │                 │
-│            └──────────────────────┼──────────────────────┘                 │
-│                                   │                                        │
-│                          ┌────────▼────────┐                               │
-│                          │ SENTINEL CLOUD  │                               │
-│                          │                 │                               │
-│                          │ • Threat Intel  │                               │
-│                          │ • Telemetry     │                               │
-│                          │ • Analytics     │                               │
-│                          └─────────────────┘                               │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Components
-
-### 1. Sentinel SDK (Client-Side Detection)
-
-A lightweight C++ library for detecting runtime manipulation.
-
-**Detection Capabilities:**
-- **Anti-Debug:** Detects debuggers (x64dbg, WinDbg, etc.)
-- **Anti-Hook:** Detects API hooks (inline, IAT, VEH)
-- **Integrity Checks:** Verifies code sections haven't been modified
-- **Injection Detection:** Detects DLL injection and manual mapping
-- **Speed Hack Detection:** Detects time manipulation (requires server validation)
-
-**Important Limitations:**
-- All checks are bypassable with kernel-mode access
-- TOCTOU (Time-of-Check-Time-of-Use) vulnerabilities in periodic scans
-- Speed hack detection requires server-side validation
-- No protection against page table manipulation
-
-**Recommended Use:**
-- Telemetry collection for pattern analysis
-- Deterring casual attackers
-- Supporting server-side ban decisions
-- NOT as sole anti-cheat solution
-
-### 2. Sentinel Cortex (Analysis Workbench)
-
-A desktop application for binary analysis and forensics.
-
-**Features:**
-- Disassembly (Capstone-powered)
-- Fuzzy hashing (TLSH/ssdeep)
-- Binary diff engine
-- VM deobfuscation (planned)
-
-### 3. Sentinel Watchtower (Roblox Module)
-
-Specialized protection for Roblox games (planned).
-
----
+See [docs/security/threat-model.md] for complete analysis.
 
 ## Quick Start
 
-### Prerequisites
+[Minimal code example - verified working]
 
-**Linux:**
-```bash
-sudo apt-get update
-sudo apt-get install -y cmake build-essential ninja-build libssl-dev
-```
+## Performance
 
-**Windows:**
-- Visual Studio 2022+ with C++20 support
-- CMake 3.21+
-- Qt 6.5+ (optional, for Cortex GUI)
+| Operation | Target | Current |
+|-----------|--------|---------|
+| Update() | < 0.1ms | ~0.46ms (needs optimization) |
+| FullScan() | < 5ms | ~7-10ms (needs optimization) |
 
-### Building
+## Documentation
 
-```bash
-# Clone the repository
-git clone https://github.com/Lovuwer/Sentiel-RE.git
-cd Sentiel-RE
+- [Integration Guide](docs/integration/quickstart.md)
+- [Configuration](docs/integration/configuration.md)
+- [Implementation Status](docs/status/current. md)
+- [Security Analysis](docs/security/)
 
-# Configure CMake
-cmake -B build -G "Ninja" \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DSENTINEL_BUILD_CORTEX=OFF \
-  -DSENTINEL_BUILD_WATCHTOWER=OFF \
-  -DSENTINEL_BUILD_TESTS=ON
+## Building
 
-# Build
-cmake --build build --config Release
+[Verified build instructions]
 
-# Run tests
-cd build && ctest --output-on-failure
-```
+## Contributing
 
-### Development Builds with Anti-Debug Disabled
+[Standard contribution guidance]
 
-For game developers who need to debug their games without triggering anti-debug false positives, you can disable all anti-debug checks at compile time:
+## License
 
+Proprietary. See LICENSE. 
+
+---
+
+**Honest Assessment:** Sentinel raises the effort bar for casual attackers. 
+It is one layer in a defense-in-depth strategy, not a complete solution. 
 ```bash
 # Configure with anti-debug disabled
 cmake -B build -G "Ninja" \
