@@ -415,6 +415,7 @@ struct Configuration {
     // Debug (disable in release!)
     bool debug_mode;                ///< Enable debug logging
     const char* log_path;           ///< Path for debug log file
+    const char* cache_dir;          ///< Task 25: Directory for signature cache (NULL for default)
     
     /**
      * Create configuration with defaults
@@ -736,6 +737,9 @@ struct Statistics {
     uint32_t protected_regions;     ///< Number of protected memory regions
     uint32_t protected_functions;   ///< Number of protected functions
     uint64_t total_protected_bytes; ///< Total bytes under protection
+    
+    // Task 25: Signature update stats
+    uint32_t signature_version;     ///< Current detection signature version
 };
 
 /**
