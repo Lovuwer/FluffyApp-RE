@@ -347,9 +347,9 @@ endif()
 
 Analysis resistance has been applied to the following detection modules:
 
-### AntiDebug.cpp
-- [ ] `CheckDebugPort()` function
-- [ ] `CheckDebugObject()` function  
+### AntiDebug.cpp ✅ APPLIED
+- [x] `CheckDebugPort()` function - Full AR protection with opaque branches
+- [x] `CheckDebugObject()` function - Full AR protection with opaque branches
 - [ ] `CheckRemoteDebugger()` function
 - [ ] Honeypot functions
 
@@ -366,7 +366,7 @@ Analysis resistance has been applied to the following detection modules:
 - [ ] `ScanForInjectedModules()` function
 - [ ] `DetectManualMapping()` function
 
-**Note:** Application to detection modules will be done in subsequent commits to keep changes focused and testable.
+**Application Status**: Initial application to AntiDebug.cpp complete and tested. All existing tests pass with no false positive rate increase. Framework can be incrementally applied to remaining modules as needed.
 
 ---
 
