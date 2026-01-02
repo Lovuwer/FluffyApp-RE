@@ -328,7 +328,8 @@ enum class ServerDirectiveType : uint32_t {
     SessionTerminate = 2,       ///< Session must be terminated
     SessionSuspend = 3,         ///< Temporary suspension
     RequireReconnect = 4,       ///< Force reconnection
-    UpdateRequired = 5          ///< Client update required
+    UpdateRequired = 5,         ///< Client update required
+    SignatureRollback = 6       ///< Task 25: Rollback to previous signature set
 };
 
 /**
@@ -415,6 +416,7 @@ struct Configuration {
     // Debug (disable in release!)
     bool debug_mode;                ///< Enable debug logging
     const char* log_path;           ///< Path for debug log file
+    const char* cache_dir;          ///< Task 25: Directory for signature cache (NULL for default)
     
     /**
      * Create configuration with defaults
@@ -431,6 +433,7 @@ struct Configuration {
         config.report_interval_ms = 30000;
         config.directive_poll_interval_ms = 5000;  // Task 24: Poll every 5 seconds
         config.debug_mode = false;
+        config.cache_dir = nullptr;  // Task 25: Null means use default
         return config;
     }
 };
@@ -736,6 +739,9 @@ struct Statistics {
     uint32_t protected_regions;     ///< Number of protected memory regions
     uint32_t protected_functions;   ///< Number of protected functions
     uint64_t total_protected_bytes; ///< Total bytes under protection
+    
+    // Task 25: Signature update stats
+    uint32_t signature_version;     ///< Current detection signature version
 };
 
 /**

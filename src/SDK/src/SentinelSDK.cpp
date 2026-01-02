@@ -22,6 +22,8 @@
 #include <Sentinel/Core/ServerDirective.hpp>  // Task 24: Server directive protocol
 // Note: Internal/PerfTelemetry.hpp will be available after merge with main
 #include "Internal/PerfTelemetry.hpp"  // Task 17: Performance telemetry
+#include "Internal/SignatureManager.hpp"  // Task 25: Dynamic signature updates
+#include "Network/UpdateClient.hpp"  // Task 25: Signature update client
 
 #include <atomic>
 #include <chrono>
@@ -109,6 +111,11 @@ struct SDKContext {
     ServerDirective last_directive{};
     bool has_directive = false;
     uint64_t last_directive_poll_time = 0;
+    
+    // Task 25: Dynamic signature update system
+    std::shared_ptr<SignatureManager> signature_manager;
+    std::unique_ptr<UpdateClient> update_client;
+    uint32_t current_signature_version = 0;
     
     // Session info
     std::string session_token;
@@ -307,6 +314,24 @@ void HeartbeatThreadFunc() {
                 if (time_since_last_poll >= g_context->config.directive_poll_interval_ms) {
                     g_context->reporter->PollDirectives(g_context->session_token);
                     g_context->last_directive_poll_time = current_time;
+                    
+                    // Task 25: Check for and handle signature rollback directives
+                    ServerDirective directive;
+                    if (g_context->reporter->GetLastDirective(directive)) {
+                        if (directive.type == ServerDirectiveType::SignatureRollback && 
+                            g_context->signature_manager) {
+                            SENTINEL_LOG_INFO("Received signature rollback directive from server");
+                            auto rollback_result = g_context->signature_manager->rollbackToPrevious();
+                            if (rollback_result.isSuccess()) {
+                                auto stats = g_context->signature_manager->getStatistics();
+                                g_context->current_signature_version = stats.current_version;
+                                SENTINEL_LOG_INFO_F("Signature rollback successful - reverted to version %u", 
+                                    stats.current_version);
+                            } else {
+                                SENTINEL_LOG_ERROR("Signature rollback failed");
+                            }
+                        }
+                    }
                 }
             }
             
@@ -667,6 +692,88 @@ SENTINEL_API ErrorCode SENTINEL_CALL Initialize(const Configuration* config) {
         SENTINEL_LOG_WARNING("Timing randomizer initialization failed - timing patterns may be more predictable");
     }
     
+    // Task 25: Initialize dynamic signature update system
+    SENTINEL_LOG_DEBUG("Initializing signature manager");
+    g_context->signature_manager = std::make_shared<SignatureManager>();
+    
+    // Create cache directory for signatures
+    std::string cache_dir = ".sentinel_cache";
+    if (config->cache_dir && strlen(config->cache_dir) > 0) {
+        cache_dir = config->cache_dir;
+    }
+    
+    // TODO: Load actual RSA public key for signature verification from secure storage
+    // SECURITY WARNING: This placeholder key MUST be replaced with production key
+    // The key should be embedded in the binary or loaded from a secure configuration
+    // For now, signature verification is disabled until proper key is configured
+    ByteBuffer placeholder_key = {0x01, 0x02, 0x03, 0x04};  // PLACEHOLDER - REPLACE IN PRODUCTION
+    
+    auto sig_init_result = g_context->signature_manager->initialize(cache_dir, placeholder_key);
+    if (sig_init_result.isFailure()) {
+        SENTINEL_LOG_WARNING("Failed to initialize signature manager - dynamic updates disabled");
+        g_context->signature_manager.reset();
+    } else {
+        SENTINEL_LOG_INFO("Signature manager initialized successfully");
+        
+        // Initialize update client if cloud endpoint is provided
+        if (config->cloud_endpoint && strlen(config->cloud_endpoint) > 0) {
+            SENTINEL_LOG_DEBUG("Initializing update client");
+            g_context->update_client = std::make_unique<UpdateClient>();
+            
+            UpdateClientConfig update_config;
+            update_config.server_url = config->cloud_endpoint;
+            update_config.api_key = config->license_key;
+            update_config.game_id = config->game_id ? config->game_id : "unknown";
+            update_config.check_interval = std::chrono::seconds(900);  // 15 minutes
+            update_config.timeout = std::chrono::seconds(30);
+            update_config.enable_pinning = true;
+            // TODO: Configure certificate pins from config
+            
+            auto update_init_result = g_context->update_client->initialize(
+                update_config, 
+                g_context->signature_manager
+            );
+            
+            if (update_init_result.isSuccess()) {
+                // Set update callback to track version
+                // Note: Callback is called from update client thread - must be thread-safe
+                g_context->update_client->setProgressCallback(
+                    [](UpdateStatus status, const std::string& message) {
+                        // Access g_context with proper null check to avoid use-after-free
+                        if (!g_context || !g_context->initialized.load()) {
+                            return;
+                        }
+                        
+                        if (status == UpdateStatus::Success) {
+                            auto stats = g_context->signature_manager->getStatistics();
+                            g_context->current_signature_version = stats.current_version;
+                            SENTINEL_LOG_INFO_F("Signature update successful - version %u", 
+                                stats.current_version);
+                        } else if (status == UpdateStatus::Failed) {
+                            SENTINEL_LOG_WARNING_F("Signature update failed: %s", message.c_str());
+                        }
+                    }
+                );
+                
+                // Start auto-update loop
+                auto start_result = g_context->update_client->startAutoUpdate();
+                if (start_result.isSuccess()) {
+                    SENTINEL_LOG_INFO("Auto-update enabled - checking every 15 minutes");
+                } else {
+                    SENTINEL_LOG_WARNING("Failed to start auto-update - manual updates only");
+                }
+                
+                // Get initial signature version
+                auto stats = g_context->signature_manager->getStatistics();
+                g_context->current_signature_version = stats.current_version;
+                SENTINEL_LOG_INFO_F("Current signature version: %u", stats.current_version);
+            } else {
+                SENTINEL_LOG_WARNING("Failed to initialize update client");
+                g_context->update_client.reset();
+            }
+        }
+    }
+    
     // Initialize network if cloud endpoint provided
     if (config->cloud_endpoint && strlen(config->cloud_endpoint) > 0) {
         SENTINEL_LOG_INFO_F("Initializing cloud reporting to: %s", config->cloud_endpoint);
@@ -748,6 +855,14 @@ SENTINEL_API void SENTINEL_CALL Shutdown() {
     
     // Task 22: Cleanup timing randomizer
     g_context->timing_randomizer.reset();
+    
+    // Task 25: Cleanup signature update system
+    if (g_context->update_client) {
+        SENTINEL_LOG_DEBUG("Stopping signature auto-update");
+        g_context->update_client->stopAutoUpdate();
+    }
+    g_context->update_client.reset();
+    g_context->signature_manager.reset();
     
     // Cleanup whitelist manager
     if (g_whitelist) {
@@ -1384,6 +1499,9 @@ SENTINEL_API void SENTINEL_CALL GetStatistics(Statistics* stats) {
     
     *stats = g_context->stats;
     stats->uptime_ms = GetSecureTime();
+    
+    // Task 25: Include current signature version in statistics
+    stats->signature_version = g_context->current_signature_version;
 }
 
 SENTINEL_API void SENTINEL_CALL ResetStatistics() {
