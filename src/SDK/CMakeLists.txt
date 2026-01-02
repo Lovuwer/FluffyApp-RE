@@ -43,6 +43,7 @@ set(SDK_SOURCES
     src/Internal/PerfTelemetry.cpp
     src/Internal/TimingRandomizer.cpp
     src/Internal/InitializationRandomizer.cpp
+    src/Internal/BehavioralCollector.cpp
     src/Core/Heartbeat.cpp
     src/Core/MemoryProtection.cpp
     src/Core/FunctionProtection.cpp
@@ -84,6 +85,7 @@ set(SDK_HEADERS
     src/Internal/PerfTelemetry.hpp
     src/Internal/TimingRandomizer.hpp
     src/Internal/InitializationRandomizer.hpp
+    src/Internal/BehavioralCollector.hpp
 )
 
 # Header files for IDE organization only (not compiled)
