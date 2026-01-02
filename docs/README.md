@@ -56,9 +56,7 @@ Detailed API documentation:
 ### Architecture & Implementation
 Understanding the system design:
 - [Architecture](architecture/ARCHITECTURE.md) - System architecture with trust boundaries
-- [Build Diversity](BUILD_DIVERSITY.md) - Build-time diversification
-- [Client Diversity](CLIENT_DIVERSITY.md) - Client diversity infrastructure
-- [Diversity Implementation](DIVERSITY_IMPLEMENTATION.md) - Implementation summary
+- [Diversity](architecture/diversity.md) - Build-time diversification infrastructure
 - [Implementation Status](IMPLEMENTATION_STATUS.md) - What's actually implemented
 - [Memory Module Implementation](MEMORY_MODULE_IMPLEMENTATION.md) - Reflective loading details
 
