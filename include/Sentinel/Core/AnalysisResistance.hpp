@@ -154,7 +154,7 @@ namespace AnalysisResistance {
  */
 #if SENTINEL_AR_ENABLED
     #define SENTINEL_AR_OPAQUE_BRANCH(condition) \
-        if ((condition) && SENTINEL_AR_OPAQUE_TRUE(reinterpret_cast<uintptr_t>(&condition)))
+        if ((condition) && SENTINEL_AR_OPAQUE_TRUE(reinterpret_cast<uintptr_t>(this)))
 #else
     #define SENTINEL_AR_OPAQUE_BRANCH(condition) \
         if (condition)
@@ -257,6 +257,8 @@ namespace AnalysisResistance {
  * Makes function calls less obvious by using function pointers,
  * complicating call graph analysis.
  * 
+ * Note: Requires C++11 or later for auto keyword.
+ * 
  * @param func Function to call
  * @param ... Arguments to pass to function
  * 
@@ -268,7 +270,7 @@ namespace AnalysisResistance {
 #if SENTINEL_AR_ENABLED
     #define SENTINEL_AR_INDIRECT_CALL(func, ...) \
         do { \
-            auto _fptr = &func; \
+            decltype(&func) _fptr = &func; \
             SENTINEL_AR_BOGUS_BRANCH(reinterpret_cast<uintptr_t>(_fptr)); \
             (*_fptr)(__VA_ARGS__); \
         } while(0)

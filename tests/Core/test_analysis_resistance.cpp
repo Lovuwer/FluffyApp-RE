@@ -331,11 +331,12 @@ TEST(AnalysisResistanceTest, PerformanceOverheadRealistic) {
     // Verify same results
     EXPECT_EQ(detections_unprotected, detections_protected);
     
-    // Calculate overhead percentage
+    // Calculate overhead percentage (handle negative case)
     double overhead_percent = 0.0;
     if (duration_unprotected > 0) {
-        overhead_percent = ((double)(duration_protected - duration_unprotected) / 
-                           (double)duration_unprotected) * 100.0;
+        double diff = static_cast<double>(duration_protected) - 
+                      static_cast<double>(duration_unprotected);
+        overhead_percent = (diff / static_cast<double>(duration_unprotected)) * 100.0;
     }
     
     // Log results for manual inspection
