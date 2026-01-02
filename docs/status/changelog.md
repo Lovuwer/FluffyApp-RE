@@ -10,10 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### In Progress
-- Task 2: Consolidate integration guides
-- Task 10: Fix remaining broken documentation links
-- Task 11: Create operations documentation structure
-- Task 12: Audit and update API reference
+- None - all initial documentation restructuring tasks complete
 
 ---
 
@@ -27,6 +24,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Created `docs/internal/task-archive/` for historical task implementation notes
   - Created `docs/operations/releases.md` with versioning policy
   - Created this CHANGELOG.md
+- **Integration guides consolidation**
+  - Created `docs/integration/` directory with README navigation hub
+  - Created `docs/integration/quickstart.md` (8-line integration)
+  - Created `docs/integration/engine-specific.md` (Unreal, Unity, Godot)
+  - Created `docs/integration/advanced.md` (production-ready integration)
+- **Operations documentation structure**
+  - Created `docs/operations/` directory with README navigation hub
+  - Organized operator dashboard, server correlation, and enforcement docs
+- **API stability documentation**
+  - Added API stability guarantees section to api-reference.md
+  - Documented unstable alpha status and roadmap to stability
 
 ### Changed
 - **Performance documentation** updated to reflect actual measurements vs. aspirational targets
@@ -54,6 +62,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `docs/BUILD_DIVERSITY.md` → `docs/architecture/diversity.md`
   - `docs/CLIENT_DIVERSITY.md` → `docs/architecture/diversity.md`
   - `docs/DIVERSITY_IMPLEMENTATION.md` → `docs/architecture/diversity.md`
+  - `docs/INTEGRATION_GUIDE.md` → `docs/integration/advanced.md`
+  - `docs/integration-guide.md` → `docs/integration/engine-specific.md`
+  - `docs/STUDIO_INTEGRATION_GUIDE.md` → `docs/integration/quickstart.md`
 
 ### Removed
 - Task implementation notes moved from `docs/` root to `docs/internal/task-archive/`
@@ -67,9 +78,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - REDTEAM_ATTACK_SURFACE.md → security/redteam-attack-surface.md
   - DETECTION_CONFIDENCE_MODEL.md → security/detection-confidence-model.md
   - ANALYSIS_RESISTANCE.md → security/analysis-resistance.md
+- Integration guide files consolidated and moved to `docs/integration/`
+  - INTEGRATION_GUIDE.md → integration/advanced.md
+  - integration-guide.md → integration/engine-specific.md
+  - STUDIO_INTEGRATION_GUIDE.md → integration/quickstart.md
+- Operations documentation files moved to `docs/operations/`
+  - OPERATOR_DASHBOARD_SPECIFICATION.md → operations/
+  - DASHBOARD_TELEMETRY_MAPPING.md → operations/
+  - SERVER_ENFORCEMENT_PROTOCOL.md → operations/
+  - SERVER_BEHAVIORAL_PROCESSING.md → operations/
+  - SERVER_SIDE_DETECTION_CORRELATION.md → operations/
 
 ### Fixed
-- Broken documentation links throughout README.md and docs/README.md
+- Broken documentation links throughout README.md, docs/README.md, and examples/README.md
+- Fixed integration guide references in COMMERCIAL_OFFERING.md, COMPETITIVE_COMPARISON.md, api-reference.md
+- Fixed operations document references throughout documentation
 - Misleading performance claims in README.md
 - Inconsistent file naming (uppercase vs lowercase)
 - Documentation namespace pollution (too many files in root)

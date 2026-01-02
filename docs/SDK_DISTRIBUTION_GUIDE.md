@@ -34,7 +34,10 @@ SentinelSDK-{version}-{platform}-{arch}/
 │       ├── Types.hpp
 │       └── Config.hpp
 ├── docs/                          # Documentation
-│   ├── INTEGRATION_GUIDE.md      # How to integrate
+│   ├── integration/              # Integration guides
+│   │   ├── README.md            # Integration hub
+│   │   ├── quickstart.md        # Quick start
+│   │   └── advanced.md          # How to integrate
 │   ├── LICENSE_VERIFICATION.md   # License mechanism
 │   └── SDK_DISTRIBUTION_GUIDE.md # This file
 ├── examples/                      # Example code

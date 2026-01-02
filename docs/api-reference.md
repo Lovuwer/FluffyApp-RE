@@ -1,8 +1,39 @@
 # Sentinel SDK API Reference
 
-**Version:** 1.0.0  
+**Version:** 0.1.0-alpha  
+**Status:** Pre-release / Unstable  
 **Coverage:** 100% of public API  
-**Last Updated:** 2025-01-01
+**Last Updated:** 2026-01-02
+
+---
+
+## API Stability
+
+**Current Status:** 🔴 **UNSTABLE - Alpha Release**
+
+This API is in active development and **may change without notice** during the alpha phase (0.x.x versions). Breaking changes are expected.
+
+### Stability Guarantees by Version
+
+| Version Range | API Stability | Breaking Changes |
+|---------------|---------------|------------------|
+| **0.1.0-alpha** (current) | ❌ Unstable | Expected frequently |
+| 0.x.x-beta | 🟡 Mostly stable | Possible, but documented |
+| 0.x.x-rc | ✅ Stable | No breaking changes |
+| 1.0.0+ | ✅ Stable | Only in major versions |
+
+### When Will the API Stabilize?
+
+The API will be marked stable when:
+- All P0 features are implemented and tested
+- Integration tested on 3+ real games
+- Security audit completed
+- Performance targets met
+- No critical bugs remain
+
+**Expected Timeline:** Beta (stable API) by Q2 2026, 1.0.0 release by Q3 2026.
+
+See [Release Policy](operations/releases.md) for detailed versioning information.
 
 ---
 
@@ -963,7 +994,7 @@ uint64_t gold_handle = CreateProtectedInt(0);
 **Notes:**
 - Value is stored obfuscated in memory (XOR-based)
 - Resistant to basic memory scanning
-- NOT cryptographically secure (see INTEGRATION_GUIDE.md for limitations)
+- NOT cryptographically secure (see integration/advanced.md for limitations)
 
 ---
 
@@ -1095,7 +1126,7 @@ printf("Action took %llu ms\n", elapsed);
 **Notes:**
 - Uses high-resolution timer
 - Cross-references multiple time sources
-- NOT foolproof against kernel-level manipulation (see INTEGRATION_GUIDE.md)
+- NOT foolproof against kernel-level manipulation (see integration/advanced.md)
 
 ---
 

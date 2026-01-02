@@ -535,4 +535,4 @@ We'll provide **honest answers** about whether Sentinel is right for your game. 
 - [COMMERCIAL_OFFERING.md](COMMERCIAL_OFFERING.md) - Commercial structure overview
 - [PRICING_PACKAGING.md](PRICING_PACKAGING.md) - Pricing details
 - [DEFENSIVE_GAPS.md](DEFENSIVE_GAPS.md) - Security limitations
-- [STUDIO_INTEGRATION_GUIDE.md](STUDIO_INTEGRATION_GUIDE.md) - Integration instructions
+- [integration/quickstart.md](integration/quickstart.md) - Integration instructions
