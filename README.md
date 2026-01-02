@@ -59,7 +59,7 @@ See [docs/security/threat-model.md] for complete analysis.
 
 - [Integration Guide](docs/integration/quickstart.md)
 - [Configuration](docs/integration/configuration.md)
-- [Implementation Status](docs/status/current. md)
+- [Implementation Status](docs/status/current.md)
 - [Security Analysis](docs/security/)
 
 ## Building
