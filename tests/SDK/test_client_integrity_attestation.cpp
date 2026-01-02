@@ -206,14 +206,14 @@ TEST(ClientIntegrityAttestationTests, ContinuousOperationStability) {
     IntegrityValidator validator;
     validator.Initialize();
     
-    // Run for 30 seconds (scaled down from 72 hours for unit test)
+    // Run for 25 seconds (scaled down from 72 hours for unit test, reduced to fit CI timeout)
     auto start = std::chrono::steady_clock::now();
     int total_validations = 0;
     int failures = 0;
     std::vector<uint64_t> validation_times;
     
     while (std::chrono::duration_cast<std::chrono::seconds>(
-        std::chrono::steady_clock::now() - start).count() < 30) {
+        std::chrono::steady_clock::now() - start).count() < 25) {
         
         auto val_start = std::chrono::high_resolution_clock::now();
         bool result = validator.ValidateQuick();
@@ -241,7 +241,7 @@ TEST(ClientIntegrityAttestationTests, ContinuousOperationStability) {
     double avg_us = static_cast<double>(sum) / validation_times.size();
     
     // Verify stability requirements
-    EXPECT_GT(total_validations, 100) << "Should perform many validations over 30 seconds";
+    EXPECT_GT(total_validations, 100) << "Should perform many validations over 25 seconds";
     EXPECT_EQ(failures, 0) << "Should have zero failures during continuous operation";
     EXPECT_LT(avg_us, 500.0) << "Average performance should remain < 0.5ms throughout operation";
     // Task 23: Allow for occasional scheduling delays in peak time (99th percentile acceptable up to 2ms)
