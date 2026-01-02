@@ -220,15 +220,197 @@ For technical support: support@sentinel-security.example.com
 **Copyright © 2024 Sentinel Security. All rights reserved.**
 "@ | Out-File -FilePath "$PackageDir\README.md" -Encoding utf8
 
-# Step 6: Create license verification documentation (reuse from bash script)
+# Step 6: Create license verification documentation
 Write-Host "  - Creating LICENSE_VERIFICATION.md"
-# (Content same as bash script - omitted for brevity)
-Copy-Item "$ProjectRoot\scripts\..\docs\LICENSE_VERIFICATION.md" "$PackageDir\docs\" -ErrorAction SilentlyContinue
 
-# Step 7: Copy example code (reuse from bash script)
+# Check if we can copy from source docs
+$sourceLicenseDoc = Join-Path $ProjectRoot "docs\LICENSE_VERIFICATION.md"
+if (Test-Path $sourceLicenseDoc) {
+    Copy-Item $sourceLicenseDoc "$PackageDir\docs\"
+} else {
+    # Create inline if source doesn't exist
+    @"
+# License Verification Mechanism
+
+## Overview
+
+The Sentinel SDK requires a valid license key to operate. License keys are cryptographically signed JWT tokens.
+
+## License Key Format
+
+License keys contain:
+- **game_id**: Unique identifier for your game
+- **expiration**: Expiration timestamp
+- **features**: Enabled feature flags
+- **signature**: Cryptographic signature (ES256)
+
+## Integration
+
+Pass your license key during SDK initialization:
+
+``````cpp
+Sentinel::SDK::Configuration config = Sentinel::SDK::Configuration::Default();
+config.license_key = "YOUR-LICENSE-KEY";
+config.game_id = "your-game-id";
+``````
+
+## Validation Process
+
+1. Format validation (JWT structure)
+2. Signature verification (Sentinel public key)
+3. Expiration checking
+4. Game ID matching
+5. Feature validation
+
+## Error Codes
+
+| Code | Description | Action |
+|------|-------------|--------|
+| InvalidLicense | Invalid format or signature | Contact support |
+| LicenseExpired | License expired | Renew license |
+| VersionMismatch | SDK version incompatible | Update SDK |
+
+## Obtaining Licenses
+
+**Trial Licenses**: 30-day trial available at https://sentinel-security.example.com/trial
+
+**Production Licenses**: Contact sales@sentinel-security.example.com
+
+## License Types
+
+- **Trial**: 30-day, full features, dev/test only
+- **Developer**: Unlimited, dev/test only  
+- **Production**: Full deployment rights
+- **Enterprise**: Custom agreements
+
+For support: licenses@sentinel-security.example.com
+"@ | Out-File -FilePath "$PackageDir\docs\LICENSE_VERIFICATION.md" -Encoding utf8
+}
+
+# Step 7: Create example integration code
 Write-Host ""
 Write-Host "Step 7: Creating example integration code..."
-# (Content same as bash script - omitted for brevity in this PowerShell version)
+
+@"
+/**
+ * Minimal Sentinel SDK Integration Example
+ */
+
+#include <SentinelSDK.hpp>
+#include <iostream>
+#include <thread>
+#include <chrono>
+
+bool OnViolationDetected(const Sentinel::SDK::ViolationEvent* event, void* user_data) {
+    std::cout << "[VIOLATION] Type: " << static_cast<uint32_t>(event->type)
+              << " Severity: " << static_cast<int>(event->severity)
+              << " Details: " << event->details << std::endl;
+    return true;
+}
+
+bool OnServerDirective(const Sentinel::SDK::ServerDirective* directive, void* user_data) {
+    std::cout << "[SERVER DIRECTIVE] Type: " << static_cast<uint32_t>(directive->type) << std::endl;
+    
+    if (directive->type == Sentinel::SDK::ServerDirectiveType::SessionTerminate) {
+        std::cout << "Server ordered session termination. Exiting..." << std::endl;
+        exit(0);
+    }
+    return true;
+}
+
+int main() {
+    std::cout << "Sentinel SDK Minimal Integration Example" << std::endl;
+    std::cout << "Version: " << Sentinel::SDK::GetVersion() << std::endl;
+    
+    // Configure SDK
+    Sentinel::SDK::Configuration config = Sentinel::SDK::Configuration::Default();
+    config.license_key = "YOUR-LICENSE-KEY";
+    config.game_id = "example-game";
+    config.violation_callback = OnViolationDetected;
+    config.directive_callback = OnServerDirective;
+    
+    // Initialize
+    std::cout << "Initializing Sentinel SDK..." << std::endl;
+    Sentinel::SDK::ErrorCode result = Sentinel::SDK::Initialize(&config);
+    
+    if (result != Sentinel::SDK::ErrorCode::Success) {
+        std::cerr << "Failed to initialize: " << static_cast<uint32_t>(result) << std::endl;
+        return 1;
+    }
+    
+    std::cout << "SDK initialized successfully!" << std::endl;
+    
+    // Game loop simulation
+    bool running = true;
+    int frame = 0;
+    
+    while (running) {
+        frame++;
+        Sentinel::SDK::Update();
+        
+        if (frame % 300 == 0) {
+            Sentinel::SDK::FullScan();
+            Sentinel::SDK::Statistics stats = {};
+            Sentinel::SDK::GetStatistics(&stats);
+            std::cout << "Stats - Uptime: " << stats.uptime_ms / 1000 << "s" << std::endl;
+        }
+        
+        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        
+        if (frame >= 600) {
+            running = false;
+        }
+    }
+    
+    // Shutdown
+    std::cout << "Shutting down..." << std::endl;
+    Sentinel::SDK::Shutdown();
+    return 0;
+}
+"@ | Out-File -FilePath "$PackageDir\examples\MinimalIntegration.cpp" -Encoding utf8
+
+@"
+# Example CMake integration for Sentinel SDK
+cmake_minimum_required(VERSION 3.21)
+project(SentinelIntegrationExample)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Set path to Sentinel SDK
+set(SENTINEL_SDK_DIR "`${CMAKE_CURRENT_SOURCE_DIR}/.." CACHE PATH "Path to Sentinel SDK")
+
+# Find libraries
+find_library(SENTINEL_SDK_LIB
+    NAMES SentinelSDK
+    PATHS "`${SENTINEL_SDK_DIR}/lib"
+    NO_DEFAULT_PATH
+)
+
+if(NOT SENTINEL_SDK_LIB)
+    message(FATAL_ERROR "Sentinel SDK library not found")
+endif()
+
+# Create executable
+add_executable(MinimalIntegration MinimalIntegration.cpp)
+
+target_link_libraries(MinimalIntegration PRIVATE `${SENTINEL_SDK_LIB})
+
+target_include_directories(MinimalIntegration PRIVATE
+    "`${SENTINEL_SDK_DIR}/include"
+)
+
+# Windows: Copy DLL to output directory
+if(WIN32)
+    add_custom_command(TARGET MinimalIntegration POST_BUILD
+        COMMAND `${CMAKE_COMMAND} -E copy_if_different
+            "`${SENTINEL_SDK_DIR}/lib/SentinelSDK.dll"
+            "`$<TARGET_FILE_DIR:MinimalIntegration>"
+    )
+endif()
+
+message(STATUS "Sentinel SDK: `${SENTINEL_SDK_LIB}")
+"@ | Out-File -FilePath "$PackageDir\examples\CMakeLists.txt" -Encoding utf8
 
 # Step 8: Create license file
 Write-Host ""

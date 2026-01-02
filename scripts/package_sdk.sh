@@ -33,6 +33,8 @@ NC='\033[0m' # No Color
 PLATFORM=""
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
     PLATFORM="linux"
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+    PLATFORM="macos"
 elif [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]] || [[ "$OSTYPE" == "win32" ]]; then
     PLATFORM="windows"
 else
@@ -116,8 +118,8 @@ fi
 echo ""
 echo "Step 2: Copying libraries (stripping debug symbols)..."
 
-if [ "$PLATFORM" = "linux" ]; then
-    # Linux: .so files
+if [ "$PLATFORM" = "linux" ] || [ "$PLATFORM" = "macos" ]; then
+    # Linux/macOS: .so/.dylib files
     if [ -f "${BUILD_DIR}/lib/libSentinelSDK.so" ]; then
         echo "  - Copying libSentinelSDK.so"
         cp "${BUILD_DIR}/lib/libSentinelSDK.so" "${PACKAGE_DIR}/lib/"
@@ -830,7 +832,7 @@ echo ""
 echo "Step 11: Creating distribution archive..."
 cd "${DIST_DIR}"
 
-if [ "$PLATFORM" = "linux" ]; then
+if [ "$PLATFORM" = "linux" ] || [ "$PLATFORM" = "macos" ]; then
     ARCHIVE_NAME="${PACKAGE_NAME}.tar.gz"
     tar -czf "${ARCHIVE_NAME}" "${PACKAGE_NAME}"
     echo -e "${GREEN}Created: ${DIST_DIR}/${ARCHIVE_NAME}${NC}"
