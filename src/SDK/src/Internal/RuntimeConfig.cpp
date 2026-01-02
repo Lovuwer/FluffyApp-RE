@@ -240,6 +240,32 @@ uint64_t RuntimeConfig::GetCurrentTimeMs() const {
     return duration_cast<milliseconds>(duration).count();
 }
 
+void RuntimeConfig::SetRedundancyConfig(DetectionType type, bool enabled, RedundancyLevel level) {
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    
+    size_t index = TypeToIndex(type);
+    if (index >= NUM_DETECTION_TYPES) {
+        return;
+    }
+    
+    detection_configs_[index].redundancy_enabled = enabled;
+    detection_configs_[index].redundancy_level = level;
+}
+
+void RuntimeConfig::GetRedundancyConfig(DetectionType type, bool& out_enabled, RedundancyLevel& out_level) const {
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    
+    size_t index = TypeToIndex(type);
+    if (index >= NUM_DETECTION_TYPES) {
+        out_enabled = false;
+        out_level = RedundancyLevel::None;
+        return;
+    }
+    
+    out_enabled = detection_configs_[index].redundancy_enabled;
+    out_level = detection_configs_[index].redundancy_level;
+}
+
 size_t RuntimeConfig::TypeToIndex(DetectionType type) const {
     size_t index = static_cast<size_t>(type);
     // Map Unknown (255) to index 6 (dedicated slot)

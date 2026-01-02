@@ -18,6 +18,8 @@
 #include "Internal/ScanScheduler.hpp"  // Task 09: Detection timing randomization
 #include "Internal/IntegrityValidator.hpp"  // Task 08: Memory integrity self-validation
 #include "Internal/TimingRandomizer.hpp"  // Task 22: Runtime behavior variation
+#include "Internal/DetectionRegistry.hpp"  // Task 29: Redundant detection architecture
+#include "Internal/RedundantAntiDebug.hpp"  // Task 29: Redundant anti-debug implementations
 #include "Sentinel/Core/Logger.hpp"  // Comprehensive logging infrastructure
 #include <Sentinel/Core/ServerDirective.hpp>  // Task 24: Server directive protocol
 // Note: Internal/PerfTelemetry.hpp will be available after merge with main
@@ -116,6 +118,9 @@ struct SDKContext {
     std::shared_ptr<SignatureManager> signature_manager;
     std::unique_ptr<UpdateClient> update_client;
     uint32_t current_signature_version = 0;
+    
+    // Task 29: Redundant detection architecture
+    std::unique_ptr<DetectionRegistry> detection_registry;
     
     // Session info
     std::string session_token;
@@ -785,6 +790,30 @@ SENTINEL_API ErrorCode SENTINEL_CALL Initialize(const Configuration* config) {
         SENTINEL_LOG_WARNING("Cloud endpoint not configured - telemetry disabled");
     }
     
+    // Task 29: Initialize redundant detection registry
+    SENTINEL_LOG_DEBUG("Initializing detection registry");
+    g_context->detection_registry = std::make_unique<DetectionRegistry>();
+    
+    // Register redundant implementations for AntiDebug (proof-of-concept)
+    if (g_context->anti_debug) {
+        // Primary implementation (existing comprehensive detector)
+        auto primary_impl = std::make_unique<AntiDebugPrimaryImpl>();
+        g_context->detection_registry->RegisterImplementation(std::move(primary_impl));
+        
+        // Alternative implementation (different approach)
+        auto alt_impl = std::make_unique<AntiDebugAlternativeImpl>();
+        g_context->detection_registry->RegisterImplementation(std::move(alt_impl));
+        
+        // Configure redundancy for AntiDebug - disabled by default (opt-in)
+        RedundancyConfig redundancy_config(DetectionType::AntiDebug, RedundancyLevel::Standard, false);
+        g_context->detection_registry->SetRedundancyConfig(redundancy_config);
+        
+        SENTINEL_LOG_INFO("Redundant AntiDebug implementations registered (2 implementations, disabled by default)");
+    }
+    
+    // Initialize all registered detection implementations
+    g_context->detection_registry->InitializeAll();
+    
     // Start heartbeat thread
     SENTINEL_LOG_DEBUG("Starting heartbeat thread");
     g_context->heartbeat_thread = std::make_unique<std::thread>(HeartbeatThreadFunc);
@@ -863,6 +892,13 @@ SENTINEL_API void SENTINEL_CALL Shutdown() {
     }
     g_context->update_client.reset();
     g_context->signature_manager.reset();
+    
+    // Task 29: Cleanup detection registry
+    if (g_context->detection_registry) {
+        SENTINEL_LOG_DEBUG("Shutting down detection registry");
+        g_context->detection_registry->ShutdownAll();
+    }
+    g_context->detection_registry.reset();
     
     // Cleanup whitelist manager
     if (g_whitelist) {
@@ -1547,6 +1583,79 @@ SENTINEL_API void SENTINEL_CALL RemoveThreadOriginWhitelist(const char* module_n
     }
     
     g_whitelist->Remove(module_name);
+}
+
+// ==================== Redundant Detection Configuration (Task 29) ====================
+
+SENTINEL_API ErrorCode SENTINEL_CALL SetRedundancy(
+    uint8_t category,
+    RedundancyLevel level)
+{
+    if (!g_context || !g_context->detection_registry) {
+        return ErrorCode::NotInitialized;
+    }
+    
+    if (!g_context->runtime_config) {
+        return ErrorCode::InternalError;
+    }
+    
+    // Convert category to internal type
+    DetectionType det_type = static_cast<DetectionType>(category);
+    
+    // Update runtime config
+    bool enabled = (level != RedundancyLevel::None);
+    g_context->runtime_config->SetRedundancyConfig(det_type, enabled, level);
+    
+    // Update detection registry
+    RedundancyConfig config(det_type, level, enabled);
+    g_context->detection_registry->SetRedundancyConfig(config);
+    
+    return ErrorCode::Success;
+}
+
+SENTINEL_API RedundancyLevel SENTINEL_CALL GetRedundancy(uint8_t category) {
+    if (!g_context || !g_context->runtime_config) {
+        return RedundancyLevel::None;
+    }
+    
+    DetectionType det_type = static_cast<DetectionType>(category);
+    bool enabled = false;
+    RedundancyLevel level = RedundancyLevel::None;
+    
+    g_context->runtime_config->GetRedundancyConfig(det_type, enabled, level);
+    
+    return level;
+}
+
+SENTINEL_API bool SENTINEL_CALL GetRedundancyStatistics(
+    uint8_t category,
+    RedundancyStatistics* stats)
+{
+    if (!g_context || !g_context->detection_registry || !stats) {
+        return false;
+    }
+    
+    DetectionType det_type = static_cast<DetectionType>(category);
+    auto internal_stats = g_context->detection_registry->GetStatistics(det_type);
+    
+    // Copy to output structure
+    stats->active_implementations = internal_stats.active_implementations;
+    stats->total_checks_performed = internal_stats.total_checks_performed;
+    stats->unique_violations_detected = internal_stats.unique_violations_detected;
+    stats->duplicate_violations_filtered = internal_stats.duplicate_violations_filtered;
+    stats->avg_overhead_us = internal_stats.avg_overhead_us;
+    stats->max_overhead_us = internal_stats.max_overhead_us;
+    
+    return true;
+}
+
+SENTINEL_API uint32_t SENTINEL_CALL GetImplementationCount(uint8_t category) {
+    if (!g_context || !g_context->detection_registry) {
+        return 0;
+    }
+    
+    DetectionType det_type = static_cast<DetectionType>(category);
+    return static_cast<uint32_t>(g_context->detection_registry->GetImplementationCount(det_type));
 }
 
 } // namespace SDK
