@@ -349,6 +349,7 @@ if(SENTINEL_BUILD_SDK)
     
     # Add SDK examples (including DummyGame) if enabled
     if(SENTINEL_SDK_BUILD_EXAMPLES)
+        add_subdirectory(examples/MinimalIntegration)
         add_subdirectory(examples/DummyGame)
         add_subdirectory(examples/PerformanceMetricsDemo)
     endif()
