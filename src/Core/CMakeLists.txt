@@ -36,6 +36,7 @@ target_sources(SentinelCore
         Network/RequestSigner.cpp
         Network/CertificatePinning.cpp
         Network/Heartbeat.cpp
+        Network/ServerDirective.cpp  # Task 24: Server directive validation
         
         # Configuration
         Config/SecureConfigLoader.cpp

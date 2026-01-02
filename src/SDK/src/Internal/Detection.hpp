@@ -22,6 +22,7 @@
 namespace Sentinel {
 namespace Network {
     class RequestSigner;
+    struct ServerDirective;  // Task 24: Server directive structure
 }
 }
 
@@ -417,7 +418,12 @@ private:
 };
 
 /**
- * Cloud event reporter
+ * Cloud event reporter with server directive polling
+ * 
+ * Task 24: Server-Authoritative Enforcement Model
+ * - Reports violations to server (detect and report only)
+ * - Polls server for enforcement directives
+ * - Validates directive signatures and prevents replay
  */
 class CloudReporter {
 public:
@@ -437,6 +443,27 @@ public:
     ErrorCode ReportCustomEvent(const char* type, const char* data);
     
     void Flush();
+    
+    /**
+     * Task 24: Poll server for enforcement directives
+     * @param session_id Current session identifier
+     * @return ErrorCode indicating success or failure
+     */
+    ErrorCode PollDirectives(const std::string& session_id);
+    
+    /**
+     * Task 24: Get last received server directive
+     * @param out_directive Output directive structure
+     * @return true if a directive is available
+     */
+    bool GetLastDirective(ServerDirective& out_directive);
+    
+    /**
+     * Task 24: Set directive callback for immediate notification
+     * @param callback Function to call when directive arrives
+     * @param user_data User context pointer
+     */
+    void SetDirectiveCallback(ServerDirectiveCallback callback, void* user_data);
     
 private:
     void ReportThread();

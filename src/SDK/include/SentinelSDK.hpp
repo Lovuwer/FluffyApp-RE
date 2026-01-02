@@ -288,6 +288,15 @@ enum class DetectionFeatures : uint32_t {
 
 /**
  * Response actions for violations
+ * 
+ * Task 24: Server-Authoritative Enforcement
+ * 
+ * IMPORTANT: Kick, Ban, and Terminate actions are DEPRECATED for client-side use.
+ * The SDK should ONLY detect and report. Enforcement decisions must be made by
+ * the server and delivered via ServerDirective callbacks.
+ * 
+ * Recommended client actions: Log | Report | Notify
+ * Server-enforced actions: Received via ServerDirective (SessionTerminate, etc.)
  */
 enum class ResponseAction : uint32_t {
     None = 0,           ///< No automatic action
@@ -295,15 +304,79 @@ enum class ResponseAction : uint32_t {
     Report = 0x02,      ///< Report to cloud
     Notify = 0x04,      ///< Notify callback
     Warn = 0x08,        ///< Display warning to user
-    Kick = 0x10,        ///< Disconnect from server
-    Ban = 0x20,         ///< Request ban
-    Terminate = 0x40,   ///< Terminate process
+    Kick = 0x10,        ///< [DEPRECATED] Disconnect from server (use ServerDirective instead)
+    Ban = 0x20,         ///< [DEPRECATED] Request ban (use ServerDirective instead)
+    Terminate = 0x40,   ///< [DEPRECATED] Terminate process (use ServerDirective instead)
     
     // Presets
     Silent = Log | Report,
     Default = Log | Report | Notify,
-    Aggressive = Log | Report | Notify | Kick
+    Aggressive = Log | Report | Notify | Kick  // Note: Kick is deprecated, use for compatibility only
 };
+
+// ==================== Server Directives (Task 24) ====================
+
+/**
+ * Server enforcement directive types
+ * 
+ * Task 24: Server-Authoritative Enforcement Model
+ * SDK detects and reports only. Server issues authoritative directives.
+ */
+enum class ServerDirectiveType : uint32_t {
+    None = 0,                   ///< No directive
+    SessionContinue = 1,        ///< Continue playing (explicit approval)
+    SessionTerminate = 2,       ///< Session must be terminated
+    SessionSuspend = 3,         ///< Temporary suspension
+    RequireReconnect = 4,       ///< Force reconnection
+    UpdateRequired = 5          ///< Client update required
+};
+
+/**
+ * Reason codes for server directives
+ */
+enum class ServerDirectiveReason : uint32_t {
+    None = 0,
+    CheatDetected = 1,
+    PolicyViolation = 2,
+    SystemError = 3,
+    MaintenanceMode = 4,
+    AccountBanned = 5,
+    SessionExpired = 6
+};
+
+/**
+ * Server enforcement directive
+ * 
+ * Task 24: Server-Authoritative Enforcement
+ * 
+ * Server directives are cryptographically signed and cannot be forged or replayed.
+ * The game MUST implement these directives as authoritative. The client SDK
+ * has zero enforcement authority - only detection and reporting.
+ */
+struct ServerDirective {
+    ServerDirectiveType type;   ///< Directive type
+    ServerDirectiveReason reason; ///< Reason code
+    uint64_t sequence;          ///< Monotonic sequence (replay protection)
+    uint64_t timestamp;         ///< Unix timestamp in milliseconds
+    const char* session_id;     ///< Session identifier
+    const char* message;        ///< Human-readable message
+};
+
+/**
+ * Callback for server directives
+ * 
+ * Game must implement this to receive and act on server directives.
+ * The callback MUST respect directives as authoritative.
+ * 
+ * @param directive Server directive to process
+ * @param user_data User-provided context
+ * @return true if directive was processed
+ */
+typedef bool (SENTINEL_CALL *ServerDirectiveCallback)(
+    const ServerDirective* directive,
+    void* user_data);
+
+// ==================== Configuration ====================
 
 /**
  * SDK initialization configuration
@@ -323,6 +396,11 @@ struct Configuration {
     // Callbacks
     ViolationCallback violation_callback;   ///< Violation event callback
     void* callback_user_data;               ///< User data for callbacks
+    
+    // Task 24: Server directive callback
+    ServerDirectiveCallback directive_callback; ///< Server directive callback
+    void* directive_user_data;              ///< User data for directive callback
+    uint32_t directive_poll_interval_ms;    ///< Server directive poll interval (default: 5000)
     
     // Performance tuning
     uint32_t heartbeat_interval_ms; ///< Heartbeat check interval (default: 1000)
@@ -351,6 +429,7 @@ struct Configuration {
         config.memory_scan_chunk_size = 4096;
         config.report_batch_size = 10;
         config.report_interval_ms = 30000;
+        config.directive_poll_interval_ms = 5000;  // Task 24: Poll every 5 seconds
         config.debug_mode = false;
         return config;
     }
@@ -598,6 +677,43 @@ SENTINEL_API const char* SENTINEL_CALL GetSessionToken();
  * @return Hardware ID string
  */
 SENTINEL_API const char* SENTINEL_CALL GetHardwareId();
+
+// ==================== Server Directive Polling (Task 24) ====================
+
+/**
+ * Poll for server directives
+ * 
+ * Task 24: Server-Authoritative Enforcement
+ * 
+ * Checks for new directives from server. Games should call this periodically
+ * (e.g., once per second) to receive enforcement decisions. However, automatic
+ * polling is enabled by default in the heartbeat thread based on
+ * directive_poll_interval_ms configuration.
+ * 
+ * @return Error code
+ */
+SENTINEL_API ErrorCode SENTINEL_CALL PollServerDirectives();
+
+/**
+ * Get last received server directive
+ * 
+ * @param out_directive Output directive structure
+ * @return true if a directive is available
+ */
+SENTINEL_API bool SENTINEL_CALL GetLastServerDirective(ServerDirective* out_directive);
+
+/**
+ * Set server directive callback
+ * 
+ * Register a callback to be notified when directives arrive.
+ * Recommended over polling for lower latency.
+ * 
+ * @param callback Callback function
+ * @param user_data User context pointer
+ */
+SENTINEL_API void SENTINEL_CALL SetServerDirectiveCallback(
+    ServerDirectiveCallback callback,
+    void* user_data);
 
 // ==================== Statistics ====================
 

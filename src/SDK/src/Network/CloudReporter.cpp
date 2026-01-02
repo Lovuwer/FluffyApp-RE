@@ -5,6 +5,8 @@
  * 
  * Violation reporting pipeline with thread-safe queuing, batching, retry logic,
  * and offline buffering to encrypted storage.
+ * 
+ * Task 24: Extended with server directive polling for server-authoritative enforcement.
  */
 
 #include "Internal/Detection.hpp"
@@ -12,6 +14,7 @@
 #include <Sentinel/Core/HttpClient.hpp>
 #include <Sentinel/Core/RequestSigner.hpp>
 #include <Sentinel/Core/Crypto.hpp>
+#include <Sentinel/Core/ServerDirective.hpp>  // Task 24: Server directive support
 #include <nlohmann/json.hpp>
 #include <thread>
 #include <mutex>
@@ -22,6 +25,7 @@
 #include <deque>
 #include <cstring>
 #include <atomic>
+#include <optional>  // Task 24: For std::optional<ServerDirective>
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -512,6 +516,124 @@ private:
     
     // Task 15: Report sequence numbering for gap detection
     std::atomic<uint64_t> report_sequence_number_;
+    
+    // Task 24: Server directive support
+    ServerDirectiveCallback directive_callback_ = nullptr;
+    void* directive_user_data_ = nullptr;
+    std::mutex directive_mutex_;
+    std::optional<SDK::ServerDirective> last_directive_;
+    std::optional<Sentinel::Network::ServerDirective> last_network_directive_;  // Store full network directive for string lifetime
+    std::unique_ptr<DirectiveValidator> directive_validator_;
+    
+public:
+    // Task 24: Server directive polling
+    ErrorCode PollDirectives(const std::string& session_id) {
+        if (endpoint_.empty()) {
+            return ErrorCode::InvalidConfiguration;
+        }
+        
+        try {
+            // Construct directive polling endpoint
+            std::string directive_endpoint = endpoint_;
+            if (directive_endpoint.back() == '/') {
+                directive_endpoint.pop_back();
+            }
+            directive_endpoint += "/directives";
+            
+            // Add session_id as query parameter
+            directive_endpoint += "?session_id=" + session_id;
+            
+            // Send GET request
+            HttpHeaders headers;
+            headers["Accept"] = "application/json";
+            
+            auto response = http_client_->get(directive_endpoint, headers);
+            
+            if (!response.isSuccess()) {
+                return ErrorCode::NetworkError;
+            }
+            
+            if (!response.value().isSuccess()) {
+                if (response.value().statusCode == 404) {
+                    // No directives available - this is normal
+                    return ErrorCode::Success;
+                }
+                return ErrorCode::NetworkError;
+            }
+            
+            // Parse directive from response
+            const auto& body = response.value().body;
+            std::string json_str(body.begin(), body.end());
+            
+            auto directive_result = parseDirective(json_str);
+            if (!directive_result.isSuccess()) {
+                return ErrorCode::ConfigurationParseError;
+            }
+            
+            auto& directive = directive_result.value();
+            
+            // Validate directive if validator is available
+            if (directive_validator_) {
+                auto validation_result = directive_validator_->validate(directive);
+                if (!validation_result.isSuccess()) {
+                    // Invalid directive - reject it
+                    return ErrorCode::AuthenticationFailed;
+                }
+            }
+            
+            // Convert Network::ServerDirective to SDK::ServerDirective for storage and callback
+            SDK::ServerDirective sdk_directive{};
+            sdk_directive.type = static_cast<SDK::ServerDirectiveType>(directive.type);
+            sdk_directive.reason = static_cast<SDK::ServerDirectiveReason>(directive.reason);
+            sdk_directive.sequence = directive.sequence;
+            sdk_directive.timestamp = directive.timestamp;
+            // Note: session_id and message are std::string in Network::ServerDirective
+            // but const char* in SDK::ServerDirective. We store the full directive
+            // and will return pointers to the stored strings.
+            
+            // Store directive
+            {
+                std::lock_guard<std::mutex> lock(directive_mutex_);
+                last_network_directive_ = directive;  // Store full directive
+                
+                // Update SDK directive to point to stored strings
+                sdk_directive.session_id = last_network_directive_->session_id.c_str();
+                sdk_directive.message = last_network_directive_->message.c_str();
+                
+                last_directive_ = sdk_directive;
+            }
+            
+            // Call callback if registered
+            if (directive_callback_) {
+                directive_callback_(&sdk_directive, directive_user_data_);
+            }
+            
+            return ErrorCode::Success;
+            
+        } catch (const std::exception&) {
+            return ErrorCode::InternalError;
+        }
+    }
+    
+    bool GetLastDirective(ServerDirective& out_directive) {
+        std::lock_guard<std::mutex> lock(directive_mutex_);
+        if (last_directive_.has_value()) {
+            out_directive = last_directive_.value();
+            return true;
+        }
+        return false;
+    }
+    
+    void SetDirectiveCallback(ServerDirectiveCallback callback, void* user_data) {
+        std::lock_guard<std::mutex> lock(directive_mutex_);
+        directive_callback_ = callback;
+        directive_user_data_ = user_data;
+    }
+    
+    void SetDirectiveValidator(std::unique_ptr<DirectiveValidator> validator) {
+        std::lock_guard<std::mutex> lock(directive_mutex_);
+        directive_validator_ = std::move(validator);
+    }
 };
 
 // ============================================================================
@@ -578,6 +700,27 @@ void CloudReporter::ReportThread() {
 ErrorCode CloudReporter::SendBatch() {
     // Implementation handled by Impl class
     return ErrorCode::Success;
+}
+
+// Task 24: Server directive polling methods
+ErrorCode CloudReporter::PollDirectives(const std::string& session_id) {
+    if (impl_) {
+        return impl_->PollDirectives(session_id);
+    }
+    return ErrorCode::NotInitialized;
+}
+
+bool CloudReporter::GetLastDirective(ServerDirective& out_directive) {
+    if (impl_) {
+        return impl_->GetLastDirective(out_directive);
+    }
+    return false;
+}
+
+void CloudReporter::SetDirectiveCallback(ServerDirectiveCallback callback, void* user_data) {
+    if (impl_) {
+        impl_->SetDirectiveCallback(callback, user_data);
+    }
 }
 
 } // namespace SDK
