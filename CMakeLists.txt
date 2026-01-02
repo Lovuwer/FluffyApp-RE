@@ -47,6 +47,7 @@ option(SENTINEL_ENABLE_VM_DEOBFUSCATOR "Enable VM Deobfuscation Engine" ON)
 option(SENTINEL_ENABLE_ASAN "Enable Address Sanitizer" OFF)
 option(SENTINEL_ENABLE_UBSAN "Enable Undefined Behavior Sanitizer" OFF)
 option(SENTINEL_ENABLE_TSAN "Enable Thread Sanitizer" OFF)
+option(SENTINEL_ENABLE_ANALYSIS_RESISTANCE "Enable analysis resistance in release builds (Task 28)" ON)
 
 # ============================================================================
 # Compiler Configuration
@@ -307,6 +308,28 @@ include_directories(
     ${SENTINEL_INCLUDE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/lib
 )
+
+# ============================================================================
+# Analysis Resistance Configuration (Task 28)
+# ============================================================================
+
+# Analysis resistance is enabled by default in Release builds
+# and disabled in Debug builds to preserve debugging experience.
+# Can be explicitly disabled with -DSENTINEL_ENABLE_ANALYSIS_RESISTANCE=OFF
+
+if(SENTINEL_ENABLE_ANALYSIS_RESISTANCE)
+    if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+        message(STATUS "Analysis resistance enabled for ${CMAKE_BUILD_TYPE} build")
+        # Framework automatically enables/disables based on NDEBUG
+        # No explicit definition needed here - framework checks NDEBUG
+    else()
+        message(STATUS "Analysis resistance disabled for ${CMAKE_BUILD_TYPE} build")
+        add_compile_definitions(SENTINEL_DISABLE_ANALYSIS_RESISTANCE)
+    endif()
+else()
+    message(STATUS "Analysis resistance explicitly disabled")
+    add_compile_definitions(SENTINEL_DISABLE_ANALYSIS_RESISTANCE)
+endif()
 
 # ============================================================================
 # Subdirectories

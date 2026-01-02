@@ -33,6 +33,7 @@ add_executable(CoreTests
     Core/test_memory.cpp
     Core/test_obfuscated_string.cpp
     Core/test_logger.cpp
+    Core/test_analysis_resistance.cpp
 )
 
 target_link_libraries(CoreTests
