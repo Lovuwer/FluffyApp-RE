@@ -318,7 +318,7 @@ void HeartbeatThreadFunc() {
                     // Task 25: Check for and handle signature rollback directives
                     ServerDirective directive;
                     if (g_context->reporter->GetLastDirective(directive)) {
-                        if (directive.type == DirectiveType::SignatureRollback && 
+                        if (directive.type == ServerDirectiveType::SignatureRollback && 
                             g_context->signature_manager) {
                             SENTINEL_LOG_INFO("Received signature rollback directive from server");
                             auto rollback_result = g_context->signature_manager->rollbackToPrevious();

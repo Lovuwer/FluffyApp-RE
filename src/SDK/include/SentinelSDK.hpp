@@ -328,7 +328,8 @@ enum class ServerDirectiveType : uint32_t {
     SessionTerminate = 2,       ///< Session must be terminated
     SessionSuspend = 3,         ///< Temporary suspension
     RequireReconnect = 4,       ///< Force reconnection
-    UpdateRequired = 5          ///< Client update required
+    UpdateRequired = 5,         ///< Client update required
+    SignatureRollback = 6       ///< Task 25: Rollback to previous signature set
 };
 
 /**
