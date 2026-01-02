@@ -228,11 +228,25 @@ BehavioralData BehavioralCollector::AggregateData() {
     
     // Aggregate input metrics
     if (config_.collect_input && !input_timestamps_.empty()) {
-        // Calculate actions per minute
-        uint64_t window_duration_ms = data.window_end_ms - data.window_start_ms;
-        if (window_duration_ms > 0) {
+        // Calculate actions per minute using actual event timestamp range
+        // This ensures accurate calculation even when GetCurrentData() is called immediately
+        uint64_t event_duration_ms = 0;
+        if (input_timestamps_.size() > 1) {
+            event_duration_ms = input_timestamps_.back() - input_timestamps_.front();
+        } else {
+            // Single event: use wall-clock duration since window start as fallback
+            event_duration_ms = data.window_end_ms - data.window_start_ms;
+        }
+        
+        if (event_duration_ms > 0) {
             data.input.actions_per_minute = static_cast<uint32_t>(
-                (input_timestamps_.size() * 60000) / window_duration_ms
+                (input_timestamps_.size() * 60000) / event_duration_ms
+            );
+        } else {
+            // For instantaneous samples or single event at window start,
+            // assume 1 second duration to avoid division by zero
+            data.input.actions_per_minute = static_cast<uint32_t>(
+                input_timestamps_.size() * 60
             );
         }
         
