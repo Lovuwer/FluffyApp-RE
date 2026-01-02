@@ -17,9 +17,12 @@ Start with integration guides to add Sentinel to your game:
 
 ### 🔒 Security Engineers
 Understand the security model and limitations:
-- [Security Documentation](security/) - Threat model, known bypasses, and defensive gaps
+- [Security Documentation](security/) - **Start here**: Complete security documentation hub
+- [Red Team Attack Surface](security/redteam-attack-surface.md) - Attack strategies per subsystem
+- [Defensive Gaps](security/defensive-gaps.md) - What cannot be defended
+- [Known Bypasses](security/known-bypasses.md) - Catalog of known bypass techniques
+- [Security Invariants](security/security-invariants.md) - Non-negotiable security requirements
 - [Implementation Status](IMPLEMENTATION_STATUS.md) - What's actually implemented vs documented
-- [Red Team Attack Surface](REDTEAM_ATTACK_SURFACE.md) - Attack strategies per subsystem
 
 ### 🏢 Operators & Backend Engineers
 Deploy and monitor the backend systems:
@@ -61,12 +64,13 @@ Understanding the system design:
 
 ### Security Documentation
 Security model, threats, and limitations:
-- [Red Team Attack Surface](REDTEAM_ATTACK_SURFACE.md) - Attack strategies per subsystem
-- [Defensive Gaps](DEFENSIVE_GAPS.md) - What cannot be defended
-- [Known Bypasses](KNOWN_BYPASSES.md) - High-level bypass classes
-- [Security Invariants](SECURITY_INVARIANTS.md) - Non-negotiable security requirements
-- [Detection Confidence Model](DETECTION_CONFIDENCE_MODEL.md) - Signal strength and bypass cost
-- [Analysis Resistance](ANALYSIS_RESISTANCE.md) - Anti-analysis techniques
+- [Security Documentation Hub](security/README.md) - **Start here**: Complete security documentation index
+- [Red Team Attack Surface](security/redteam-attack-surface.md) - Attack strategies per subsystem
+- [Defensive Gaps](security/defensive-gaps.md) - What cannot be defended
+- [Known Bypasses](security/known-bypasses.md) - High-level bypass classes
+- [Security Invariants](security/security-invariants.md) - Non-negotiable security requirements
+- [Detection Confidence Model](security/detection-confidence-model.md) - Signal strength and bypass cost
+- [Analysis Resistance](security/analysis-resistance.md) - Anti-analysis techniques
 
 ### Operations & Backend
 Server-side components and operations:

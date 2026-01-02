@@ -42,7 +42,7 @@ It does NOT provide:
 - Guarantees against determined adversaries
 - Standalone anti-cheat (requires server-side validation)
 
-See [docs/SECURITY_INVARIANTS.md](docs/SECURITY_INVARIANTS.md) and [docs/DEFENSIVE_GAPS.md](docs/DEFENSIVE_GAPS.md) for complete analysis.
+See [docs/security/security-invariants.md](docs/security/security-invariants.md) and [docs/security/defensive-gaps.md](docs/security/defensive-gaps.md) for complete analysis.
 
 ## Quick Start
 
@@ -205,12 +205,13 @@ Sentinel SDK is **one layer** in a complete security architecture:
 
 ### Security Documentation (RED TEAM REVIEWED)
 
-- [REDTEAM_ATTACK_SURFACE.md](docs/REDTEAM_ATTACK_SURFACE.md) - Attack strategies per subsystem
-- [DEFENSIVE_GAPS.md](docs/DEFENSIVE_GAPS.md) - What cannot be defended
-- [DETECTION_CONFIDENCE_MODEL.md](docs/DETECTION_CONFIDENCE_MODEL.md) - Signal strength and bypass cost
-- [KNOWN_BYPASSES.md](docs/KNOWN_BYPASSES.md) - High-level bypass classes
-- [SECURITY_INVARIANTS.md](docs/SECURITY_INVARIANTS.md) - Non-negotiable requirements
-- [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) - What's actually implemented
+- [Security Documentation Hub](docs/security/README.md) - Complete security documentation index
+- [Red Team Attack Surface](docs/security/redteam-attack-surface.md) - Attack strategies per subsystem
+- [Defensive Gaps](docs/security/defensive-gaps.md) - What cannot be defended
+- [Detection Confidence Model](docs/security/detection-confidence-model.md) - Signal strength and bypass cost
+- [Known Bypasses](docs/security/known-bypasses.md) - High-level bypass classes
+- [Security Invariants](docs/security/security-invariants.md) - Non-negotiable requirements
+- [Implementation Status](docs/IMPLEMENTATION_STATUS.md) - What's actually implemented
 
 ### Integration & Testing
 
@@ -289,7 +290,7 @@ Sentinel SDK is **one layer** in a complete security architecture:
 ⚠️ **Heartbeat/cloud reporting not yet implemented** (critical for production)  
 ⚠️ **Certificate pinning not yet implemented** (MITM possible)  
 
-See [DEFENSIVE_GAPS.md](docs/DEFENSIVE_GAPS.md) for complete analysis.
+See [docs/security/defensive-gaps.md](docs/security/defensive-gaps.md) for complete analysis.
 
 ---
 
