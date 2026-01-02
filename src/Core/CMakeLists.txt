@@ -48,6 +48,9 @@ target_sources(SentinelCore
         Utils/StringUtils.cpp
         Utils/BinaryUtils.cpp
         Utils/TimeUtils.cpp
+        
+        # Analysis Resistance - Task 28
+        AnalysisResistance.cpp
 )
 
 target_include_directories(SentinelCore
