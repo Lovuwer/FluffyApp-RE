@@ -778,6 +778,85 @@ SENTINEL_API ErrorCode SENTINEL_CALL WhitelistThreadOrigin(
  */
 SENTINEL_API void SENTINEL_CALL RemoveThreadOriginWhitelist(const char* module_name);
 
+// ==================== Redundant Detection Configuration (Task 29) ====================
+
+/**
+ * Redundancy levels for detection categories
+ */
+enum class RedundancyLevel : uint8_t {
+    None = 0,       ///< Single implementation (default, legacy behavior)
+    Standard = 1,   ///< Two implementations with different approaches
+    High = 2,       ///< Three or more implementations
+    Maximum = 3     ///< All available implementations (performance impact)
+};
+
+/**
+ * Redundancy statistics for a detection category
+ */
+struct RedundancyStatistics {
+    uint32_t active_implementations;        ///< Number of implementations currently active
+    uint32_t total_checks_performed;        ///< Total checks executed
+    uint32_t unique_violations_detected;    ///< Unique violations found
+    uint32_t duplicate_violations_filtered; ///< Duplicates removed
+    float avg_overhead_us;                  ///< Average overhead per check (microseconds)
+    float max_overhead_us;                  ///< Maximum overhead observed (microseconds)
+};
+
+/**
+ * Detection categories that support redundancy
+ */
+enum class DetectionCategory : uint8_t {
+    AntiDebug = 0,          ///< Anti-debugging detections
+    AntiHook = 1,           ///< Hook detection
+    MemoryIntegrity = 2,    ///< Memory integrity checks
+    SpeedHack = 3,          ///< Speed hack detection
+    InjectionDetect = 4,    ///< Injection detection
+    NetworkAnomaly = 5      ///< Network anomaly detection
+};
+
+/**
+ * Enable redundant detection for a category
+ * 
+ * Task 29: Redundant Detection Architecture
+ * 
+ * Enables multiple detection implementations for defense in depth.
+ * Redundancy is disabled by default (opt-in).
+ * 
+ * @param category Detection category to configure
+ * @param level Redundancy level (None, Standard, High, Maximum)
+ * @return Error code
+ */
+SENTINEL_API ErrorCode SENTINEL_CALL SetRedundancy(
+    DetectionCategory category,
+    RedundancyLevel level);
+
+/**
+ * Get redundancy configuration for a category
+ * 
+ * @param category Detection category
+ * @return Current redundancy level
+ */
+SENTINEL_API RedundancyLevel SENTINEL_CALL GetRedundancy(DetectionCategory category);
+
+/**
+ * Get redundancy statistics for a category
+ * 
+ * @param category Detection category
+ * @param stats Output statistics structure
+ * @return true if statistics are available
+ */
+SENTINEL_API bool SENTINEL_CALL GetRedundancyStatistics(
+    DetectionCategory category,
+    RedundancyStatistics* stats);
+
+/**
+ * Get number of implementations available for a category
+ * 
+ * @param category Detection category
+ * @return Number of implementations registered
+ */
+SENTINEL_API uint32_t SENTINEL_CALL GetImplementationCount(DetectionCategory category);
+
 // ==================== Helper Macros ====================
 
 // Inline operator overloads for flags

@@ -44,6 +44,8 @@ set(SDK_SOURCES
     src/Internal/TimingRandomizer.cpp
     src/Internal/InitializationRandomizer.cpp
     src/Internal/BehavioralCollector.cpp
+    src/Internal/DetectionRegistry.cpp
+    src/Internal/RedundantAntiDebug.cpp
     src/Core/Heartbeat.cpp
     src/Core/MemoryProtection.cpp
     src/Core/FunctionProtection.cpp
@@ -86,6 +88,8 @@ set(SDK_HEADERS
     src/Internal/TimingRandomizer.hpp
     src/Internal/InitializationRandomizer.hpp
     src/Internal/BehavioralCollector.hpp
+    src/Internal/DetectionRegistry.hpp
+    src/Internal/RedundantAntiDebug.hpp
 )
 
 # Header files for IDE organization only (not compiled)

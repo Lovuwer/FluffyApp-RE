@@ -21,6 +21,16 @@ namespace Sentinel {
 namespace SDK {
 
 /**
+ * Redundancy level for detection categories (Task 29)
+ */
+enum class RedundancyLevel : uint8_t {
+    None = 0,       ///< Single implementation (default, legacy behavior)
+    Standard = 1,   ///< Two implementations with different approaches
+    High = 2,       ///< Three or more implementations
+    Maximum = 3     ///< All available implementations (performance impact)
+};
+
+/**
  * Per-detection configuration
  */
 struct DetectionConfig {
@@ -31,6 +41,10 @@ struct DetectionConfig {
     uint64_t exception_window_start_ms;  // Window start time
     bool auto_disabled;             // Auto-disabled due to exceptions
     
+    // Task 29: Redundant detection configuration
+    bool redundancy_enabled;        // Enable redundant implementations
+    RedundancyLevel redundancy_level;  // Redundancy level for this detection
+    
     DetectionConfig()
         : enabled(true)
         , dry_run(false)
@@ -38,6 +52,8 @@ struct DetectionConfig {
         , exception_count(0)
         , exception_window_start_ms(0)
         , auto_disabled(false)
+        , redundancy_enabled(false)
+        , redundancy_level(RedundancyLevel::None)
     {}
 };
 
@@ -164,6 +180,22 @@ public:
      */
     void CheckForUpdates();
     
+    /**
+     * Set redundancy configuration for a detection type (Task 29)
+     * @param type Detection type
+     * @param enabled Enable/disable redundancy
+     * @param level Redundancy level to use
+     */
+    void SetRedundancyConfig(DetectionType type, bool enabled, RedundancyLevel level);
+    
+    /**
+     * Get redundancy configuration for a detection type (Task 29)
+     * @param type Detection type
+     * @param out_enabled Output: whether redundancy is enabled
+     * @param out_level Output: redundancy level
+     */
+    void GetRedundancyConfig(DetectionType type, bool& out_enabled, RedundancyLevel& out_level) const;
+
 private:
     /**
      * Update exception window tracking
