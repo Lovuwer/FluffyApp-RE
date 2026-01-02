@@ -323,7 +323,8 @@ public:
      * decryptWithNonce for NIST test vectors and security testing.
      * 
      * WARNING: This class is ONLY available when SENTINEL_TESTING is defined.
-     * It is stripped from Release builds to prevent nonce-reuse attacks.
+     * It is excluded from all production builds (where SENTINEL_TESTING is not
+     * defined) to prevent nonce-reuse attacks that could break AES-GCM security.
      */
     class TestAccess {
     public:
