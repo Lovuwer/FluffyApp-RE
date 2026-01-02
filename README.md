@@ -62,10 +62,10 @@ See [docs/security/security-invariants.md](docs/security/security-invariants.md)
 ## Documentation
 
 - [Documentation Hub](docs/README.md) - **Start here**: Complete documentation index
-- [Studio Integration Guide](docs/STUDIO_INTEGRATION_GUIDE.md) - 8-line integration guide
-- [Integration Guide](docs/INTEGRATION_GUIDE.md) - Complete integration guide
+- [Integration Quickstart](docs/integration/quickstart.md) - 8-line integration guide
+- [Advanced Integration](docs/integration/advanced.md) - Complete integration guide
 - [Implementation Status](docs/IMPLEMENTATION_STATUS.md) - What's actually implemented
-- [Security Documentation](docs/) - Security analysis and threat model
+- [Security Documentation](docs/security/) - Security analysis and threat model
 - [Platform Quickstarts](docs/platform/) - Windows/Linux specific guides
 - [Examples](examples/) - Working code examples
 
@@ -148,7 +148,7 @@ int main() {
 
 **📖 See:**
 - [Minimal Integration Example](examples/MinimalIntegration/) - Copy-paste ready
-- [Studio Integration Guide](docs/STUDIO_INTEGRATION_GUIDE.md) - Complete guide for studios
+- [Integration Quickstart](docs/integration/quickstart.md) - 8-line integration guide
 - [Platform Quickstarts](docs/platform/) - Windows/Linux specific guides
 - [Examples Overview](examples/) - All integration patterns
 
@@ -166,7 +166,7 @@ See [examples/DummyGame/](examples/DummyGame/) for a complete, realistic integra
 - Call `FullScan()` every 5-10 seconds (measured: ~7-10ms, optimization in progress)
 - Use explicit imports to avoid namespace conflicts
 - Configure violation callback for custom responses
-- See [docs/STUDIO_INTEGRATION_GUIDE.md](docs/STUDIO_INTEGRATION_GUIDE.md) for detailed guide
+- See [docs/integration/quickstart.md](docs/integration/quickstart.md) for detailed guide
 
 ---
 
@@ -215,7 +215,9 @@ Sentinel SDK is **one layer** in a complete security architecture:
 
 ### Integration & Testing
 
-- [INTEGRATION_GUIDE.md](docs/INTEGRATION_GUIDE.md) - Complete integration guide with best practices
+- [Integration Quickstart](docs/integration/quickstart.md) - 8-line integration guide
+- [Advanced Integration Guide](docs/integration/advanced.md) - Complete integration guide with best practices
+- [Engine-Specific Guide](docs/integration/engine-specific.md) - Unreal, Unity, Godot integration
 - [DUMMY_GAME_VALIDATION.md](docs/DUMMY_GAME_VALIDATION.md) - Real-world testing results and red-team observations
 - [DummyGame Example](examples/DummyGame/) - Realistic integration test exercising all SDK features
 

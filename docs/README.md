@@ -10,8 +10,9 @@ Welcome to the Sentinel SDK documentation. This page serves as the central navig
 
 ### 🎮 Game Developers
 Start with integration guides to add Sentinel to your game:
-- [Studio Integration Guide](STUDIO_INTEGRATION_GUIDE.md) - **Start here**: 8 lines of code integration
-- [Integration Guide](INTEGRATION_GUIDE.md) - Complete integration guide with best practices
+- [Integration Quickstart](integration/quickstart.md) - **Start here**: 8 lines of code integration
+- [Engine-Specific Guide](integration/engine-specific.md) - Unreal, Unity, Godot integration
+- [Advanced Integration](integration/advanced.md) - Complete integration guide with best practices
 - [Platform Quickstarts](platform/) - Windows/Linux specific guides
 - [Examples](../examples/) - Working code examples
 
@@ -26,9 +27,12 @@ Understand the security model and limitations:
 
 ### 🏢 Operators & Backend Engineers
 Deploy and monitor the backend systems:
-- [Operator Dashboard Specification](OPERATOR_DASHBOARD_SPECIFICATION.md)
-- [Server-Side Detection Correlation](SERVER_SIDE_DETECTION_CORRELATION.md)
-- [Server Enforcement Protocol](SERVER_ENFORCEMENT_PROTOCOL.md)
+- [Operations Documentation](operations/README.md) - **Start here**: Complete operations guide index
+- [Operator Dashboard Specification](operations/OPERATOR_DASHBOARD_SPECIFICATION.md)
+- [Server-Side Detection Correlation](operations/SERVER_SIDE_DETECTION_CORRELATION.md)
+- [Server Enforcement Protocol](operations/SERVER_ENFORCEMENT_PROTOCOL.md)
+- [Server Behavioral Processing](operations/SERVER_BEHAVIORAL_PROCESSING.md)
+- [Dashboard Telemetry Mapping](operations/DASHBOARD_TELEMETRY_MAPPING.md)
 
 ### 📐 System Architects
 Understand the architecture and design decisions:
@@ -42,10 +46,11 @@ Understand the architecture and design decisions:
 
 ### Integration & Quickstart
 Getting Sentinel SDK integrated into your game:
-- [Studio Integration Guide](STUDIO_INTEGRATION_GUIDE.md) - Minimal 8-line integration
-- [Integration Guide](INTEGRATION_GUIDE.md) - Complete integration guide
+- [Integration Guides Hub](integration/README.md) - **Start here**: Complete integration guide index
+- [Quickstart Guide](integration/quickstart.md) - Minimal 8-line integration
+- [Engine-Specific Guide](integration/engine-specific.md) - Unreal, Unity, Godot integration
+- [Advanced Integration](integration/advanced.md) - Production-ready integration
 - [Platform Quickstarts](platform/) - Platform-specific guides (Windows, Linux)
-- [integration-guide.md](integration-guide.md) - Engine-specific integration (Unreal, Unity, Godot)
 - [Examples](../examples/) - Working code examples
 
 ### API Reference
@@ -72,12 +77,14 @@ Security model, threats, and limitations:
 
 ### Operations & Backend
 Server-side components and operations:
-- [Operator Dashboard Specification](OPERATOR_DASHBOARD_SPECIFICATION.md) - Dashboard requirements
-- [Dashboard Telemetry Mapping](DASHBOARD_TELEMETRY_MAPPING.md) - Telemetry data mapping
-- [Server-Side Detection Correlation](SERVER_SIDE_DETECTION_CORRELATION.md) - Server correlation logic
-- [Server Enforcement Protocol](SERVER_ENFORCEMENT_PROTOCOL.md) - Enforcement protocol spec
-- [Server Behavioral Processing](SERVER_BEHAVIORAL_PROCESSING.md) - Behavioral analysis server-side
+- [Operations Documentation Hub](operations/README.md) - **Start here**: Complete operations guide index
+- [Operator Dashboard Specification](operations/OPERATOR_DASHBOARD_SPECIFICATION.md) - Dashboard requirements
+- [Dashboard Telemetry Mapping](operations/DASHBOARD_TELEMETRY_MAPPING.md) - Telemetry data mapping
+- [Server-Side Detection Correlation](operations/SERVER_SIDE_DETECTION_CORRELATION.md) - Server correlation logic
+- [Server Enforcement Protocol](operations/SERVER_ENFORCEMENT_PROTOCOL.md) - Enforcement protocol spec
+- [Server Behavioral Processing](operations/SERVER_BEHAVIORAL_PROCESSING.md) - Behavioral analysis server-side
 - [Control Plane Separation](CONTROL_PLANE_SEPARATION.md) - Architecture separation
+- [Release Policy](operations/releases.md) - Versioning and release management
 
 ### Telemetry & Monitoring
 Understanding telemetry data:
@@ -133,12 +140,12 @@ Future development plans:
 ## Quick Links
 
 ### Most Common Tasks
-- **Integrate SDK**: Start with [Studio Integration Guide](STUDIO_INTEGRATION_GUIDE.md)
+- **Integrate SDK**: Start with [Integration Quickstart](integration/quickstart.md)
 - **Understand Security**: Read [Security Documentation Hub](security/README.md)
 - **Check Status**: See [Implementation Status](IMPLEMENTATION_STATUS.md)
 - **Review Changes**: See [Changelog](status/changelog.md)
 - **Understand Versioning**: See [Release Policy](operations/releases.md)
-- **Configure Backend**: Start with [Operator Dashboard](OPERATOR_DASHBOARD_SPECIFICATION.md)
+- **Configure Backend**: Start with [Operations Documentation](operations/README.md)
 - **API Reference**: See [api-reference.md](api-reference.md)
 
 ### External Links
@@ -152,6 +159,7 @@ Future development plans:
 ## Documentation Organization
 
 Documentation is organized into subdirectories by topic:
+- `integration/` - Integration guides (quickstart, engines, advanced)
 - `architecture/` - System architecture and design
 - `platform/` - Platform-specific guides
 - `security/` - Security documentation hub
