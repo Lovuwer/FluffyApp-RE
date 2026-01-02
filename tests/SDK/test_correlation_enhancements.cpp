@@ -1,5 +1,5 @@
 /**
- * Sentinel SDK - Correlation Engine Enhancement Tests (Fixed)
+ * Sentinel SDK - Correlation Engine Enhancement Tests
  * 
  * Copyright (c) 2025 Sentinel Security.  All rights reserved.
  */
@@ -12,7 +12,7 @@
 using namespace Sentinel::SDK;
 
 /**
- * Test Fixture for Enhancement tests - FIXED
+ * Test Fixture for Enhancement tests
  */
 class CorrelationEnhancementTest : public ::testing::Test {
 protected:
@@ -23,10 +23,10 @@ protected:
     }
     
     void TearDown() override {
-        // Defensive: Check if engine exists before shutdown
+        // Defensive: Ensure engine is valid before shutdown to prevent double-free or use-after-free
         if (engine_) {
             engine_->Shutdown();
-            engine_.reset();  // Reset after shutdown, not before
+            engine_.reset();
         }
     }
     
@@ -41,7 +41,7 @@ protected:
         event.timestamp = 0;
         event.address = 0;
         // FIX: Use safe string assignment, never pass nullptr to std::string
-        event.module_name = (module != nullptr) ? std::string(module) : std::string();
+        event.module_name = module ? module : "";
         event.details = "Test violation";
         event.detection_id = 0;
         return event;
