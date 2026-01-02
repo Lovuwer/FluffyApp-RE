@@ -315,15 +315,15 @@ public:
      */
     void setKey(const AESKey& key);
 
+#ifdef SENTINEL_TESTING
     /**
      * @brief Test-only accessor for private encryption methods
      * 
      * This nested class provides controlled access to encryptWithNonce and
      * decryptWithNonce for NIST test vectors and security testing.
-     * It is intentionally placed in the public section but clearly marked
-     * as test-only to prevent misuse in production code.
      * 
-     * WARNING: DO NOT USE IN PRODUCTION CODE. Only for testing!
+     * WARNING: This class is ONLY available when SENTINEL_TESTING is defined.
+     * It is stripped from Release builds to prevent nonce-reuse attacks.
      */
     class TestAccess {
     public:
@@ -345,6 +345,7 @@ public:
             return cipher.decryptWithNonce(ciphertext, nonce, associatedData);
         }
     };
+#endif // SENTINEL_TESTING
 
 private:
     /**
