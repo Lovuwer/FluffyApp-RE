@@ -123,6 +123,15 @@ if [ "$PLATFORM" = "linux" ]; then
         cp "${BUILD_DIR}/lib/libSentinelSDK.so" "${PACKAGE_DIR}/lib/"
         echo "  - Stripping debug symbols from libSentinelSDK.so"
         strip --strip-debug --strip-unneeded "${PACKAGE_DIR}/lib/libSentinelSDK.so"
+        
+        # Create versioned symlinks for proper soname resolution
+        cd "${PACKAGE_DIR}/lib"
+        if readelf -d libSentinelSDK.so | grep -q "SONAME.*libSentinelSDK.so.1"; then
+            echo "  - Creating versioned library links"
+            ln -sf libSentinelSDK.so libSentinelSDK.so.1
+            ln -sf libSentinelSDK.so.1 libSentinelSDK.so.1.0.0
+        fi
+        cd - > /dev/null
     fi
     
     if [ -f "${BUILD_DIR}/lib/libSentinelCore.so" ]; then
@@ -130,6 +139,15 @@ if [ "$PLATFORM" = "linux" ]; then
         cp "${BUILD_DIR}/lib/libSentinelCore.so" "${PACKAGE_DIR}/lib/"
         echo "  - Stripping debug symbols from libSentinelCore.so"
         strip --strip-debug --strip-unneeded "${PACKAGE_DIR}/lib/libSentinelCore.so"
+        
+        # Create versioned symlinks for proper soname resolution
+        cd "${PACKAGE_DIR}/lib"
+        if readelf -d libSentinelCore.so | grep -q "SONAME.*libSentinelCore.so"; then
+            echo "  - Creating versioned library links for Core"
+            # Extract actual soname if present
+            ln -sf libSentinelCore.so libSentinelCore.so.1 2>/dev/null || true
+        fi
+        cd - > /dev/null
     fi
     
     # Static libraries
