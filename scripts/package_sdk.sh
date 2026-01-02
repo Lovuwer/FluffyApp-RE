@@ -118,8 +118,8 @@ fi
 echo ""
 echo "Step 2: Copying libraries (stripping debug symbols)..."
 
-if [ "$PLATFORM" = "linux" ] || [ "$PLATFORM" = "macos" ]; then
-    # Linux/macOS: .so/.dylib files
+if [ "$PLATFORM" = "linux" ]; then
+    # Linux: .so files
     if [ -f "${BUILD_DIR}/lib/libSentinelSDK.so" ]; then
         echo "  - Copying libSentinelSDK.so"
         cp "${BUILD_DIR}/lib/libSentinelSDK.so" "${PACKAGE_DIR}/lib/"
@@ -146,7 +146,6 @@ if [ "$PLATFORM" = "linux" ] || [ "$PLATFORM" = "macos" ]; then
         cd "${PACKAGE_DIR}/lib"
         if readelf -d libSentinelCore.so | grep -q "SONAME.*libSentinelCore.so"; then
             echo "  - Creating versioned library links for Core"
-            # Extract actual soname if present
             ln -sf libSentinelCore.so libSentinelCore.so.1 2>/dev/null || true
         fi
         cd - > /dev/null
@@ -158,6 +157,42 @@ if [ "$PLATFORM" = "linux" ] || [ "$PLATFORM" = "macos" ]; then
         cp "${BUILD_DIR}/lib/libSentinelSDK_static.a" "${PACKAGE_DIR}/lib/"
         echo "  - Stripping debug symbols from libSentinelSDK_static.a"
         strip --strip-debug "${PACKAGE_DIR}/lib/libSentinelSDK_static.a"
+    fi
+    
+elif [ "$PLATFORM" = "macos" ]; then
+    # macOS: .dylib files
+    if [ -f "${BUILD_DIR}/lib/libSentinelSDK.dylib" ]; then
+        echo "  - Copying libSentinelSDK.dylib"
+        cp "${BUILD_DIR}/lib/libSentinelSDK.dylib" "${PACKAGE_DIR}/lib/"
+        echo "  - Stripping debug symbols from libSentinelSDK.dylib"
+        # macOS uses different strip flags
+        strip -S "${PACKAGE_DIR}/lib/libSentinelSDK.dylib"
+        
+        # Create versioned symlinks for dylib
+        cd "${PACKAGE_DIR}/lib"
+        # Check install name with otool
+        if otool -D libSentinelSDK.dylib | grep -q "libSentinelSDK.1.dylib"; then
+            echo "  - Creating versioned library links"
+            ln -sf libSentinelSDK.dylib libSentinelSDK.1.dylib
+            ln -sf libSentinelSDK.1.dylib libSentinelSDK.1.0.0.dylib
+        fi
+        cd - > /dev/null
+    fi
+    
+    if [ -f "${BUILD_DIR}/lib/libSentinelCore.dylib" ]; then
+        echo "  - Copying libSentinelCore.dylib"
+        cp "${BUILD_DIR}/lib/libSentinelCore.dylib" "${PACKAGE_DIR}/lib/"
+        echo "  - Stripping debug symbols from libSentinelCore.dylib"
+        strip -S "${PACKAGE_DIR}/lib/libSentinelCore.dylib"
+    fi
+    
+    # Static libraries
+    if [ -f "${BUILD_DIR}/lib/libSentinelSDK_static.a" ]; then
+        echo "  - Copying libSentinelSDK_static.a"
+        cp "${BUILD_DIR}/lib/libSentinelSDK_static.a" "${PACKAGE_DIR}/lib/"
+        echo "  - Stripping debug symbols from libSentinelSDK_static.a"
+        # macOS strip for static libraries
+        strip -S "${PACKAGE_DIR}/lib/libSentinelSDK_static.a"
     fi
     
 elif [ "$PLATFORM" = "windows" ]; then
