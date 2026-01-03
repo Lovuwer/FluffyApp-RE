@@ -1,139 +1,283 @@
-# SentinelFlappy3D - Complete Build and Run Guide
+# SentinelFlappy3D - Build and Run Guide for Windows
 
-## Overview
+## 📋 Overview
 
-This guide explains how to build and run SentinelFlappy3D with the Sentinel SDK fully initialized. The game demonstrates a complete integration of the Sentinel anti-cheat SDK in a playable 3D Flappy Bird game.
+This guide will help you build and run **SentinelFlappy3D** on Windows from scratch. Even if you've never built a C++ project before, just follow these steps carefully and you'll have the game running in no time!
 
-**Status**: Steps 1-5 Complete (Sentinel SDK Integrated)
+**What is SentinelFlappy3D?**  
+A 3D Flappy Bird game that demonstrates how to integrate the Sentinel anti-cheat SDK into a game project.
 
----
-
-## Prerequisites
-
-### System Requirements
-
-- **OS**: Linux (Ubuntu 22.04+) or Windows 10/11
-- **Compiler**: GCC 11+, Clang 13+, or MSVC 2019+
-- **CMake**: 3.21 or later
-- **OpenGL**: Drivers with OpenGL 2.1+ support
-- **Display**: X11 display server (for running the game)
-
-### Required Libraries (Linux)
-
-```bash
-# Install build tools and dependencies
-sudo apt-get update
-sudo apt-get install -y \
-    build-essential \
-    cmake \
-    git \
-    libx11-dev \
-    libxrandr-dev \
-    libxinerama-dev \
-    libxcursor-dev \
-    libxi-dev \
-    libgl1-mesa-dev \
-    libssl-dev
-```
-
-**Dependencies Explained:**
-- **X11 libraries**: For window creation and input (GLFW requirement)
-- **OpenGL**: For rendering
-- **OpenSSL**: Required by Sentinel SDK for network encryption
+**Time Required**: 30-60 minutes (first time)  
+**Difficulty**: Beginner-friendly  
+**Windows Version**: Windows 10 or Windows 11
 
 ---
 
-## Build Instructions
+## 🎯 What You Need to Install
 
-### Step 1: Build the Sentinel SDK
+Before building the game, you need to install these free tools:
 
-The Sentinel SDK must be built first from the parent repository:
+1. **Visual Studio 2019 or newer** - The compiler that builds C++ programs
+2. **CMake** - A tool that configures the build process
+3. **Git** - A tool to download the code from GitHub
 
-```bash
-# Navigate to the Sentinel-RE root directory
-cd /path/to/Sentiel-RE
+Don't worry if you don't have these yet - we'll walk through installing each one!
 
-# Configure CMake with SDK enabled
-cmake -B build \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DSENTINEL_BUILD_SDK=ON \
-    -DSENTINEL_BUILD_TESTS=OFF \
-    -DSENTINEL_BUILD_CORTEX=OFF \
+---
+
+## 📥 Step 1: Install Visual Studio (C++ Compiler)
+
+Visual Studio is Microsoft's development environment for building Windows applications.
+
+### Download Visual Studio
+
+1. Go to: https://visualstudio.microsoft.com/downloads/
+2. Download **Visual Studio 2022 Community** (it's free!)
+3. Run the installer
+
+### Choose the Right Components
+
+When the Visual Studio Installer opens:
+
+1. Select **"Desktop development with C++"** workload
+2. On the right side, make sure these are checked:
+   - ✅ MSVC v143 (or latest) - C++ build tools
+   - ✅ Windows 10 or 11 SDK
+   - ✅ C++ CMake tools for Windows
+3. Click **"Install"** button
+
+**Note**: The installation is large (several GB) and may take 15-30 minutes.
+
+### Verify Installation
+
+After installation completes:
+
+1. Press `Windows Key + R`
+2. Type `cmd` and press Enter
+3. In the Command Prompt, type:
+   ```cmd
+   "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
+   cl
+   ```
+4. You should see something like: "Microsoft (R) C/C++ Optimizing Compiler Version..."
+
+✅ **Success!** Visual Studio is installed.
+
+---
+
+## 📥 Step 2: Install CMake
+
+CMake is a tool that helps configure how the project should be built.
+
+### Download CMake
+
+1. Go to: https://cmake.org/download/
+2. Download the **Windows x64 Installer** (file ending in `.msi`)
+3. Run the installer
+
+### Installation Steps
+
+1. Click through the wizard
+2. **Important**: When you see "Install Options", select:
+   - ✅ **"Add CMake to the system PATH for all users"**
+3. Complete the installation
+
+### Verify Installation
+
+1. Open a **new** Command Prompt (press `Windows Key + R`, type `cmd`, press Enter)
+2. Type:
+   ```cmd
+   cmake --version
+   ```
+3. You should see: "cmake version 3.xx.x"
+
+✅ **Success!** CMake is installed.
+
+---
+
+## 📥 Step 3: Install Git (Optional but Recommended)
+
+Git helps you download and manage the source code.
+
+### Download Git
+
+1. Go to: https://git-scm.com/download/win
+2. Download the installer
+3. Run it
+
+### Installation Steps
+
+1. Use all the default options (just keep clicking "Next")
+2. Complete the installation
+
+### Verify Installation
+
+1. Open a new Command Prompt
+2. Type:
+   ```cmd
+   git --version
+   ```
+3. You should see: "git version 2.xx.x"
+
+✅ **Success!** Git is installed.
+
+---
+
+## 📥 Step 4: Download the Code
+
+Now let's get the SentinelFlappy3D code onto your computer.
+
+### Option A: Using Git (Recommended)
+
+1. Open Command Prompt
+2. Navigate to where you want to store the code (e.g., your Documents folder):
+   ```cmd
+   cd C:\Users\YourUsername\Documents
+   ```
+3. Clone the repository:
+   ```cmd
+   git clone https://github.com/Lovuwer/Sentiel-RE.git
+   cd Sentiel-RE
+   ```
+
+### Option B: Download ZIP
+
+1. Go to: https://github.com/Lovuwer/Sentiel-RE
+2. Click the green **"Code"** button
+3. Click **"Download ZIP"**
+4. Extract the ZIP file to `C:\Users\YourUsername\Documents\Sentiel-RE`
+
+---
+
+## 🔨 Step 5: Build the Sentinel SDK
+
+The Sentinel SDK is the anti-cheat library that the game uses. We need to build it first.
+
+### Open Developer Command Prompt
+
+1. Press the `Windows Key`
+2. Type: **"Developer Command Prompt for VS 2022"**
+3. Click on it to open
+
+**Why this special command prompt?**  
+It has all the C++ build tools ready to use.
+
+### Build the SDK
+
+In the Developer Command Prompt:
+
+```cmd
+:: Navigate to the Sentiel-RE folder
+cd C:\Users\YourUsername\Documents\Sentiel-RE
+
+:: Configure the build with CMake
+cmake -B build -G "Visual Studio 17 2022" -A x64 ^
+    -DCMAKE_BUILD_TYPE=Release ^
+    -DSENTINEL_BUILD_SDK=ON ^
+    -DSENTINEL_BUILD_TESTS=OFF ^
+    -DSENTINEL_BUILD_CORTEX=OFF ^
     -DSENTINEL_BUILD_WATCHTOWER=OFF
 
-# Build the SDK (this creates libSentinelSDK.so and libSentinelCore.a)
-cmake --build build --target SentinelSDK -j$(nproc)
+:: Build the SDK
+cmake --build build --config Release --target SentinelSDK
 ```
 
-**Expected Output:**
+**What's happening?**
+- First command: CMake reads the project files and prepares to build
+- Second command: Compiles the actual Sentinel SDK library
+
+### Expected Output
+
+You should see lots of compilation messages, ending with:
 ```
-[100%] Built target SentinelSDK
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
 ```
 
-**Verify SDK Libraries:**
-```bash
-ls -lh build/lib/ | grep -i sentinel
+### Verify the SDK Built Successfully
+
+Check if the library files exist:
+
+```cmd
+dir build\lib\Release
 ```
 
-You should see:
-```
-libSentinelCore.a          (3.7 MB) - Core anti-cheat engine
-libSentinelSDK.so         -> Symlink to versioned library
-libSentinelSDK.so.1       -> Symlink to versioned library  
-libSentinelSDK.so.1.0.0    (1.2 MB) - Sentinel SDK shared library
-```
+You should see files like:
+- `SentinelSDK.lib` (or `SentinelSDK_static.lib`)
+- `SentinelCore.lib`
 
-### Step 2: Build SentinelFlappy3D
-
-```bash
-# Navigate to the SentinelFlappy3D directory
-cd SentinelFlappy3D
-
-# Configure CMake (SDK will be auto-detected from parent build)
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-
-# Build the game
-cmake --build build -j$(nproc)
-```
-
-**Expected Output:**
-```
-Found Sentinel SDK at: /path/to/Sentiel-RE/src/SDK
-Found Sentinel SDK library: /path/to/Sentiel-RE/build/lib/libSentinelSDK.so
-Found Sentinel Core library: /path/to/Sentiel-RE/build/lib/libSentinelCore.a
-...
-==========================================
-  SentinelFlappy3D built successfully!
-  Executable: /path/to/SentinelFlappy3D/build/bin/SentinelFlappy3D
-==========================================
-[100%] Built target SentinelFlappy3D
-```
-
-**Verify Executable:**
-```bash
-ls -lh build/bin/SentinelFlappy3D
-ldd build/bin/SentinelFlappy3D | grep Sentinel
-```
-
-You should see:
-```
--rwxr-xr-x 348K SentinelFlappy3D
-libSentinelSDK.so.1 => /path/to/Sentiel-RE/build/lib/libSentinelSDK.so.1
-```
+✅ **Success!** The Sentinel SDK is built.
 
 ---
 
-## Running the Game
+## 🔨 Step 6: Build SentinelFlappy3D
 
-### Basic Execution
+Now we can build the actual game!
 
-```bash
+### Navigate to the Game Folder
+
+In the same Developer Command Prompt:
+
+```cmd
 cd SentinelFlappy3D
-./build/bin/SentinelFlappy3D
 ```
 
-### Expected Console Output (Game)
+### Configure and Build the Game
 
+```cmd
+:: Configure the game build
+cmake -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
+
+:: Build the game
+cmake --build build --config Release
+```
+
+**What's happening?**
+- CMake will automatically find the Sentinel SDK you just built
+- It will download GLFW and GLM (graphics libraries) automatically
+- It will compile the game and link everything together
+
+### Expected Output
+
+You should see:
+```
+Found Sentinel SDK at: ...
+Found Sentinel SDK library: ...
+==========================================
+  SentinelFlappy3D built successfully!
+  Executable: ...\build\bin\Release\SentinelFlappy3D.exe
+==========================================
+```
+
+### Verify the Game Built Successfully
+
+```cmd
+dir build\bin\Release
+```
+
+You should see: `SentinelFlappy3D.exe`
+
+✅ **Success!** The game is built.
+
+---
+
+## 🎮 Step 7: Run the Game
+
+You're ready to play!
+
+### Launch the Game
+
+```cmd
+cd build\bin\Release
+SentinelFlappy3D.exe
+```
+
+A window should open with the game!
+
+### Expected Console Output
+
+When the game starts, you should see in the console:
 ```
 ======================================
   SentinelFlappy3D - Step 2
@@ -142,378 +286,210 @@ cd SentinelFlappy3D
 
 [SentinelIntegration] Initialize() called
 [SentinelIntegration] Initializing Sentinel SDK...
-[SentinelIntegration] Game ID: sentinelflappy3d
-[SentinelIntegration] Features: Standard
 [SentinelIntegration] ✓ SDK initialized successfully!
 SentinelFlappy3D initialized successfully!
 Press SPACE to flap, ESC to quit
 ```
 
-### Expected Console Output (Server)
+### How to Play
 
-When the game connects, the server logs:
-```
-[SessionManager] New session: 12345678...
-[HeartbeatValidator] First heartbeat from session 12345678...
-```
+- **Press SPACE** to make the bird flap and fly up
+- **Avoid the pipes** - if you hit them, it's game over
+- **Press ESC** to quit the game
+- **Press SPACE after game over** to restart
 
-Every 5 seconds, heartbeat logs appear:
-```
-[HeartbeatValidator] Heartbeat: {"session_id":"...","timestamp":...}
-```
-
-If a violation is detected:
-```
-========================================
-TELEMETRY EVENT #1
-========================================
-{
-  "session_id": "...",
-  "type": 16,
-  "severity": 3,
-  "details": "IsDebuggerPresent returned true"
-}
-========================================
-```
-
-### Game Controls
-
-| Key | Action |
-|-----|--------|
-| `SPACE` | Flap (apply upward velocity to bird) |
-| `ESC` | Quit game |
-| `SPACE` (after game over) | Restart game |
-
-### Gameplay
-
-- **Objective**: Navigate the bird through pipes without hitting them
-- **Scoring**: +1 point for each pipe successfully passed
-- **Game Over**: Collision with pipes, ground, or ceiling
-- **Restart**: Press SPACE after game over to play again
-
-### Server Testing
-
-**Check Server Health:**
-```bash
-curl http://localhost:8080/health
-# Response: {"status":"ok","service":"SentinelFlappy3D Validation Server"}
-```
-
-**Check Server Status:**
-```bash
-curl http://localhost:8080/api/v1/status | jq
-# Response:
-# {
-#   "active_sessions": 1,
-#   "telemetry_events": 0,
-#   "server_time": 1704326400000
-# }
-```
-
-**View Logs:**
-```bash
-# Game SDK logs
-cat /tmp/sentinelflappy3d.log
-
-# Server event logs  
-cat /tmp/sentinelflappy3d_server.log
-```
+✅ **Success!** You're playing the game!
 
 ---
 
-## Sentinel SDK Integration Details
+## 🎯 What the Sentinel SDK Does
 
-### What the SDK Does
+While you're playing, the Sentinel SDK is running in the background, monitoring for:
 
-When you run the game, the Sentinel SDK is active and monitoring for:
+1. **Debuggers** - Checks if someone is trying to debug the game
+2. **Code Modification** - Detects if game code is being changed
+3. **Memory Tampering** - Watches for memory cheats
+4. **Suspicious Activity** - Monitors for unusual program behavior
 
-1. **Anti-Debug**: Detects if a debugger is attached
-2. **Anti-Hook**: Detects inline hooks and IAT modifications
-3. **Code Integrity**: Monitors code section for modifications
-4. **Memory Integrity**: Detects memory tampering
-5. **Thread Monitoring**: Tracks suspicious thread creation
-6. **Heartbeat**: Periodic health checks
-
-### SDK Configuration
-
-The game initializes Sentinel with these settings:
-
-```cpp
-Game ID: "sentinelflappy3d"
-License Key: "DEMO-LICENSE-KEY"
-Features: DetectionFeatures::Standard
-  - Memory & Code Integrity
-  - Anti-Debug & Anti-Attach
-  - Inline Hook Detection
-  - IAT Hook Detection
-
-Performance Tuning:
-  - Heartbeat Interval: 1000ms (every second)
-  - Full Integrity Scan: 5000ms (every 5 seconds)
-  - Per-frame Update: ~0.5ms overhead
-
-Debug Mode: Enabled
-Log Path: /tmp/sentinelflappy3d.log
-```
-
-### Violation Detection
-
-If the SDK detects any violations, they are logged to console and file:
-
-```
-========================================
-VIOLATION DETECTED #1
-========================================
-Type: 16 (AntiDebug)
-Severity: 3 (Critical)
-Details: IsDebuggerPresent returned true
-========================================
-```
-
-**Current Behavior:**
-- Violations are logged but do not terminate the game
-- Game continues in "monitoring mode"
-- Violation count is displayed on shutdown
+All of this happens automatically with minimal performance impact!
 
 ---
 
-## Troubleshooting
+## ❓ Troubleshooting Common Issues
 
-### Problem: SDK Library Not Found
-
-**Error:**
-```
-Sentinel SDK library not found - using stub implementation
-```
+### Problem: "cmake is not recognized"
 
 **Solution:**
-```bash
-# Build the SDK first
-cd /path/to/Sentiel-RE
-cmake -B build -DSENTINEL_BUILD_SDK=ON
-cmake --build build --target SentinelSDK
+- CMake wasn't added to PATH during installation
+- Reinstall CMake and make sure to check "Add to PATH"
+- Or restart your computer after installing
 
-# Then rebuild the game
-cd SentinelFlappy3D
-rm -rf build
-cmake -B build
-cmake --build build
-```
-
-### Problem: Cannot Open Display
-
-**Error:**
-```
-Failed to initialize GLFW
-Error: Cannot open display
-```
+### Problem: "Cannot open include file: 'windows.h'"
 
 **Solution:**
+- Visual Studio C++ components not installed correctly
+- Open Visual Studio Installer
+- Click "Modify" on your installation
+- Make sure "Desktop development with C++" is checked
 
-**Option 1 - Use Xvfb (Virtual Framebuffer):**
-```bash
-# Install Xvfb
-sudo apt-get install xvfb
-
-# Run with virtual display
-xvfb-run -a ./build/bin/SentinelFlappy3D
-```
-
-**Option 2 - Forward X11 (SSH):**
-```bash
-# Connect with X11 forwarding
-ssh -X user@host
-
-# Then run normally
-./build/bin/SentinelFlappy3D
-```
-
-**Option 3 - Use Local Display:**
-```bash
-# Set DISPLAY variable
-export DISPLAY=:0
-./build/bin/SentinelFlappy3D
-```
-
-### Problem: Missing OpenSSL
-
-**Error:**
-```
-error while loading shared libraries: libssl.so.3
-```
+### Problem: "LINK : fatal error LNK1104: cannot open file"
 
 **Solution:**
-```bash
-sudo apt-get install libssl-dev libssl3
+- The Sentinel SDK wasn't built first
+- Go back to Step 5 and build the SDK
+- Make sure you see "Build succeeded" before moving to Step 6
+
+### Problem: Game window opens but is black or crashes
+
+**Solution:**
+- Your graphics drivers might be outdated
+- Update your graphics drivers:
+  - NVIDIA: https://www.nvidia.com/Download/index.aspx
+  - AMD: https://www.amd.com/en/support
+  - Intel: https://www.intel.com/content/www/us/en/download-center/home.html
+
+### Problem: "OpenGL version too low"
+
+**Solution:**
+- The game requires OpenGL 2.1 or higher
+- Update your graphics drivers (see above)
+- If you have an older computer, your hardware might not support it
+
+### Problem: Build takes forever or seems stuck
+
+**Solution:**
+- Building for the first time downloads dependencies
+- First build can take 5-15 minutes depending on your internet
+- Be patient! Subsequent builds will be much faster
+
+---
+
+## 🔄 Rebuilding After Code Changes
+
+If you modify the code and want to rebuild:
+
+### Quick Rebuild (if you only changed game code)
+
+```cmd
+cd C:\Users\YourUsername\Documents\Sentiel-RE\SentinelFlappy3D
+cmake --build build --config Release
 ```
 
-### Problem: Segmentation Fault on Startup
+### Full Rebuild (if you changed SDK or had errors)
 
-**Possible Causes:**
-1. Incompatible SDK version
-2. Missing runtime dependencies
-3. Graphics driver issues
+```cmd
+:: Clean the build
+cd C:\Users\YourUsername\Documents\Sentiel-RE\SentinelFlappy3D
+rmdir /s /q build
 
-**Debug Steps:**
-```bash
-# Check dependencies
-ldd build/bin/SentinelFlappy3D
-
-# Run with debugging
-gdb build/bin/SentinelFlappy3D
-(gdb) run
-(gdb) backtrace
+:: Rebuild from scratch
+cmake -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
 ```
 
 ---
 
-## Verification
+## 📊 Performance Expectations
 
-### Check SDK Integration
+The game should run smoothly:
 
-Run the game and verify these behaviors:
+- **Frame Rate**: 60 FPS (frames per second)
+- **CPU Usage**: Low (5-10% on modern systems)
+- **Memory**: ~15-20 MB
+- **SDK Overhead**: Less than 0.5ms per frame
 
-**✓ SDK Initializes:**
-```
-[SentinelIntegration] ✓ SDK initialized successfully!
-```
-
-**✓ No Crashes:**
-- Game runs smoothly at 60 FPS
-- No segmentation faults or errors
-
-**✓ Graceful Shutdown:**
-```
-[SentinelIntegration] Shutdown() called
-[SentinelIntegration] Total violations detected: 0
-[SentinelIntegration] ✓ SDK shutdown complete
-Game exited successfully.
-```
-
-**✓ Log File Created:**
-```bash
-cat /tmp/sentinelflappy3d.log
-```
-
-### Performance Check
-
-The SDK should add minimal overhead:
-
-| Metric | Without SDK | With SDK | Overhead |
-|--------|-------------|----------|----------|
-| Frame Rate | 60 FPS | 60 FPS | ~0% |
-| Frame Time | 16.7ms | 17.0ms | ~0.3ms |
-| Memory | 10 MB | 15 MB | ~5 MB |
-| Executable Size | 338 KB | 348 KB | +10 KB |
+If you're experiencing performance issues, check:
+- Close other programs using GPU
+- Update graphics drivers
+- Make sure you built in Release mode (not Debug)
 
 ---
 
-## Advanced Configuration
+## 🛠️ Advanced: Using Visual Studio IDE (Optional)
 
-### Custom SDK Settings
+If you prefer using Visual Studio's graphical interface:
 
-To modify SDK behavior, edit `game/src/SentinelIntegration.cpp`:
-
-```cpp
-// Example: Enable more aggressive detection
-config.features = DetectionFeatures::Full;  // All features
-
-// Example: Faster scanning
-config.heartbeat_interval_ms = 500;         // Every 0.5 seconds
-config.integrity_scan_interval_ms = 2000;   // Every 2 seconds
-
-// Example: Disable debug mode (production)
-config.debug_mode = false;
-config.log_path = nullptr;
-```
-
-### Testing Violation Detection
-
-To test that the SDK is working, try running under a debugger:
-
-```bash
-gdb build/bin/SentinelFlappy3D
-(gdb) run
-```
-
-Expected: SDK should detect the debugger and log a violation.
+1. Open Visual Studio 2022
+2. Click **"Open a local folder"**
+3. Navigate to: `C:\Users\YourUsername\Documents\Sentiel-RE\SentinelFlappy3D`
+4. Visual Studio will automatically detect CMake and configure the project
+5. Select **"Release"** configuration in the toolbar
+6. Click **Build > Build All**
+7. Click **Debug > Start Without Debugging** to run
 
 ---
 
-## File Structure
+## 📝 File Locations Reference
+
+After building, here's where everything is:
 
 ```
-SentinelFlappy3D/
-├── build/
-│   ├── bin/
-│   │   └── SentinelFlappy3D         # Executable (348 KB)
-│   └── lib/
-│       ├── libglfw3.a               # GLFW static library
-│       └── libglm.a                 # GLM static library
+C:\Users\YourUsername\Documents\Sentiel-RE\
 │
-├── game/
-│   ├── CMakeLists.txt               # Build configuration with SDK linking
-│   └── src/
-│       ├── main.cpp                 # Entry point
-│       ├── Game.cpp/hpp             # Main game loop
-│       ├── Renderer.cpp/hpp         # OpenGL rendering
-│       ├── Player.cpp/hpp           # Bird physics
-│       ├── Obstacle.cpp/hpp         # Pipe generation
-│       ├── Physics.cpp/hpp          # Collision detection
-│       ├── Input.cpp/hpp            # Keyboard handling
-│       └── SentinelIntegration.cpp/hpp  # SDK wrapper (REAL IMPLEMENTATION)
+├── build\                          # Parent SDK build folder
+│   └── lib\Release\
+│       ├── SentinelSDK.lib         # Sentinel SDK library
+│       └── SentinelCore.lib        # Core anti-cheat engine
 │
-├── sentinel/
-│   └── README_SDK.md                # SDK documentation
-│
-└── README.md                        # This file
+└── SentinelFlappy3D\               # Game folder
+    └── build\                      # Game build folder
+        └── bin\Release\
+            └── SentinelFlappy3D.exe  # The game executable!
 ```
 
 ---
 
-## What's Next (Steps 6-10)
+## 🎓 Learning More
 
-The current implementation (Steps 1-5) provides:
-- ✅ Working Flappy Bird game
-- ✅ Sentinel SDK initialized and running
-- ✅ Per-frame monitoring
-- ✅ Violation detection and logging
+Want to understand more about the project?
 
-**Upcoming Steps:**
-
-- **Step 6**: Hook Telemetry - Configure cloud reporting
-- **Step 7**: Hook Heartbeat - Implement periodic status checks
-- **Step 8**: Simulate Network Failure - Test graceful degradation
-- **Step 9**: Observe Server-Side Signals - Build validation server
-- **Step 10**: Run Tests & CI - Automated testing
+- **SDK Integration**: See how the game uses Sentinel in `SentinelFlappy3D\game\src\SentinelIntegration.cpp`
+- **Game Code**: Main game logic is in `SentinelFlappy3D\game\src\Game.cpp`
+- **CMake Configuration**: Build settings are in `SentinelFlappy3D\CMakeLists.txt`
 
 ---
 
-## Support
+## ✅ Success Checklist
 
-### Documentation
+You've completed everything when you can:
 
-- [Implementation Plan](../docs/SENTINELFLAPPY3D_PLAN.md) - Complete step-by-step guide
-- [Step 2-3 Summary](docs/STEP2_3_SUMMARY.md) - Gameplay implementation details
-- [SDK Documentation](../docs/integration/README.md) - Full SDK reference
-
-### Common Issues
-
-1. **"SDK not enabled"** - Rebuild after building parent SDK
-2. **Display errors** - Use Xvfb or enable X11 forwarding
-3. **Performance issues** - Check frame time and adjust scan intervals
-
-### Testing
-
-Run the game and verify:
-- No crashes during startup or gameplay
-- SDK initialization succeeds
-- Violations are logged (if any)
-- Clean shutdown with violation count
+- [x] Visual Studio is installed with C++ components
+- [x] CMake is installed and in PATH
+- [x] Sentiel-RE repository is downloaded
+- [x] Sentinel SDK builds without errors
+- [x] SentinelFlappy3D game builds without errors
+- [x] Game runs and you can play it
+- [x] You see the SDK initialization message in console
 
 ---
 
-**Document Version**: 1.0  
+## 🆘 Still Need Help?
+
+If you're stuck:
+
+1. **Read the error message carefully** - it often tells you what's wrong
+2. **Check you followed each step exactly** - especially the installation steps
+3. **Make sure you're using the Developer Command Prompt** - not regular Command Prompt
+4. **Try a clean rebuild** - sometimes old build files cause issues
+5. **Check the GitHub Issues** for similar problems: https://github.com/Lovuwer/Sentiel-RE/issues
+
+---
+
+## 🎉 Congratulations!
+
+You've successfully built and run a C++ game project with anti-cheat integration on Windows! This is a real accomplishment, especially if it's your first time building from source.
+
+**What you've learned:**
+- How to install C++ development tools on Windows
+- How to use CMake to configure and build projects
+- How to build multi-part projects (SDK + Application)
+- How C++ games integrate anti-cheat systems
+
+Keep experimenting and have fun! 🚀
+
+---
+
+**Document Version**: 2.0 (Windows)  
 **Last Updated**: 2026-01-03  
-**SDK Version**: 1.0.0  
-**Game Version**: Steps 1-5 Complete
+**Target Audience**: Windows beginners  
+**Status**: Complete Step-by-Step Windows Guide
