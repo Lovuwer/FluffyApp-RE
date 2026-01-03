@@ -162,6 +162,7 @@ TEST(OpcodeTests, OpcodeMetadataStackConsume) {
     EXPECT_EQ(opcodeStackConsume(Opcode::ADD), 2);
     EXPECT_EQ(opcodeStackConsume(Opcode::READ_SAFE_8), 1);
     EXPECT_EQ(opcodeStackConsume(Opcode::HASH_CRC32), 2);
+    EXPECT_EQ(opcodeStackConsume(Opcode::OP_CHECK_SYSCALL), 1);
 }
 
 TEST(OpcodeTests, OpcodeMetadataStackProduce) {
@@ -170,6 +171,7 @@ TEST(OpcodeTests, OpcodeMetadataStackProduce) {
     EXPECT_EQ(opcodeStackProduce(Opcode::PUSH_IMM), 1);
     EXPECT_EQ(opcodeStackProduce(Opcode::DUP), 2);
     EXPECT_EQ(opcodeStackProduce(Opcode::ADD), 1);
+    EXPECT_EQ(opcodeStackProduce(Opcode::OP_CHECK_SYSCALL), 1);
 }
 
 TEST(OpcodeTests, OpcodeMetadataOperandSize) {
@@ -1254,4 +1256,340 @@ TEST(AntiDebugBytecodeTests, BytecodeDetectionLogic) {
     EXPECT_TRUE(has_cmp) << "Bytecode should compare value";
     EXPECT_TRUE(has_jmp) << "Bytecode should have conditional jump";
 }
+
+// ============================================================================
+// OP_CHECK_SYSCALL Tests (Anti-Hook Detection)
+// ============================================================================
+
+#ifdef _WIN32
+/**
+ * Test that OP_CHECK_SYSCALL extracts syscall number from unhooked ntdll function
+ * This test checks NtQueryInformationProcess which should be present in all Windows versions
+ */
+TEST(VMInterpreterTests, OpCheckSyscallValidFunction) {
+    // Get address of NtQueryInformationProcess from ntdll
+    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+    ASSERT_NE(ntdll, nullptr) << "Failed to get ntdll.dll handle";
+    
+    void* func_addr = GetProcAddress(ntdll, "NtQueryInformationProcess");
+    ASSERT_NE(func_addr, nullptr) << "Failed to get NtQueryInformationProcess address";
+    
+    // Create bytecode to check syscall
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    auto addr = encodeU64(reinterpret_cast<uint64_t>(func_addr));
+    instructions.insert(instructions.end(), addr.begin(), addr.end());
+    instructions.push_back(static_cast<uint8_t>(Opcode::OP_CHECK_SYSCALL));
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMInterpreter vm;
+    VMOutput output = vm.execute(bytecode);
+    
+    EXPECT_EQ(output.result, VMResult::Halted);
+    // Should extract a non-zero syscall number (assuming ntdll is unhooked)
+    // Detection flag bit 10 should NOT be set
+    EXPECT_EQ(output.detection_flags & (1ULL << 10), 0ULL) << "Unhooked function should not trigger hook detection";
+}
+
+/**
+ * Test that OP_CHECK_SYSCALL detects JMP hook
+ * This simulates a common hook pattern: JMP rel32 (E9 XX XX XX XX)
+ */
+TEST(VMInterpreterTests, OpCheckSyscallDetectsJmpHook) {
+    // Create a fake hooked function stub in memory
+    // Pattern: E9 XX XX XX XX (JMP rel32) followed by NOPs
+    uint8_t hooked_stub[16] = {
+        0xE9, 0x00, 0x00, 0x00, 0x00,  // JMP rel32 (offset 0)
+        0x90, 0x90, 0x90, 0x90, 0x90,  // NOPs
+        0x90, 0x90, 0x90, 0x90, 0x90, 0x90
+    };
+    
+    // Create bytecode to check the hooked stub
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    auto addr = encodeU64(reinterpret_cast<uint64_t>(hooked_stub));
+    instructions.insert(instructions.end(), addr.begin(), addr.end());
+    instructions.push_back(static_cast<uint8_t>(Opcode::OP_CHECK_SYSCALL));
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMInterpreter vm;
+    VMOutput output = vm.execute(bytecode);
+    
+    EXPECT_EQ(output.result, VMResult::Halted);
+    // Should return 0 (hook detected)
+    // Detection flag bit 10 should be set
+    EXPECT_NE(output.detection_flags & (1ULL << 10), 0ULL) << "JMP hook should be detected";
+}
+
+/**
+ * Test that OP_CHECK_SYSCALL detects IAT-style hook
+ * Pattern: FF 25 XX XX XX XX (JMP [rip+disp32])
+ */
+TEST(VMInterpreterTests, OpCheckSyscallDetectsIatHook) {
+    // Create a fake IAT-style hooked stub
+    // Pattern: FF 25 XX XX XX XX (JMP [rip+disp32])
+    uint8_t hooked_stub[16] = {
+        0xFF, 0x25, 0x00, 0x00, 0x00, 0x00,  // JMP [rip+disp32]
+        0x90, 0x90, 0x90, 0x90,              // NOPs
+        0x90, 0x90, 0x90, 0x90, 0x90, 0x90
+    };
+    
+    // Create bytecode to check the hooked stub
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    auto addr = encodeU64(reinterpret_cast<uint64_t>(hooked_stub));
+    instructions.insert(instructions.end(), addr.begin(), addr.end());
+    instructions.push_back(static_cast<uint8_t>(Opcode::OP_CHECK_SYSCALL));
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMInterpreter vm;
+    VMOutput output = vm.execute(bytecode);
+    
+    EXPECT_EQ(output.result, VMResult::Halted);
+    // Should return 0 (hook detected)
+    // Detection flag bit 10 should be set
+    EXPECT_NE(output.detection_flags & (1ULL << 10), 0ULL) << "IAT-style hook should be detected";
+}
+
+/**
+ * Test that OP_CHECK_SYSCALL detects MOV RAX setup for absolute jump
+ * Pattern: 48 B8 XX XX XX XX XX XX XX XX (MOV RAX, imm64)
+ */
+TEST(VMInterpreterTests, OpCheckSyscallDetectsMovRaxHook) {
+    // Create a fake MOV RAX hook stub
+    // Pattern: 48 B8 XX XX XX XX XX XX XX XX (MOV RAX, imm64)
+    uint8_t hooked_stub[16] = {
+        0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // MOV RAX, 0
+        0xFF, 0xE0,              // JMP RAX
+        0x90, 0x90, 0x90, 0x90   // NOPs
+    };
+    
+    // Create bytecode to check the hooked stub
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    auto addr = encodeU64(reinterpret_cast<uint64_t>(hooked_stub));
+    instructions.insert(instructions.end(), addr.begin(), addr.end());
+    instructions.push_back(static_cast<uint8_t>(Opcode::OP_CHECK_SYSCALL));
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMInterpreter vm;
+    VMOutput output = vm.execute(bytecode);
+    
+    EXPECT_EQ(output.result, VMResult::Halted);
+    // Should return 0 (hook detected)
+    // Detection flag bit 10 should be set
+    EXPECT_NE(output.detection_flags & (1ULL << 10), 0ULL) << "MOV RAX hook should be detected";
+}
+
+/**
+ * Test that OP_CHECK_SYSCALL detects INT3 breakpoint
+ * Pattern: CC (INT3)
+ */
+TEST(VMInterpreterTests, OpCheckSyscallDetectsInt3) {
+    // Create a fake stub with INT3 breakpoint
+    uint8_t hooked_stub[16] = {
+        0xCC,  // INT3
+        0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
+        0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90
+    };
+    
+    // Create bytecode to check the stub
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    auto addr = encodeU64(reinterpret_cast<uint64_t>(hooked_stub));
+    instructions.insert(instructions.end(), addr.begin(), addr.end());
+    instructions.push_back(static_cast<uint8_t>(Opcode::OP_CHECK_SYSCALL));
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMInterpreter vm;
+    VMOutput output = vm.execute(bytecode);
+    
+    EXPECT_EQ(output.result, VMResult::Halted);
+    // Should return 0 (hook detected)
+    // Detection flag bit 10 should be set
+    EXPECT_NE(output.detection_flags & (1ULL << 10), 0ULL) << "INT3 breakpoint should be detected";
+}
+
+/**
+ * Test that OP_CHECK_SYSCALL handles invalid memory address gracefully
+ */
+TEST(VMInterpreterTests, OpCheckSyscallInvalidAddress) {
+    // Use an invalid address (NULL or known invalid)
+    uint64_t invalid_addr = 0x1000;  // Typically unmapped
+    
+    // Create bytecode to check invalid address
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    auto addr = encodeU64(invalid_addr);
+    instructions.insert(instructions.end(), addr.begin(), addr.end());
+    instructions.push_back(static_cast<uint8_t>(Opcode::OP_CHECK_SYSCALL));
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMInterpreter vm;
+    VMOutput output = vm.execute(bytecode);
+    
+    EXPECT_EQ(output.result, VMResult::Halted);
+    // Should return 0 (read failed)
+    // Detection flag bit 10 should be set
+    EXPECT_NE(output.detection_flags & (1ULL << 10), 0ULL) << "Invalid address should be treated as hooked";
+}
+
+/**
+ * Test that OP_CHECK_SYSCALL validates the syscall instruction is present
+ * This tests a stub that has the right pattern but no syscall instruction
+ */
+TEST(VMInterpreterTests, OpCheckSyscallNoSyscallInstruction) {
+    // Create a stub with mov r10,rcx and mov eax but no syscall
+    uint8_t stub[16] = {
+        0x4C, 0x8B, 0xD1,              // mov r10, rcx
+        0xB8, 0x19, 0x00, 0x00, 0x00,  // mov eax, 0x19
+        0x90, 0x90, 0x90, 0x90,        // NOPs (no syscall instruction)
+        0xC3,                          // ret
+        0x90, 0x90, 0x90
+    };
+    
+    // Create bytecode to check the stub
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    auto addr = encodeU64(reinterpret_cast<uint64_t>(stub));
+    instructions.insert(instructions.end(), addr.begin(), addr.end());
+    instructions.push_back(static_cast<uint8_t>(Opcode::OP_CHECK_SYSCALL));
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMInterpreter vm;
+    VMOutput output = vm.execute(bytecode);
+    
+    EXPECT_EQ(output.result, VMResult::Halted);
+    // Should return 0 (invalid pattern - no syscall)
+    // Detection flag bit 10 should be set
+    EXPECT_NE(output.detection_flags & (1ULL << 10), 0ULL) << "Stub without syscall instruction should be detected as hooked";
+}
+
+/**
+ * Test that OP_CHECK_SYSCALL correctly extracts syscall number
+ * This creates a valid syscall stub and verifies the syscall number is extracted
+ */
+TEST(VMInterpreterTests, OpCheckSyscallExtractsSyscallNumber) {
+    // Create a valid syscall stub with known syscall number
+    uint8_t stub[16] = {
+        0x4C, 0x8B, 0xD1,              // mov r10, rcx
+        0xB8, 0x42, 0x00, 0x00, 0x00,  // mov eax, 0x42 (syscall number = 66)
+        0x0F, 0x05,                    // syscall
+        0xC3,                          // ret
+        0x90, 0x90, 0x90, 0x90, 0x90
+    };
+    
+    // Create bytecode to check the stub
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    auto addr = encodeU64(reinterpret_cast<uint64_t>(stub));
+    instructions.insert(instructions.end(), addr.begin(), addr.end());
+    instructions.push_back(static_cast<uint8_t>(Opcode::OP_CHECK_SYSCALL));
+    
+    // Compare with expected syscall number
+    instructions.push_back(static_cast<uint8_t>(Opcode::PUSH_IMM));
+    auto expected = encodeU64(0x42);
+    instructions.insert(instructions.end(), expected.begin(), expected.end());
+    instructions.push_back(static_cast<uint8_t>(Opcode::CMP_EQ));
+    
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMInterpreter vm;
+    VMOutput output = vm.execute(bytecode);
+    
+    EXPECT_EQ(output.result, VMResult::Halted);
+    // Detection flag bit 10 should NOT be set (valid stub)
+    EXPECT_EQ(output.detection_flags & (1ULL << 10), 0ULL) << "Valid syscall stub should not trigger hook detection";
+}
+
+/**
+ * Performance test: OP_CHECK_SYSCALL should complete in < 50μs
+ */
+TEST(VMInterpreterTests, OpCheckSyscallPerformance) {
+    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+    ASSERT_NE(ntdll, nullptr);
+    
+    void* func_addr = GetProcAddress(ntdll, "NtQueryInformationProcess");
+    ASSERT_NE(func_addr, nullptr);
+    
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    auto addr = encodeU64(reinterpret_cast<uint64_t>(func_addr));
+    instructions.insert(instructions.end(), addr.begin(), addr.end());
+    instructions.push_back(static_cast<uint8_t>(Opcode::OP_CHECK_SYSCALL));
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMInterpreter vm;
+    
+    // Run multiple times to get average
+    const int iterations = 100;
+    int64_t total_us = 0;
+    
+    for (int i = 0; i < iterations; ++i) {
+        VMOutput output = vm.execute(bytecode);
+        ASSERT_EQ(output.result, VMResult::Halted);
+        total_us += output.elapsed.count();
+    }
+    
+    int64_t avg_us = total_us / iterations;
+    
+    // Should complete in < 50μs on average
+    EXPECT_LT(avg_us, 50) << "OP_CHECK_SYSCALL took " << avg_us << "μs (expected < 50μs)";
+}
+#endif // _WIN32
+
 #endif
