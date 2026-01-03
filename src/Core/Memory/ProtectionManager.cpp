@@ -232,7 +232,7 @@ static LONG WINAPI vehHandler(EXCEPTION_POINTERS* exceptionInfo) {
     }
     
     return EXCEPTION_CONTINUE_SEARCH;
-};
+}
 
 // ============================================================================
 // ProtectionManager Public Interface
