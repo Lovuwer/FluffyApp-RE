@@ -103,24 +103,27 @@ struct HeartbeatStatus {
  * 
  * REPLAY PROTECTION (STAB-009):
  * ==============================
- * Each heartbeat includes:
- * 1. Sequence Number: Monotonically increasing counter that prevents
- *    replay of old heartbeats. Server must reject sequence <= last_seen.
- * 2. Timestamp: UTC milliseconds since epoch for freshness validation.
- *    Server should reject timestamps outside ±60s window.
- * 3. Session Token: Authentication token (signed via RequestSigner).
+ * Each heartbeat contains:
+ * - sequence: uint64_t, increments on every send, resets on start()
+ * - timestamp: int64_t, UTC milliseconds since epoch
  * 
- * Server-Side Requirements:
- * - Maintain last-seen sequence number per client
- * - Reject duplicate or old sequence numbers
- * - Validate timestamp freshness (±60s window)
- * - Verify cryptographic signature
+ * ATTACK PREVENTION:
+ * - Replay attack: Server rejects sequence <= last_seen
+ * - Time manipulation: Server rejects timestamp outside ±60s window
+ * - Request forgery: RequestSigner HMAC prevents tampering
  * 
- * Client-Side Behavior:
+ * CLIENT BEHAVIOR:
  * - Sequence resets to 0 on start() (new session)
- * - Sequence increments on every send attempt (success or failure)
+ * - Sequence increments on every sendHeartbeat() call (success or failure)
  * - Timestamp generated fresh for each heartbeat
  * - No client-side replay detection (server's responsibility)
+ * 
+ * SERVER VALIDATION REQUIREMENTS:
+ * 1. Maintain last_seen_sequence per client_id
+ * 2. REJECT if sequence <= last_seen_sequence
+ * 3. REJECT if |timestamp - server_time| > 60000ms
+ * 4. Store sequence BEFORE processing (prevent race)
+ * 5. Log rejected replays with client_id and IP
  * 
  * Features:
  * - Configurable interval with random jitter
