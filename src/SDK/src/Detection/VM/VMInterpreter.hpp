@@ -149,16 +149,33 @@ private:
 // ============================================================================
 
 /**
+ * @brief Bytecode header structure for integrity verification
+ * 
+ * Format: [Header (24 bytes)] [Constant Pool] [Instructions]
+ * 
+ * Header layout:
+ * - magic: 0x53454E54 ("SENT") - uint32_t
+ * - version: Bytecode format version - uint16_t
+ * - flags: Reserved for future use - uint16_t
+ * - xxh3_hash: XXH3 hash of instructions (computed at compile-time) - uint64_t
+ * - instruction_count: Number of instruction bytes - uint32_t
+ * - constant_count: Number of constants in pool - uint32_t
+ */
+struct BytecodeHeader {
+    uint32_t magic;              ///< 0x53454E54 ('SENT')
+    uint16_t version;            ///< Bytecode format version
+    uint16_t flags;              ///< Reserved flags
+    uint64_t xxh3_hash;          ///< Hash of instructions (computed at compile-time)
+    uint32_t instruction_count;  ///< Number of instruction bytes
+    uint32_t constant_count;     ///< Number of 8-byte constants
+};
+
+static_assert(sizeof(BytecodeHeader) == 24, "BytecodeHeader must be 24 bytes");
+
+/**
  * @brief Container for compiled VM bytecode
  * 
- * Format: [Header (16 bytes)] [Constant Pool] [Instructions]
- * 
- * Header:
- * - Magic:  0x53454E54 ("SENT")
- * - Version: uint16_t
- * - Flags: uint16_t
- * - Checksum: uint32_t (CRC32 of instructions)
- * - Constant Pool Size: uint32_t
+ * Format: [Header (24 bytes)] [Constant Pool] [Instructions]
  */
 class Bytecode {
 public: 
@@ -197,13 +214,25 @@ public:
      * @brief Get bytecode version
      */
     [[nodiscard]] uint16_t version() const noexcept;
+    
+    /**
+     * @brief Get raw bytecode data pointer
+     * @return Pointer to raw bytecode buffer
+     */
+    [[nodiscard]] const uint8_t* rawData() const noexcept;
+    
+    /**
+     * @brief Get raw bytecode data size
+     * @return Size of raw bytecode buffer in bytes
+     */
+    [[nodiscard]] size_t rawSize() const noexcept;
 
 private:
     std::vector<uint8_t> m_data;
     size_t m_instruction_offset = 0;
-    size_t m_constant_pool_offset = 16;  // After header
+    size_t m_constant_pool_offset = 24;  // After header (BytecodeHeader is 24 bytes)
     uint16_t m_version = 0;
-    uint32_t m_checksum = 0;
+    uint64_t m_xxh3_hash = 0;  // Changed from uint32_t checksum to uint64_t XXH3 hash
 };
 
 } // namespace Sentinel::VM

@@ -196,6 +196,46 @@ public:
         try {
             auto start_time = std::chrono::high_resolution_clock::now();
             
+            // Verify bytecode integrity FIRST
+            const uint8_t* raw = bytecode.rawData();
+            size_t raw_size = bytecode.rawSize();
+            
+            if (raw_size < sizeof(BytecodeHeader)) {
+                output.result = VMResult::Error;
+                output.error_message = "Invalid bytecode header";
+                return output;
+            }
+            
+            const BytecodeHeader* header = reinterpret_cast<const BytecodeHeader*>(raw);
+            
+            // Verify magic
+            if (header->magic != 0x53454E54) {
+                output.result = VMResult::Error;
+                output.error_message = "Invalid bytecode magic";
+                return output;
+            }
+            
+            // Compute hash of instructions and verify
+            size_t instruction_offset = sizeof(BytecodeHeader) + (header->constant_count * 8);
+            if (raw_size < instruction_offset) {
+                output.result = VMResult::Error;
+                output.error_message = "Invalid bytecode size";
+                return output;
+            }
+            
+            uint64_t computed_hash = xxh3_hash(
+                raw + instruction_offset, 
+                raw_size - instruction_offset
+            );
+            
+            if (computed_hash != header->xxh3_hash) {
+                // Bytecode has been tampered!
+                output.result = VMResult::Violation;
+                output.error_message = "Bytecode integrity violation";
+                output.detection_flags |= (1ULL << 11);  // Bytecode tamper flag
+                return output;
+            }
+            
             // Reset state
             stack_.clear();
             detection_flags_ = 0;
