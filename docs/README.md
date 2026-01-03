@@ -52,6 +52,7 @@ Getting Sentinel SDK integrated into your game:
 - [Advanced Integration](integration/advanced.md) - Production-ready integration
 - [Platform Quickstarts](platform/) - Platform-specific guides (Windows, Linux)
 - [Examples](../examples/) - Working code examples
+- [SentinelFlappy3D Plan](SENTINELFLAPPY3D_PLAN.md) - **Production reference**: Complete 3D game demo plan
 
 ### API Reference
 Detailed API documentation:

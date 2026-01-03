@@ -161,6 +161,15 @@ See [examples/DummyGame/](examples/DummyGame/) for a complete, realistic integra
 - Violation callbacks and error handling
 - Proper initialization and shutdown
 
+**Production Reference Implementation:**
+
+See [SentinelFlappy3D Plan](docs/SENTINELFLAPPY3D_PLAN.md) for a comprehensive guide to building a realistic 3D game demo that proves Sentinel SDK can be:
+- Integrated cleanly (8-line pattern)
+- Initialized correctly (proper lifecycle management)
+- Monitored correctly (telemetry + heartbeat flows)
+- Tested meaningfully (unit, integration, failure injection)
+- Shown to studios as a complete reference implementation
+
 **Integration Tips:**
 - Call `Update()` once per frame (measured: ~0.46ms, optimization in progress)
 - Call `FullScan()` every 5-10 seconds (measured: ~7-10ms, optimization in progress)
