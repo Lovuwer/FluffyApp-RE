@@ -15,9 +15,9 @@ This audit assessed the production-readiness of the Sentinel anti-cheat system b
 ### Critical Findings
 
 **P0 Issues (Must Fix Before Production):**
-1. **Correlation Engine**: 7 segmentation faults in test suite due to null pointer dereferences
-2. **VM Bytecode Integrity**: Hash mismatch between verify() and execute() creates bypass opportunity
-3. **VM Memory Safety**: Missing bounds checks in several opcode handlers
+1. **Correlation Engine**: 7 segmentation faults - root cause unclear but critical
+2. **VM Jump Bounds**: Off-by-one error allows out-of-bounds instruction read
+3. **Heartbeat Replay**: No sequence/timestamp validation enables replay attacks  
 4. **Error Propagation**: Silent failures cascade without detection or recovery
 
 **System Status:**
@@ -45,29 +45,34 @@ The VM interpreter (`src/SDK/src/Detection/VM/VMInterpreter.cpp`) executes custo
 
 **Critical Issues Discovered:**
 
-#### ISSUE 1: Bytecode Hash Verification Mismatch
-**Location:** `VMInterpreter.cpp:226` vs `Bytecode.cpp:123`
+#### ISSUE 1: Bytecode Hash Verification Inconsistency (CORRECTED)
+**Location:** `VMInterpreter.cpp:226` vs `Bytecode.cpp:121`
 
 **Current Reality:**
 ```cpp
 // In VMInterpreter::Impl::execute (line 226):
 uint64_t computed_hash = xxh3_hash(
     raw + instruction_offset, 
-    header->instruction_count  // Uses EXACT instruction count from header
+    header->instruction_count  // Uses instruction_count from header
 );
 
-// In Bytecode::verify (line 123):
-size_t instr_size = m_data.size() - m_instruction_offset;  // Uses REMAINING data size
+// In Bytecode::verify (line 121):
+size_t instr_size = m_data.size() - m_instruction_offset;  // Uses ALL remaining data
 uint64_t computed_hash = xxh3_hash(instr_start, instr_size);
 ```
 
 **Problem:**
-The VM executes bytecode that passes `Bytecode::verify()` but uses a **different hash calculation** internally. This creates a time-of-check-time-of-use (TOCTOU) vulnerability where bytecode can pass verification but execute with different instructions.
+If bytecode has trailing padding/data beyond `instruction_count`, `Bytecode::verify()` hashes ALL remaining bytes while `VMInterpreter::execute()` only hashes `instruction_count` bytes. However, **upon re-analysis**: `m_data.size() - m_instruction_offset` should equal `instruction_count` if bytecode is properly formed. The mismatch only occurs if loader allows trailing bytes.
+
+**Re-Assessment:**
+- ✅ **Lower severity than initially stated** - requires malformed bytecode with trailing data
+- ⚠️ Still a concern: verify() and execute() should use identical hash input
+- ✅ Recommendation stands: Use `header->instruction_count` in both places for consistency
 
 **Can Malformed Bytecode:**
 - ❌ Crash the process? **No** - exceptions caught
-- ✅ Hang execution? **No** - timeout enforced
-- ⚠️ **Escape its sandbox?** **PARTIAL RISK** - hash mismatch allows tampering
+- ❌ Hang execution? **No** - timeout enforced
+- ⚠️ **Exploit inconsistency?** **UNLIKELY** - requires loader accepting trailing bytes
 
 **Citation:** `src/SDK/src/Detection/VM/VMInterpreter.cpp:220-236`, `src/SDK/src/Detection/VM/Bytecode.cpp:114-125`
 
@@ -154,8 +159,10 @@ case Opcode::HASH_CRC32: {
 2. No check if `address + size` overflows
 3. Loop iterates `size` times without checking if process is still within timeout
 
+**Note:** Implementation already limits size to 1MB (line 580), making allocation failure unlikely in practice. However, integer overflow and timeout checks still needed.
+
 **Can Malformed Bytecode:**
-- ⚠️ **Cause allocation failure?** **YES** - throws exception, caught as error
+- ⚠️ **Cause allocation failure?** **UNLIKELY** - capped at 1MB, but still possible
 - ⚠️ **Read beyond memory regions?** **YES** - if address + size wraps around
 - ⚠️ **Timeout during hash?** **NO** - timeout only checked at opcode boundaries
 
@@ -192,7 +199,7 @@ The Sentinel SDK integrates:
 3. **Correlation Engine** (multi-signal aggregation)
 4. **Telemetry Pipeline** (network reporting)
 
-#### ISSUE 5: Correlation Engine Null Pointer Dereferences
+#### ISSUE 5: Correlation Engine Crashes (Root Cause Unknown)
 **Location:** `src/SDK/src/Internal/CorrelationEngine.cpp`
 
 **Current Reality:**
@@ -208,26 +215,29 @@ CorrelationEnhancementTest.PersistedState - SIGSEGV
 ```
 
 **Problem:**
-The correlation engine crashes when processing violations with specific field combinations. Analysis of code reveals:
+The correlation engine crashes when processing violations with specific field combinations. Code analysis reveals:
 
 ```cpp
-struct DetectionSignal {
-    std::string module_name;  // Changed from const char* to prevent use-after-free
+// In SentinelSDK.hpp (line 237):
+struct ViolationEvent {
+    std::string module_name;    ///< Related module name (owned copy)
     // ...
 };
 ```
 
-Documentation claims this was fixed, but test failures indicate the issue persists. Likely causes:
-1. ViolationEvent::module_name is `const char*` but DetectionSignal::module_name is `std::string`
-2. Pointer invalidated between event creation and signal storage
-3. Missing null checks when accessing module_name
+**Corrected Analysis:**
+`ViolationEvent::module_name` is already `std::string`, not `const char*`. The null pointer crashes must have a different root cause:
+1. Uninitialized `CorrelationState` members
+2. Accessing signals vector before initialization
+3. Race conditions in multi-threaded access
+4. Missing null checks in signal processing logic
 
 **What Happens If Correlation Engine Fails:**
 - ❌ **Silent failure:** No - crashes entire process
 - ❌ **Graceful degradation:** No - SDK becomes unusable
 - ❌ **Recovery possible:** No - process must restart
 
-**Citation:** `docs/IMPLEMENTATION_STATUS.md:102-134`, `src/SDK/src/Internal/CorrelationEngine.hpp:44`
+**Citation:** `docs/IMPLEMENTATION_STATUS.md:102-134`, `src/SDK/include/SentinelSDK.hpp:232-240`, `src/SDK/src/Internal/CorrelationEngine.hpp:44`
 
 #### ISSUE 6: VM-to-Native Error Propagation
 **Location:** Integration between VMInterpreter and detection modules
@@ -456,34 +466,34 @@ All tasks follow strict format for Copilot Agent execution:
 
 ---
 
-### Task [STAB-001]: Fix VM Bytecode Hash Verification Consistency
-**Priority:** P0  
+### Task [STAB-001]: Improve VM Bytecode Hash Verification Consistency
+**Priority:** P2 (Downgraded from P0)
 **Target Files:** 
-- `src/SDK/src/Detection/VM/VMInterpreter.cpp`
 - `src/SDK/src/Detection/VM/Bytecode.cpp`
 
 **Current Reality:**
-`Bytecode::verify()` computes XXH3 hash over `m_data.size() - m_instruction_offset` bytes, while `VMInterpreter::Impl::execute()` computes hash over `header->instruction_count` bytes. This mismatch allows bytecode to pass verification but execute with different content if trailing bytes exist.
+`Bytecode::verify()` computes XXH3 hash over `m_data.size() - m_instruction_offset` bytes, while `VMInterpreter::Impl::execute()` computes hash over `header->instruction_count` bytes. In properly formed bytecode these should be equal, but the inconsistency creates potential for edge cases.
 
 **Problem:**
-Time-of-check-time-of-use vulnerability. Malicious bytecode can append instructions after the hash boundary that `verify()` checks but `execute()` includes.
+If bytecode loader accepts trailing bytes beyond `instruction_count`, `verify()` hashes extra data that `execute()` doesn't check. This is a minor inconsistency that should be resolved for defense-in-depth.
 
 **Required Changes (NON-CODE):**
-1. Both methods must use identical hash input: exactly `header->instruction_count` bytes
-2. `Bytecode::verify()` must not include padding/trailing bytes in hash
-3. Hash computation must be in single location to prevent future drift
+1. `Bytecode::verify()` should read `instruction_count` from header and hash exactly those bytes
+2. Add assertion that `instruction_count == (m_data.size() - m_instruction_offset)` for well-formed bytecode
+3. If sizes differ, fail verification with error message
 
 **Implementation Guidance (HIGH-LEVEL ONLY):**
-- Modify `Bytecode::verify()` to read `instruction_count` from header and hash exactly that many bytes
-- Add assertions that `instruction_count <= (m_data.size() - m_instruction_offset)`
-- Consider extracting hash logic to shared helper function
-- Do NOT change hash algorithm or header format (breaks bytecode compatibility)
+- Parse header in `verify()` to extract `instruction_count`
+- Hash exactly `instruction_count` bytes, not all remaining data
+- Add check: if `m_data.size() - m_instruction_offset > instruction_count`, verify should fail
+- Do NOT change hash algorithm or header format
+- This prevents accepting bytecode with trailing garbage
 
 **Definition of Done:**
-- [ ] `Bytecode::verify()` and `VMInterpreter::execute()` compute identical hash
+- [ ] `Bytecode::verify()` uses `instruction_count` from header
+- [ ] Both verify() and execute() hash identical byte ranges
 - [ ] Test: Bytecode with trailing garbage bytes fails verification
 - [ ] Test: Valid bytecode passes both verification and execution
-- [ ] No performance regression (hash computed once per execute, not per opcode)
 
 ---
 
@@ -548,35 +558,44 @@ Malicious or buggy external callback can hang game process. VM timeout of 5000ms
 
 ---
 
-### Task [STAB-004]: Fix Correlation Engine Null Pointer Dereferences
+### Task [STAB-004]: Fix Correlation Engine Segmentation Faults
 **Priority:** P0  
 **Target Files:**
 - `src/SDK/src/Internal/CorrelationEngine.cpp`
 - `src/SDK/src/Internal/CorrelationEngine.hpp`
+- `tests/SDK/test_correlation_enhancements.cpp`
 
 **Current Reality:**
-All 7 correlation enhancement tests crash with SIGSEGV. Root cause: `ViolationEvent::module_name` is `const char*` but `DetectionSignal::module_name` is `std::string`. Pointer becomes invalid between event creation and signal storage.
+All 7 correlation enhancement tests crash with SIGSEGV. Code analysis shows `ViolationEvent::module_name` is already `std::string` (not `const char*`), so the root cause is different than initially suspected.
 
 **Problem:**
-Unsafe pointer handling causes segmentation faults when correlation engine processes violations. This makes the entire SDK unusable in production.
+Critical crashes in correlation engine make the entire SDK unusable. Likely root causes to investigate:
+1. Uninitialized `CorrelationState` members (especially vectors/timestamps)
+2. Accessing empty signals vector without size check
+3. Race conditions in multi-threaded processing
+4. Dereferencing invalid iterators after vector modification
+5. Missing initialization in CorrelationEngine constructor
 
 **Required Changes (NON-CODE):**
-1. `ViolationEvent::module_name` must be copied to `std::string` immediately on receipt
-2. Add null checks before dereferencing `module_name`
-3. If `module_name` is null, use empty string or "<unknown>"
-4. Ensure `CorrelationState` has defensive initialization
+1. Initialize all `CorrelationState` members in constructor
+2. Add bounds checks before accessing `state_.signals` vector
+3. Add null/empty checks before dereferencing pointers
+4. Ensure mutex protection for all state access
+5. Run with ASAN/valgrind to identify exact crash location
 
 **Implementation Guidance (HIGH-LEVEL ONLY):**
-- When creating `DetectionSignal`, copy string: `signal.module_name = event.module_name ? event.module_name : ""`
-- Add null checks in all functions that access `module_name`
-- Initialize all struct members in constructors
-- Run valgrind/ASAN to detect remaining issues
+- Review CorrelationEngine constructor - ensure all members initialized
+- Add `if (state_.signals.empty())` checks before vector access
+- Check for iterator invalidation in signal processing loops
+- Review time_point initialization - use `steady_clock::now()` not default constructor
+- Use ASAN to get exact crash line number and root cause
 - Do NOT change correlation algorithm or scoring logic
 
 **Definition of Done:**
 - [ ] All 7 correlation enhancement tests pass
 - [ ] No SIGSEGV under any input combination
-- [ ] Test: Violation with null module_name doesn't crash
+- [ ] ASAN reports no memory errors
+- [ ] Test: Empty state doesn't crash
 - [ ] Test: Correlation score calculation matches expected values
 
 ---
@@ -857,13 +876,13 @@ No visibility into VM execution patterns in production. Cannot detect:
 ## Conclusion
 
 This audit identified **12 stabilization tasks** across four priority levels:
-- **P0 (Blocker):** 5 tasks - Must fix before production
-- **P1 (Critical):** 4 tasks - Significant stability/security risks
-- **P2 (Important):** 3 tasks - Documentation and observability
+- **P0 (Blocker):** 4 tasks - Must fix before production (STAB-002, STAB-004, STAB-009, plus implicit)
+- **P1 (Critical):** 4 tasks - Significant stability/security risks (STAB-003, STAB-005, STAB-007, STAB-008)
+- **P2 (Important):** 4 tasks - Documentation and observability (STAB-001, STAB-006, STAB-010, STAB-011, STAB-012)
 
 **Key Recommendations:**
 1. **Fix correlation engine immediately** (STAB-004) - blocks all production use
-2. **Resolve VM safety issues** (STAB-001, STAB-002) - crash and exploit risks
+2. **Resolve VM safety issues** (STAB-002) - out-of-bounds read risk
 3. **Add replay protection** (STAB-009) - critical security gap
 4. **Update documentation** (STAB-010, STAB-011) - prevent misunderstandings
 
@@ -871,7 +890,7 @@ This audit identified **12 stabilization tasks** across four priority levels:
 - Core primitives are **functional and well-designed**
 - Integration layer has **critical stability issues**
 - Documentation has **moderate drift** from implementation
-- Production deployment is **blocked by 5 P0 issues**
+- Production deployment is **blocked by 4 P0 issues**
 
 This audit establishes a foundation for stabilization work. All tasks are **small, merge-safe, and independently testable**—suitable for Copilot Agent execution.
 
