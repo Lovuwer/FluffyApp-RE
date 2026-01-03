@@ -132,7 +132,7 @@ cd SentinelFlappy3D
 ./build/bin/SentinelFlappy3D
 ```
 
-### Expected Console Output
+### Expected Console Output (Game)
 
 ```
 ======================================
@@ -149,6 +149,33 @@ SentinelFlappy3D initialized successfully!
 Press SPACE to flap, ESC to quit
 ```
 
+### Expected Console Output (Server)
+
+When the game connects, the server logs:
+```
+[SessionManager] New session: 12345678...
+[HeartbeatValidator] First heartbeat from session 12345678...
+```
+
+Every 5 seconds, heartbeat logs appear:
+```
+[HeartbeatValidator] Heartbeat: {"session_id":"...","timestamp":...}
+```
+
+If a violation is detected:
+```
+========================================
+TELEMETRY EVENT #1
+========================================
+{
+  "session_id": "...",
+  "type": 16,
+  "severity": 3,
+  "details": "IsDebuggerPresent returned true"
+}
+========================================
+```
+
 ### Game Controls
 
 | Key | Action |
@@ -163,6 +190,34 @@ Press SPACE to flap, ESC to quit
 - **Scoring**: +1 point for each pipe successfully passed
 - **Game Over**: Collision with pipes, ground, or ceiling
 - **Restart**: Press SPACE after game over to play again
+
+### Server Testing
+
+**Check Server Health:**
+```bash
+curl http://localhost:8080/health
+# Response: {"status":"ok","service":"SentinelFlappy3D Validation Server"}
+```
+
+**Check Server Status:**
+```bash
+curl http://localhost:8080/api/v1/status | jq
+# Response:
+# {
+#   "active_sessions": 1,
+#   "telemetry_events": 0,
+#   "server_time": 1704326400000
+# }
+```
+
+**View Logs:**
+```bash
+# Game SDK logs
+cat /tmp/sentinelflappy3d.log
+
+# Server event logs  
+cat /tmp/sentinelflappy3d_server.log
+```
 
 ---
 
