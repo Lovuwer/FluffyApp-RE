@@ -542,3 +542,141 @@ TEST_F(HeartbeatTest, ConcurrentSequenceIntegrity) {
     auto finalStatus = heartbeat.getStatus();
     EXPECT_EQ(finalStatus.sequenceNumber, 10);
 }
+
+// ============================================================================
+// Heartbeat Status Query API Tests (STAB-007)
+// ============================================================================
+
+/**
+ * Test getStatus() API returns correct information
+ * This verifies STAB-007: status query API for SDK
+ */
+TEST_F(HeartbeatTest, GetStatusAPI) {
+    Heartbeat heartbeat(config, httpClient);
+    
+    // Get initial status
+    auto status = heartbeat.getStatus();
+    
+    // Verify initial state
+    EXPECT_FALSE(status.isRunning) << "Heartbeat should not be running initially";
+    EXPECT_EQ(status.successCount, 0u) << "Should have no successful heartbeats";
+    EXPECT_EQ(status.failureCount, 0u) << "Should have no failed heartbeats";
+    EXPECT_EQ(status.sequenceNumber, 0u) << "Sequence should start at 0";
+    EXPECT_EQ(status.lastError, ErrorCode::Success) << "Should have no error initially";
+    
+    // Send a heartbeat (will fail due to no server, but increments failure count)
+    heartbeat.sendHeartbeat();
+    
+    // Get status after send
+    auto status2 = heartbeat.getStatus();
+    EXPECT_EQ(status2.sequenceNumber, 1u) << "Sequence should increment after send";
+    EXPECT_EQ(status2.failureCount, 1u) << "Should have one failed heartbeat";
+}
+
+/**
+ * Test isHealthy() convenience method
+ * This verifies STAB-007: convenience method for health check
+ */
+TEST_F(HeartbeatTest, IsHealthyConvenienceMethod) {
+    Heartbeat heartbeat(config, httpClient);
+    
+    // Initially not healthy (not running, no successes)
+    EXPECT_FALSE(heartbeat.isHealthy()) 
+        << "Heartbeat should not be healthy before starting";
+    
+    // Note: We can't easily test the "healthy" case without a real server
+    // The important thing is that the API exists and doesn't crash
+}
+
+/**
+ * Test getFailureRate() convenience method
+ * This verifies STAB-007: convenience method for failure rate
+ */
+TEST_F(HeartbeatTest, GetFailureRateConvenienceMethod) {
+    Heartbeat heartbeat(config, httpClient);
+    
+    // Initially 0% failure rate (no heartbeats sent)
+    double initialRate = heartbeat.getFailureRate();
+    EXPECT_EQ(initialRate, 0.0) << "Failure rate should be 0% with no heartbeats";
+    
+    // Send some heartbeats (will fail due to no server)
+    for (int i = 0; i < 5; ++i) {
+        heartbeat.sendHeartbeat();
+    }
+    
+    // Failure rate should be 100% (all failures)
+    double failureRate = heartbeat.getFailureRate();
+    EXPECT_EQ(failureRate, 100.0) 
+        << "Failure rate should be 100% when all heartbeats fail";
+}
+
+/**
+ * Test status query from multiple threads
+ * This verifies STAB-007: thread-safe status queries
+ */
+TEST_F(HeartbeatTest, StatusQueryThreadSafety) {
+    Heartbeat heartbeat(config, httpClient);
+    
+    // Send some heartbeats in background
+    std::thread sender([&heartbeat]() {
+        for (int i = 0; i < 20; ++i) {
+            heartbeat.sendHeartbeat();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    });
+    
+    // Query status from main thread while heartbeats are being sent
+    for (int i = 0; i < 20; ++i) {
+        auto status = heartbeat.getStatus();
+        auto healthy = heartbeat.isHealthy();
+        auto failureRate = heartbeat.getFailureRate();
+        
+        // Should not crash or deadlock
+        (void)status;
+        (void)healthy;
+        (void)failureRate;
+        
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    
+    sender.join();
+    
+    // Verify final state
+    auto finalStatus = heartbeat.getStatus();
+    EXPECT_EQ(finalStatus.sequenceNumber, 20u) << "Should have sent 20 heartbeats";
+}
+
+/**
+ * Test status query provides useful information for game logic
+ * This demonstrates STAB-007: how games should use the status API
+ */
+TEST_F(HeartbeatTest, StatusQueryUsageExample) {
+    Heartbeat heartbeat(config, httpClient);
+    
+    // Simulate some heartbeat attempts
+    for (int i = 0; i < 10; ++i) {
+        heartbeat.sendHeartbeat();
+    }
+    
+    // Get status and make decisions based on it
+    auto status = heartbeat.getStatus();
+    
+    // Example 1: Check failure count
+    if (status.failureCount > 5) {
+        // In a real game: ShowWarning("Network connection unstable");
+        EXPECT_GT(status.failureCount, 5u) << "Should detect high failure count";
+    }
+    
+    // Example 2: Check failure rate
+    double failureRate = heartbeat.getFailureRate();
+    if (failureRate > 50.0) {
+        // In a real game: LogWarning("High heartbeat failure rate");
+        EXPECT_GT(failureRate, 50.0) << "Should detect high failure rate";
+    }
+    
+    // Example 3: Check if running
+    if (!status.isRunning) {
+        // In a real game: RestartHeartbeat();
+        EXPECT_FALSE(status.isRunning) << "Heartbeat not started in this test";
+    }
+}

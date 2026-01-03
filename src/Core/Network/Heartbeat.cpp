@@ -117,6 +117,54 @@ public:
         return status;
     }
     
+    bool isHealthy() const noexcept {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        
+        // Check if heartbeat is running
+        if (!m_running) {
+            return false;
+        }
+        
+        // Check if we have any successful heartbeats
+        uint64_t successCount = m_successCount.load();
+        if (successCount == 0) {
+            return false;
+        }
+        
+        // Check if last success was within the last 5 minutes
+        auto now = Clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - m_lastSuccess);
+        if (elapsed.count() > 300) {  // 5 minutes
+            return false;
+        }
+        
+        // Check failure rate (should be below 50%)
+        uint64_t failureCount = m_failureCount.load();
+        uint64_t totalCount = successCount + failureCount;
+        if (totalCount > 0) {
+            double failureRate = (static_cast<double>(failureCount) / totalCount) * 100.0;
+            if (failureRate >= 50.0) {
+                return false;
+            }
+        }
+        
+        return true;
+    }
+    
+    double getFailureRate() const noexcept {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        
+        uint64_t successCount = m_successCount.load();
+        uint64_t failureCount = m_failureCount.load();
+        uint64_t totalCount = successCount + failureCount;
+        
+        if (totalCount == 0) {
+            return 0.0;
+        }
+        
+        return (static_cast<double>(failureCount) / totalCount) * 100.0;
+    }
+    
     void updateConfig(const HeartbeatConfig& config) noexcept {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_config = config;
@@ -418,6 +466,14 @@ bool Heartbeat::isRunning() const noexcept {
 
 HeartbeatStatus Heartbeat::getStatus() const noexcept {
     return m_impl->getStatus();
+}
+
+bool Heartbeat::isHealthy() const noexcept {
+    return m_impl->isHealthy();
+}
+
+double Heartbeat::getFailureRate() const noexcept {
+    return m_impl->getFailureRate();
 }
 
 void Heartbeat::updateConfig(const HeartbeatConfig& config) noexcept {

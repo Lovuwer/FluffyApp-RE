@@ -212,8 +212,87 @@ public:
     /**
      * @brief Get heartbeat status
      * @return Current status information
+     * 
+     * HEARTBEAT STATUS QUERY API (STAB-007):
+     * =======================================
+     * This API allows games to monitor heartbeat health and react to failures.
+     * 
+     * Status Information:
+     * - isRunning: Whether heartbeat thread is active
+     * - successCount: Total successful heartbeats sent
+     * - failureCount: Total failed heartbeat attempts
+     * - sequenceNumber: Current sequence number (replay protection)
+     * - lastSuccess: Timestamp of last successful heartbeat
+     * - lastFailure: Timestamp of last failed heartbeat
+     * - lastError: Last error code encountered
+     * 
+     * Usage Example:
+     * ```cpp
+     * auto status = heartbeat.getStatus();
+     * 
+     * // Check if heartbeat is healthy
+     * if (status.failureCount > 10) {
+     *     // Too many failures - warn player
+     *     ShowWarning("Network connection unstable");
+     * }
+     * 
+     * // Check time since last success
+     * auto now = Clock::now();
+     * auto elapsed = now - status.lastSuccess;
+     * if (std::chrono::duration_cast<Seconds>(elapsed).count() > 300) {
+     *     // No successful heartbeat in 5 minutes - force disconnect
+     *     DisconnectPlayer("Anti-cheat heartbeat timeout");
+     * }
+     * ```
+     * 
+     * Thread Safety:
+     * This method is thread-safe and can be called from any thread.
+     * Returns a snapshot of the current status at the time of the call.
      */
     [[nodiscard]] HeartbeatStatus getStatus() const noexcept;
+    
+    /**
+     * @brief Check if heartbeat is healthy
+     * @return true if heartbeat is running with recent success
+     * 
+     * CONVENIENCE METHOD (STAB-007):
+     * Checks if heartbeat is in a healthy state:
+     * - Heartbeat thread is running
+     * - Has at least one successful heartbeat
+     * - Last success was within the last 5 minutes
+     * - Failure rate is below 50%
+     * 
+     * This is a convenience method that provides a simple yes/no answer
+     * about heartbeat health. For detailed status, use getStatus().
+     * 
+     * Usage Example:
+     * ```cpp
+     * if (!heartbeat.isHealthy()) {
+     *     LogWarning("Heartbeat unhealthy - check network connection");
+     * }
+     * ```
+     */
+    [[nodiscard]] bool isHealthy() const noexcept;
+    
+    /**
+     * @brief Get heartbeat failure rate
+     * @return Failure rate as percentage (0.0 to 100.0)
+     * 
+     * CONVENIENCE METHOD (STAB-007):
+     * Calculates the percentage of failed heartbeats:
+     * failureRate = (failureCount / (successCount + failureCount)) * 100
+     * 
+     * Returns 0.0 if no heartbeats have been attempted yet.
+     * 
+     * Usage Example:
+     * ```cpp
+     * double failureRate = heartbeat.getFailureRate();
+     * if (failureRate > 20.0) {
+     *     LogWarning("High heartbeat failure rate: %.1f%%", failureRate);
+     * }
+     * ```
+     */
+    [[nodiscard]] double getFailureRate() const noexcept;
     
     /**
      * @brief Update configuration
