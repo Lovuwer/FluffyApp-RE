@@ -37,6 +37,7 @@ protected:
         config.features = DetectionFeatures::Minimal;
         
         // Set cloud endpoint to trigger heartbeat initialization
+        // Note: SDK appends "/heartbeat" to this URL automatically
         config.cloud_endpoint = "https://127.0.0.1:9999/api";  // Localhost unreachable
         config.report_batch_size = 1;
         config.report_interval_ms = 60000;
@@ -112,7 +113,8 @@ TEST_F(HeartbeatIntegrationTest, ShutdownWithActiveHeartbeat) {
 // Test that heartbeat failure doesn't crash SDK
 TEST_F(HeartbeatIntegrationTest, HeartbeatFailureNonCrashing) {
     // Use unreachable endpoint to force heartbeat failures
-    config.cloud_endpoint = "https://192.0.2.1:8080/heartbeat";  // TEST-NET-1 (unreachable)
+    // Note: SDK appends "/heartbeat" to this URL
+    config.cloud_endpoint = "https://192.0.2.1:8080/api";  // TEST-NET-1 (unreachable)
     
     auto result = Initialize(&config);
     ASSERT_EQ(result, ErrorCode::Success);

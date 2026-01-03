@@ -902,14 +902,14 @@ SENTINEL_API void SENTINEL_CALL Shutdown() {
     g_context->shutdown_requested.store(true);
     g_context->active.store(false);
     
-    // Task 04: Stop Heartbeat before waiting for heartbeat thread
+    // Task 04: Stop Heartbeat (liveness detection system)
     if (g_context->heartbeat) {
         SENTINEL_LOG_DEBUG("Stopping Heartbeat");
         g_context->heartbeat->stop();
         g_context->heartbeat.reset();
     }
     
-    // Wait for heartbeat thread
+    // Wait for detection heartbeat thread
     if (g_context->heartbeat_thread && g_context->heartbeat_thread->joinable()) {
         SENTINEL_LOG_DEBUG("Waiting for heartbeat thread to stop");
         g_context->heartbeat_thread->join();
