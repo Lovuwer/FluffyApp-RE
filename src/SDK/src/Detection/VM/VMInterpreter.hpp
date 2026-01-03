@@ -143,36 +143,19 @@ struct VMOutput {
  * - CRC32/XXH3 integrity hashes
  * - Pattern matching against known cheat signatures
  * 
- * SAFETY GUARANTEES (IMPLEMENTED AND TESTED):
- * - All exceptions are caught internally (SEH on Windows)
- * - Invalid memory access returns zero, never crashes
- * - Stack overflow returns Error result
- * - Infinite loop protection via instruction counter
- * - Timeout enforcement for overall execution (including external callbacks)
- * - Re-entrancy protection prevents recursive VM execution
+ * SAFETY GUARANTEES:
+ * ✅ All exceptions caught internally (SEH on Windows, try-catch otherwise)
+ * ✅ Invalid memory access returns zero, does not crash process
+ * ✅ Stack overflow returns VMResult::Error
+ * ✅ Infinite loop protection via instruction counter and timeout
+ * ✅ External callbacks have timeout enforcement (STAB-003)
+ * ✅ Hash operations have integer overflow protection (STAB-005)
+ * ✅ Jump instructions have correct bounds checking (>= not >)
  * 
- * KNOWN LIMITATIONS (AS OF 2026-01-03):
- * These limitations are by design or known edge cases that have been mitigated:
- * 
- * - External callbacks run in separate thread and may continue after timeout
- *   (STAB-003 fix: timeout terminates VM but not necessarily the callback thread)
- *   → This is intentional defensive behavior to prevent deadlocks
- * 
- * - Hash operations (HASH_CRC32, HASH_XXH3) allocate memory proportional to size
- *   (STAB-005 fix: capped at 1MB, handles std::bad_alloc gracefully)
- *   → Prevents DoS via excessive memory allocation
- * 
- * - Bytecode with trailing bytes beyond instruction_count fails verification
- *   (STAB-001 fix: defense-in-depth against malformed bytecode)
- *   → Both verify() and execute() now hash identical byte ranges
- * 
- * - Integer overflow in hash operations could wrap address space
- *   (STAB-005 fix: overflow checks before memory access)
- *   → Prevents reading arbitrary memory via address wraparound
- * 
- * - Timing-based detection (OP_RDTSC_DIFF) has false positives in VMs/hypervisors
- *   → Thresholds adjusted 100x higher when hypervisor detected via CPUID
- *   → Variance checks disabled under hypervisor to prevent false positives
+ * KNOWN LIMITATIONS: 
+ * - Callbacks may continue running in background thread after timeout
+ * - Memory reads are safe but may return stale data under race
+ * - RDTSC timing checks have hypervisor-adjusted thresholds
  * 
  * WHAT IS NOT IMPLEMENTED (DO NOT ASSUME THESE EXIST):
  * - ❌ JIT compilation (bytecode is always interpreted)
@@ -208,7 +191,7 @@ public:
     /**
      * @brief Execute bytecode program
      * @param bytecode Compiled bytecode to execute
-     * @return Execution result (NEVER throws, NEVER crashes)
+     * @return Execution result (noexcept, returns Error on exceptions)
      */
     [[nodiscard]] VMOutput execute(const Bytecode& bytecode) noexcept;
     
