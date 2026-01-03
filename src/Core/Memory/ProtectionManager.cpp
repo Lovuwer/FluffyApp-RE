@@ -20,6 +20,9 @@ namespace Sentinel {
 namespace Core {
 namespace Memory {
 
+// Forward declaration for friend
+static LONG WINAPI vehHandler(EXCEPTION_POINTERS* exceptionInfo);
+
 // Global state for VEH handler
 namespace {
     std::mutex g_handlerMutex;
@@ -32,8 +35,8 @@ namespace {
  */
 class ProtectionManager::Impl {
 public:
-    // Friend declaration to allow global handler access
-    friend void* g_activeManager;
+    // Friend declaration to allow VEH handler access
+    friend LONG WINAPI vehHandler(EXCEPTION_POINTERS*);
     Impl() {
         installVEH();
     }
@@ -212,22 +215,23 @@ private:
         m_protectedRegions.clear();
     }
     
-    static LONG WINAPI vehHandler(EXCEPTION_POINTERS* exceptionInfo) {
-        std::lock_guard<std::mutex> lock(g_handlerMutex);
-        
-        if (g_activeManager && 
-            g_activeManager->handleException(exceptionInfo)) {
-            return EXCEPTION_CONTINUE_EXECUTION;
-        }
-        
-        return EXCEPTION_CONTINUE_SEARCH;
-    }
-    
     mutable std::mutex m_mutex;
     std::unordered_map<Address, ProtectionInfo> m_protectedRegions;
     GuardPageCallback m_callback;
     std::atomic<size_t> m_accessCount{0};
     std::atomic<bool> m_vehInstalled{false};
+};
+
+// Static VEH handler function (outside of class)
+static LONG WINAPI vehHandler(EXCEPTION_POINTERS* exceptionInfo) {
+    std::lock_guard<std::mutex> lock(g_handlerMutex);
+    
+    if (g_activeManager && 
+        g_activeManager->handleException(exceptionInfo)) {
+        return EXCEPTION_CONTINUE_EXECUTION;
+    }
+    
+    return EXCEPTION_CONTINUE_SEARCH;
 };
 
 // ============================================================================
