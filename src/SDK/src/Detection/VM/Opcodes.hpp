@@ -174,10 +174,10 @@ enum class Opcode : uint8_t {
      * Stack: [] → [result]
      * 
      * Behavior:
-     * 1. Generates a unique canary value (RDTSC-based)
-     * 2. Registers temporary VEH handler with priority 1 (first)
-     * 3. Triggers controlled access violation on guard page
-     * 4. VEH handler sets canary confirmation flag
+     * 1. Registers temporary VEH handler with priority 1 (first)
+     * 2. Creates guard page and triggers controlled access violation
+     * 3. VEH handler sets thread-local confirmation flag
+     * 4. SEH handler verifies VEH was called (checks flag)
      * 5. If flag not set, another VEH handler swallowed our exception
      * 
      * Result: 1 = integrity OK, 0 = VEH hijacking detected (sets flag bit 8)

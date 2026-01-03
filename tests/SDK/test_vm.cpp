@@ -773,11 +773,12 @@ TEST(VMInterpreterTests, OpTestExceptionDetectsVehHijacking) {
     auto malicious_veh = [](PEXCEPTION_POINTERS ex) -> LONG {
         if (ex->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION) {
             // Swallow the exception - don't let it propagate
-            // Skip the faulting instruction
+            // Skip past the faulting instruction by a conservative amount
+            // In practice, attackers would decode the instruction properly
             #ifdef _WIN64
-            ex->ContextRecord->Rip += 2;  // Skip the faulting instruction
+            ex->ContextRecord->Rip += 8;  // Skip conservatively (mov reg, [mem] can be up to 7 bytes)
             #else
-            ex->ContextRecord->Eip += 2;  // Skip the faulting instruction (x86)
+            ex->ContextRecord->Eip += 8;  // Skip conservatively
             #endif
             return EXCEPTION_CONTINUE_EXECUTION;
         }
