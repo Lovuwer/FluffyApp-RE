@@ -136,6 +136,10 @@ struct SDKContext {
 static std::unique_ptr<SDKContext> g_context;
 std::unique_ptr<WhitelistManager> g_whitelist;
 
+// Global telemetry pointer for VM and other subsystems (STAB-012)
+// This allows VMInterpreter and other components to report metrics
+TelemetryEmitter* g_telemetry = nullptr;
+
 // ==================== Internal Helpers ====================
 
 namespace {
@@ -663,6 +667,9 @@ SENTINEL_API ErrorCode SENTINEL_CALL Initialize(const Configuration* config) {
     g_context->telemetry->Initialize();
     g_context->telemetry->SetEnvironmentDetector(g_context->env_detector.get());
     
+    // Set global telemetry pointer for VM and other subsystems (STAB-012)
+    g_telemetry = g_context->telemetry.get();
+    
     SENTINEL_LOG_DEBUG("Initializing Runtime configuration");
     g_context->runtime_config = std::make_unique<RuntimeConfig>();
     g_context->runtime_config->Initialize();
@@ -926,6 +933,7 @@ SENTINEL_API void SENTINEL_CALL Shutdown() {
     g_context->reporter.reset();
     
     // Task 14: Cleanup telemetry and runtime config
+    g_telemetry = nullptr;  // Clear global telemetry pointer (STAB-012)
     g_context->telemetry.reset();
     g_context->runtime_config.reset();
     g_context->env_detector.reset();

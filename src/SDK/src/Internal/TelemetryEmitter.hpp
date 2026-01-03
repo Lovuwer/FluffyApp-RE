@@ -17,6 +17,11 @@
 #include <mutex>
 #include <cstdint>
 
+// Forward declarations for VM types
+namespace Sentinel::VM {
+    enum class VMResult : uint8_t;
+}
+
 namespace Sentinel {
 namespace SDK {
 
@@ -117,6 +122,29 @@ struct DetectionBaseline {
 };
 
 /**
+ * VM execution metrics for telemetry (STAB-012)
+ * 
+ * Reports VM execution performance and status with privacy protections:
+ * - detection_flags is redacted (set to 0) in production telemetry
+ * - Sampled at 1/100 rate to minimize overhead
+ */
+struct VMExecutionMetrics {
+    VM::VMResult result;               ///< Execution outcome (Clean/Violation/Error/Timeout/Halted)
+    uint32_t instructions_executed;    ///< Number of opcodes executed
+    uint32_t memory_reads;             ///< Number of safe memory reads performed
+    uint64_t elapsed_us;               ///< Wall clock execution time in microseconds
+    uint64_t detection_flags;          ///< Detection flags (REDACTED in production - set to 0)
+    
+    VMExecutionMetrics()
+        : result(static_cast<VM::VMResult>(0))  // Clean = 0 (forward declaration prevents using VMResult::Clean)
+        , instructions_executed(0)
+        , memory_reads(0)
+        , elapsed_us(0)
+        , detection_flags(0)
+    {}
+};
+
+/**
  * Production Telemetry Emitter
  * 
  * Features:
@@ -171,6 +199,19 @@ public:
      * Set performance metrics for next event
      */
     void SetPerformanceMetrics(uint64_t scan_duration_us, size_t memory_scanned);
+    
+    /**
+     * Report VM execution metrics (STAB-012)
+     * 
+     * Records VM execution performance and outcome for production monitoring.
+     * Enables detection of performance regressions and anomalous execution patterns.
+     * 
+     * @param metrics VM execution metrics including result, instruction count, 
+     *                memory reads, and elapsed time
+     * @note detection_flags should be set to 0 (redacted) in production telemetry
+     * @note This should be called with sampling (e.g., every 100th execution)
+     */
+    void ReportVMExecution(const VMExecutionMetrics& metrics);
     
     /**
      * Check if detection rate is anomalous (>10x baseline)
@@ -245,6 +286,10 @@ private:
     static constexpr uint64_t ANOMALY_THRESHOLD_MULTIPLIER = 10;  // 10x baseline
     static constexpr size_t MAX_STORED_EVENTS = 10000;  // Limit memory usage
 };
+
+// Global telemetry pointer for VM and other subsystems (STAB-012)
+// Set by SDK initialization, cleared on shutdown
+extern TelemetryEmitter* g_telemetry;
 
 } // namespace SDK
 } // namespace Sentinel

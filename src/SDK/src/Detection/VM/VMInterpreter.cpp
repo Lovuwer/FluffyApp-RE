@@ -10,6 +10,8 @@
 
 #include "VMInterpreter.hpp"
 #include "Opcodes.hpp"
+#include "../../Internal/TelemetryEmitter.hpp"
+#include "Sentinel/Core/Logger.hpp"
 #include <cstring>
 #include <cstdint>
 #include <algorithm>
@@ -386,40 +388,41 @@ public:
             // ================================================================
             // TELEMETRY INTEGRATION POINT (STAB-012)
             // ================================================================
-            // TODO: Add VM execution metrics to telemetry here
-            // 
-            // RECOMMENDED IMPLEMENTATION:
-            // 1. Log execution metrics for debugging:
-            //    Logger::Debug("VM executed: result={} instructions={} elapsed={}us",
-            //                  static_cast<int>(output.result), 
-            //                  output.instructions_executed,
-            //                  output.elapsed.count());
-            // 
-            // 2. Report to telemetry with sampling (every Nth execution):
-            //    static thread_local uint32_t execution_count = 0;
-            //    if (++execution_count % 100 == 0) {
-            //        TelemetryEmitter::ReportVMExecution(
-            //            output.result,
-            //            output.instructions_executed,
-            //            output.memory_reads_performed,
-            //            output.elapsed.count()
-            //            // DO NOT include: detection_flags (sensitive), error_message (PII)
-            //        );
-            //    }
-            // 
-            // 3. Record performance metrics:
-            //    PerfTelemetry::RecordOperation(OperationType::VMExecution, output.elapsed);
-            // 
-            // 4. Alert on anomalies:
-            //    if (output.elapsed.count() > 100000) { // 100ms
-            //        Logger::Warn("VM execution took {}us (threshold: 100ms)", output.elapsed.count());
-            //    }
-            //    if (output.result == VMResult::Timeout) {
-            //        Logger::Warn("VM execution timeout ({}us)", output.elapsed.count());
-            //    }
-            // 
-            // IMPORTANT: Use sampling to avoid performance overhead. Do NOT log
-            // every execution in production. Recommended sample rate: 1/100 or 1/1000.
+            
+            // Sample at 1/100 rate to minimize overhead
+            // Note: thread_local counter is intentional - each thread samples independently
+            // to avoid contention on a shared counter. This maintains overall ~1% sampling
+            // rate across all threads without synchronization overhead.
+            static thread_local uint32_t execution_count = 0;
+            if (++execution_count % 100 == 0) {
+                if (SDK::g_telemetry) {
+                    SDK::VMExecutionMetrics metrics;
+                    metrics.result = output.result;
+                    metrics.instructions_executed = output.instructions_executed;
+                    metrics.memory_reads = output.memory_reads_performed;
+                    metrics.elapsed_us = static_cast<uint64_t>(output.elapsed.count());
+                    metrics.detection_flags = 0;  // Don't send detection_flags in telemetry
+                    
+                    SDK::g_telemetry->ReportVMExecution(metrics);
+                }
+            }
+            
+            // Alert on anomalies
+            if (output.elapsed.count() > 100000) {  // >100ms
+                Core::Logger::Instance().LogFormat(
+                    Core::LogLevel::Warning,
+                    "VM slow execution: %lluus",
+                    static_cast<unsigned long long>(output.elapsed.count())
+                );
+            }
+            if (output.result == VMResult::Timeout) {
+                Core::Logger::Instance().LogFormat(
+                    Core::LogLevel::Warning,
+                    "VM timeout (%lluus)",
+                    static_cast<unsigned long long>(output.elapsed.count())
+                );
+            }
+            
             // ================================================================
             
         } catch (const std::exception& e) {

@@ -192,6 +192,17 @@ public:
      * @brief Execute bytecode program
      * @param bytecode Compiled bytecode to execute
      * @return Execution result (noexcept, returns Error on exceptions)
+     * 
+     * TELEMETRY (STAB-012):
+     * VM execution metrics are reported at 1/100 sampling rate: 
+     * - result:  Clean/Violation/Error/Timeout/Halted
+     * - instructions_executed: Opcode count
+     * - memory_reads: Safe read count
+     * - elapsed_us: Wall clock time
+     * 
+     * NOT REPORTED (privacy):
+     * - detection_flags (contains security-sensitive info)
+     * - error_message (may contain addresses)
      */
     [[nodiscard]] VMOutput execute(const Bytecode& bytecode) noexcept;
     
