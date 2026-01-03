@@ -42,6 +42,23 @@ namespace {
     }
     
     /**
+     * @brief Safe memory copy with SEH - no RAII objects allowed
+     */
+    bool safeMemcpy(void* dest, const void* src, size_t size) noexcept {
+#ifdef _WIN32
+        __try {
+            std::memcpy(dest, src, size);
+            return true;
+        } __except(GetExceptionCode() == STATUS_ACCESS_VIOLATION ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
+            return false;
+        }
+#else
+        std::memcpy(dest, src, size);
+        return true;
+#endif
+    }
+    
+    /**
      * @brief Safe memory access check
      */
     bool isMemoryReadable(const void* address, size_t size) noexcept {
@@ -175,23 +192,11 @@ Result<std::vector<PatternScanner::ScanResult>> PatternScanner::scan(
             ScanResult result;
             result.address = baseAddress + offset;
             
-            // Safely copy matched bytes - use separate flag to avoid RAII in __try block
+            // Safely copy matched bytes - allocate first, then use SEH-safe copy
             result.matchedBytes.resize(pattern.size());
-            bool copySuccess = false;
-#ifdef _WIN32
-            __try {
-                std::memcpy(result.matchedBytes.data(), current, pattern.size());
-                copySuccess = true;
-            } __except(GetExceptionCode() == STATUS_ACCESS_VIOLATION ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
-                // Memory access violation - skip this result
-                copySuccess = false;
-            }
-#else
-            std::memcpy(result.matchedBytes.data(), current, pattern.size());
-            copySuccess = true;
-#endif
             
-            if (copySuccess) {
+            // Use helper function with no RAII objects inside __try
+            if (safeMemcpy(result.matchedBytes.data(), current, pattern.size())) {
                 results.push_back(std::move(result));
                 
                 if (maxResults > 0 && results.size() >= maxResults) {

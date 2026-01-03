@@ -52,8 +52,8 @@ public:
         // Align address to page boundary
         SYSTEM_INFO si;
         GetSystemInfo(&si);
-        Address alignedAddr = address & ~(si.dwPageSize - 1);
-        size_t alignedSize = ((address + size - alignedAddr) + si.dwPageSize - 1) & ~(si.dwPageSize - 1);
+        Address alignedAddr = address & ~static_cast<Address>(si.dwPageSize - 1);
+        size_t alignedSize = ((address + size - alignedAddr) + si.dwPageSize - 1) & ~static_cast<size_t>(si.dwPageSize - 1);
         
         // Query current protection
         MEMORY_BASIC_INFORMATION mbi;
@@ -90,8 +90,8 @@ public:
         // Align address to page boundary
         SYSTEM_INFO si;
         GetSystemInfo(&si);
-        Address alignedAddr = address & ~(si.dwPageSize - 1);
-        size_t alignedSize = ((address + size - alignedAddr) + si.dwPageSize - 1) & ~(si.dwPageSize - 1);
+        Address alignedAddr = address & ~static_cast<Address>(si.dwPageSize - 1);
+        size_t alignedSize = ((address + size - alignedAddr) + si.dwPageSize - 1) & ~static_cast<size_t>(si.dwPageSize - 1);
         
         auto it = m_protectedRegions.find(alignedAddr);
         if (it == m_protectedRegions.end()) {
