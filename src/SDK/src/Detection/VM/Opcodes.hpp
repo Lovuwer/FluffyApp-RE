@@ -184,6 +184,27 @@ enum class Opcode : uint8_t {
      */
     OP_TEST_EXCEPTION = 0xA0,
     
+    /**
+     * @brief RDTSC timing differential check (Anti-Emulation)
+     * 
+     * Stack: [] → [result]
+     * 
+     * Behavior: 
+     * 1. Execute RDTSC twice with known-cost operations between
+     * 2. Measure delta in CPU cycles
+     * 3. Check for emulation signatures: 
+     *    a. Delta too low (emulator not simulating real timing)
+     *    b. Delta too consistent (no natural variance)
+     *    c. Delta unrealistically high (single-stepping)
+     * 4. Performs CPUID serialization to prevent out-of-order issues
+     * 
+     * Result: 1 = timing OK, 0 = emulation/debugging detected (sets flag bit 9)
+     * 
+     * Anti-Analysis: Uses CPUID leaf 0 (which must be emulated) to force
+     * emulator to handle serializing instruction, exposing timing gaps. 
+     */
+    OP_RDTSC_DIFF = 0xA1,
+    
     // Reserved:  0xF0-0xFF for future/custom use
 };
 
