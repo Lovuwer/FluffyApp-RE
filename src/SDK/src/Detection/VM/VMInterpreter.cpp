@@ -130,12 +130,12 @@ namespace {
 #else
         // On Linux, attempt to use mincore or just try-catch approach
         // For simplicity, we'll use a basic check
+        (void)address;  // Unused in simplified implementation
+        (void)size;     // Unused in simplified implementation
         int page_size = sysconf(_SC_PAGESIZE);
         if (page_size <= 0) page_size = 4096;
         
         // Very basic check - production would use mincore
-        uintptr_t aligned_addr = reinterpret_cast<uintptr_t>(address) & ~(page_size - 1);
-        
         // Try to access first byte - would need proper signal handling in production
         return true;  // Simplified for this implementation
 #endif

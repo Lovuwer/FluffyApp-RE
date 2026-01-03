@@ -450,8 +450,8 @@ TEST(VMInterpreterTests, ExecuteUnconditionalJump) {
     std::vector<uint8_t> instructions = {
         static_cast<uint8_t>(Opcode::JMP)
     };
-    // Jump forward by 2 bytes (skip the next HALT_FAIL)
-    auto offset = encodeU16(2);
+    // Jump forward by 1 byte (skip the next HALT_FAIL)
+    auto offset = encodeU16(1);
     instructions.insert(instructions.end(), offset.begin(), offset.end());
     instructions.push_back(static_cast<uint8_t>(Opcode::HALT_FAIL));  // Should be skipped
     instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
@@ -475,7 +475,7 @@ TEST(VMInterpreterTests, ExecuteConditionalJumpZeroTaken) {
     instructions.insert(instructions.end(), zero.begin(), zero.end());
     
     instructions.push_back(static_cast<uint8_t>(Opcode::JMP_Z));
-    auto offset = encodeU16(2);
+    auto offset = encodeU16(1);
     instructions.insert(instructions.end(), offset.begin(), offset.end());
     instructions.push_back(static_cast<uint8_t>(Opcode::HALT_FAIL));  // Should be skipped
     instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
@@ -499,7 +499,7 @@ TEST(VMInterpreterTests, ExecuteConditionalJumpNonZeroTaken) {
     instructions.insert(instructions.end(), nonzero.begin(), nonzero.end());
     
     instructions.push_back(static_cast<uint8_t>(Opcode::JMP_NZ));
-    auto offset = encodeU16(2);
+    auto offset = encodeU16(1);
     instructions.insert(instructions.end(), offset.begin(), offset.end());
     instructions.push_back(static_cast<uint8_t>(Opcode::HALT_FAIL));  // Should be skipped
     instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
