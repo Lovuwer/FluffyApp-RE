@@ -1,8 +1,8 @@
 /**
  * @file HttpClientImpl.cpp
- * @brief Production-grade HTTP client implementation using libcurl
+ * @brief Production-grade HTTP client implementation
  * @author Sentinel Security Team
- * @version 1.0.0
+ * @version 1.1.0 - Added WinHTTP fallback
  * @date 2025
  * 
  * @copyright Copyright (c) 2025 Sentinel Security. All rights reserved.
@@ -459,12 +459,383 @@ private:
     bool m_pinningEnabled{true};
 };
 
-#else // !SENTINEL_USE_CURL
+#elif defined(_WIN32)
+// ============================================================================
+// WinHTTP Implementation (Windows fallback when cURL is not available)
+// ============================================================================
 
-// Stub implementation when cURL is not available
+#include <windows.h>
+#include <winhttp.h>
+#include <mutex>
+#include <sstream>
+#include <algorithm>
+
+#pragma comment(lib, "winhttp.lib")
+
+namespace {
+    // RAII wrapper for WinHTTP session handle
+    class WinHttpSession {
+    public:
+        WinHttpSession() : m_session(nullptr) {
+            m_session = WinHttpOpen(
+                L"Sentinel-SDK/1.0",
+                WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+                WINHTTP_NO_PROXY_NAME,
+                WINHTTP_NO_PROXY_BYPASS,
+                0
+            );
+            
+            if (m_session) {
+                // Enforce TLS 1.2+ only
+                DWORD protocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2 | 
+                                  WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3;
+                WinHttpSetOption(m_session, WINHTTP_OPTION_SECURE_PROTOCOLS, 
+                                 &protocols, sizeof(protocols));
+            }
+        }
+        
+        ~WinHttpSession() {
+            if (m_session) {
+                WinHttpCloseHandle(m_session);
+            }
+        }
+        
+        HINTERNET get() const { return m_session; }
+        bool isValid() const { return m_session != nullptr; }
+        
+    private:
+        HINTERNET m_session;
+    };
+    
+    // RAII wrapper for WinHTTP connection handle
+    class WinHttpConnection {
+    public:
+        WinHttpConnection(HINTERNET session, const std::wstring& host, INTERNET_PORT port)
+            : m_connection(nullptr) {
+            if (session) {
+                m_connection = WinHttpConnect(session, host.c_str(), port, 0);
+            }
+        }
+        
+        ~WinHttpConnection() {
+            if (m_connection) {
+                WinHttpCloseHandle(m_connection);
+            }
+        }
+        
+        HINTERNET get() const { return m_connection; }
+        bool isValid() const { return m_connection != nullptr; }
+        
+    private:
+        HINTERNET m_connection;
+    };
+    
+    // RAII wrapper for WinHTTP request handle
+    class WinHttpRequest {
+    public:
+        WinHttpRequest(HINTERNET connection, const std::wstring& verb, 
+                       const std::wstring& path, bool secure)
+            : m_request(nullptr) {
+            if (connection) {
+                DWORD flags = secure ? WINHTTP_FLAG_SECURE : 0;
+                m_request = WinHttpOpenRequest(
+                    connection, 
+                    verb.c_str(), 
+                    path.c_str(),
+                    nullptr,  // HTTP/1.1
+                    WINHTTP_NO_REFERER,
+                    WINHTTP_DEFAULT_ACCEPT_TYPES,
+                    flags
+                );
+            }
+        }
+        
+        ~WinHttpRequest() {
+            if (m_request) {
+                WinHttpCloseHandle(m_request);
+            }
+        }
+        
+        HINTERNET get() const { return m_request; }
+        bool isValid() const { return m_request != nullptr; }
+        
+    private:
+        HINTERNET m_request;
+    };
+    
+    // Parse URL into components
+    struct UrlComponents {
+        std::wstring host;
+        std::wstring path;
+        INTERNET_PORT port;
+        bool secure;
+    };
+    
+    bool parseUrl(const std::string& url, UrlComponents& out) {
+        // Convert to wide string using proper Windows API
+        int wideLength = MultiByteToWideChar(CP_UTF8, 0, url.c_str(), -1, nullptr, 0);
+        if (wideLength <= 0) {
+            return false;
+        }
+        
+        std::wstring wurl(wideLength - 1, L'\0');  // -1 to exclude null terminator
+        if (MultiByteToWideChar(CP_UTF8, 0, url.c_str(), -1, &wurl[0], wideLength) == 0) {
+            return false;
+        }
+        
+        URL_COMPONENTS components = {};
+        components.dwStructSize = sizeof(components);
+        
+        // Use dynamic buffers with larger sizes
+        std::vector<wchar_t> hostBuffer(1024);
+        std::vector<wchar_t> pathBuffer(4096);
+        
+        components.lpszHostName = hostBuffer.data();
+        components.dwHostNameLength = static_cast<DWORD>(hostBuffer.size());
+        components.lpszUrlPath = pathBuffer.data();
+        components.dwUrlPathLength = static_cast<DWORD>(pathBuffer.size());
+        
+        if (!WinHttpCrackUrl(wurl.c_str(), 0, 0, &components)) {
+            return false;
+        }
+        
+        out.host = components.lpszHostName;
+        out.path = components.lpszUrlPath[0] ? components.lpszUrlPath : L"/";
+        out.port = components.nPort;
+        out.secure = (components.nScheme == INTERNET_SCHEME_HTTPS);
+        
+        return true;
+    }
+    
+    std::wstring httpMethodToWString(HttpMethod method) {
+        switch (method) {
+            case HttpMethod::GET:      return L"GET";
+            case HttpMethod::POST:     return L"POST";
+            case HttpMethod::PUT:      return L"PUT";
+            case HttpMethod::PATCH:    return L"PATCH";
+            case HttpMethod::DELETE_:  return L"DELETE";
+            case HttpMethod::HEAD:     return L"HEAD";
+            case HttpMethod::OPTIONS:  return L"OPTIONS";
+            default:                   return L"GET";
+        }
+    }
+}
+
+// ============================================================================
+// HttpClient::Impl (WinHTTP)
+// ============================================================================
+
+class HttpClient::Impl {
+public: 
+    Impl() : m_pinningEnabled(true) {
+        // Session is lazily initialized on first request
+    }
+    
+    ~Impl() = default;
+    
+    Result<HttpResponse> send(const HttpRequest& request) {
+        // Ensure session is initialized
+        if (!m_session.isValid()) {
+            m_session = WinHttpSession();
+            if (!m_session.isValid()) {
+                SENTINEL_LOG_ERROR("Failed to initialize WinHTTP session");
+                return ErrorCode::NetworkError;
+            }
+        }
+        
+        // Parse URL
+        UrlComponents urlParts;
+        if (!parseUrl(request.url, urlParts)) {
+            SENTINEL_LOG_ERROR("Failed to parse URL");
+            return ErrorCode::InvalidArgument;
+        }
+        
+        // Create connection
+        WinHttpConnection connection(m_session.get(), urlParts.host, urlParts.port);
+        if (!connection.isValid()) {
+            SENTINEL_LOG_ERROR("Failed to connect to host");
+            return ErrorCode::ConnectionFailed;
+        }
+        
+        // Create request
+        std::wstring verb = httpMethodToWString(request.method);
+        WinHttpRequest httpRequest(connection.get(), verb, urlParts.path, urlParts.secure);
+        if (!httpRequest.isValid()) {
+            SENTINEL_LOG_ERROR("Failed to create HTTP request");
+            return ErrorCode::NetworkError;
+        }
+        
+        // Set timeouts
+        DWORD timeout = static_cast<DWORD>(request.timeout.count());
+        if (!WinHttpSetOption(httpRequest.get(), WINHTTP_OPTION_CONNECT_TIMEOUT, &timeout, sizeof(timeout))) {
+            SENTINEL_LOG_WARNING("Failed to set connect timeout");
+        }
+        if (!WinHttpSetOption(httpRequest.get(), WINHTTP_OPTION_SEND_TIMEOUT, &timeout, sizeof(timeout))) {
+            SENTINEL_LOG_WARNING("Failed to set send timeout");
+        }
+        if (!WinHttpSetOption(httpRequest.get(), WINHTTP_OPTION_RECEIVE_TIMEOUT, &timeout, sizeof(timeout))) {
+            SENTINEL_LOG_WARNING("Failed to set receive timeout");
+        }
+        
+        // Build headers string
+        std::wostringstream headerStream;
+        auto allHeaders = m_defaultHeaders;
+        allHeaders.insert(request.headers.begin(), request.headers.end());
+        
+        for (const auto& [name, value] : allHeaders) {
+            // Proper UTF-8 to UTF-16 conversion
+            int nameLen = MultiByteToWideChar(CP_UTF8, 0, name.c_str(), -1, nullptr, 0);
+            int valueLen = MultiByteToWideChar(CP_UTF8, 0, value.c_str(), -1, nullptr, 0);
+            
+            if (nameLen > 0 && valueLen > 0) {
+                std::wstring wname(nameLen - 1, L'\0');
+                std::wstring wvalue(valueLen - 1, L'\0');
+                
+                if (MultiByteToWideChar(CP_UTF8, 0, name.c_str(), -1, &wname[0], nameLen) > 0 &&
+                    MultiByteToWideChar(CP_UTF8, 0, value.c_str(), -1, &wvalue[0], valueLen) > 0) {
+                    headerStream << wname << L": " << wvalue << L"\r\n";
+                }
+            }
+        }
+        std::wstring headers = headerStream.str();
+        
+        // Add headers
+        if (!headers.empty()) {
+            if (!WinHttpAddRequestHeaders(httpRequest.get(), headers.c_str(), 
+                                          static_cast<DWORD>(headers.length()),
+                                          WINHTTP_ADDREQ_FLAG_ADD)) {
+                SENTINEL_LOG_WARNING("Failed to add request headers");
+            }
+        }
+        
+        // Send request
+        auto startTime = Clock::now();
+        
+        LPVOID bodyPtr = request.body.empty() ? WINHTTP_NO_REQUEST_DATA 
+                                              : const_cast<Byte*>(request.body.data());
+        DWORD bodyLen = static_cast<DWORD>(request.body.size());
+        
+        if (!WinHttpSendRequest(httpRequest.get(), WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+                                bodyPtr, bodyLen, bodyLen, 0)) {
+            DWORD error = GetLastError();
+            SENTINEL_LOG_ERROR_F("WinHttpSendRequest failed: %lu", error);
+            return ErrorCode::NetworkError;
+        }
+        
+        // Receive response
+        if (!WinHttpReceiveResponse(httpRequest.get(), nullptr)) {
+            DWORD error = GetLastError();
+            if (error == ERROR_WINHTTP_TIMEOUT) {
+                return ErrorCode::Timeout;
+            }
+            SENTINEL_LOG_ERROR_F("WinHttpReceiveResponse failed: %lu", error);
+            return ErrorCode::NetworkError;
+        }
+        
+        // Get status code
+        HttpResponse response;
+        DWORD statusCode = 0;
+        DWORD statusCodeSize = sizeof(statusCode);
+        WinHttpQueryHeaders(httpRequest.get(), 
+                           WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                           WINHTTP_HEADER_NAME_BY_INDEX,
+                           &statusCode, &statusCodeSize, WINHTTP_NO_HEADER_INDEX);
+        response.statusCode = static_cast<int>(statusCode);
+        
+        // Read response body
+        DWORD bytesAvailable = 0;
+        do {
+            bytesAvailable = 0;
+            if (!WinHttpQueryDataAvailable(httpRequest.get(), &bytesAvailable)) {
+                break;
+            }
+            
+            if (bytesAvailable > 0) {
+                std::vector<Byte> buffer(bytesAvailable);
+                DWORD bytesRead = 0;
+                
+                if (WinHttpReadData(httpRequest.get(), buffer.data(), 
+                                    bytesAvailable, &bytesRead)) {
+                    response.body.insert(response.body.end(), 
+                                        buffer.begin(), buffer.begin() + bytesRead);
+                }
+            }
+        } while (bytesAvailable > 0);
+        
+        auto endTime = Clock::now();
+        response.elapsed = std::chrono::duration_cast<Milliseconds>(endTime - startTime);
+        
+        SENTINEL_LOG_DEBUG_F("HTTP response: %d (%.0fms)", 
+                            response.statusCode, 
+                            static_cast<double>(response.elapsed.count()));
+        
+        return response;
+    }
+    
+    void setDefaultHeaders(const HttpHeaders& headers) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_defaultHeaders = headers;
+    }
+    
+    void addDefaultHeader(const std::string& name, const std::string& value) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_defaultHeaders[name] = value;
+    }
+    
+    void setDefaultTimeout(Milliseconds timeout) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_defaultTimeout = timeout;
+    }
+    
+    Milliseconds getDefaultTimeout() const {
+        return m_defaultTimeout;
+    }
+    
+    void setRequestSigner(std::shared_ptr<RequestSigner> signer) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_requestSigner = std::move(signer);
+    }
+    
+    void clearRequestSigner() {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_requestSigner.reset();
+    }
+    
+    void setCertificatePinner(std::shared_ptr<CertificatePinner> pinner) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_certificatePinner = std::move(pinner);
+    }
+    
+    void setPinningEnabled(bool enabled) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_pinningEnabled = enabled;
+    }
+    
+    std::shared_ptr<CertificatePinner> getCertificatePinner() const {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_certificatePinner;
+    }
+
+private:
+    mutable std::mutex m_mutex;
+    WinHttpSession m_session;
+    HttpHeaders m_defaultHeaders;
+    Milliseconds m_defaultTimeout{30000};
+    std::shared_ptr<RequestSigner> m_requestSigner;
+    std::shared_ptr<CertificatePinner> m_certificatePinner;
+    bool m_pinningEnabled;
+};
+
+#else // !SENTINEL_USE_CURL && !_WIN32
+
+// ============================================================================
+// Stub implementation for non-Windows platforms without cURL
+// ============================================================================
+
 class HttpClient::Impl {
 public:
     Result<HttpResponse> send(const HttpRequest&) {
+        SENTINEL_LOG_ERROR("HTTP client not available: Build with SENTINEL_USE_CURL or on Windows");
         return ErrorCode::NotImplemented;
     }
     
@@ -479,7 +850,7 @@ public:
     std::shared_ptr<CertificatePinner> getCertificatePinner() const { return nullptr; }
 };
 
-#endif // SENTINEL_USE_CURL
+#endif // Platform selection
 
 // ============================================================================
 // HttpClient public interface
