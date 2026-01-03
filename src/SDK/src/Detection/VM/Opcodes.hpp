@@ -168,6 +168,22 @@ enum class Opcode : uint8_t {
     OPAQUE_TRUE = 0x91,
     OPAQUE_FALSE = 0x92,
     
+    /**
+     * @brief Exception handler integrity test (Anti-VEH Canary)
+     * 
+     * Stack: [] → [result]
+     * 
+     * Behavior:
+     * 1. Generates a unique canary value (RDTSC-based)
+     * 2. Registers temporary VEH handler with priority 1 (first)
+     * 3. Triggers controlled access violation on guard page
+     * 4. VEH handler sets canary confirmation flag
+     * 5. If flag not set, another VEH handler swallowed our exception
+     * 
+     * Result: 1 = integrity OK, 0 = VEH hijacking detected (sets flag bit 8)
+     */
+    OP_TEST_EXCEPTION = 0xA0,
+    
     // Reserved:  0xF0-0xFF for future/custom use
 };
 
