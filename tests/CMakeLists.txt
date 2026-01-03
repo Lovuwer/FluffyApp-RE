@@ -153,6 +153,7 @@ add_executable(SDKTests
     SDK/test_perf_telemetry.cpp
     SDK/test_behavioral_collector.cpp
     SDK/test_redundant_detection.cpp
+    SDK/test_heartbeat_integration.cpp
 )
 
 target_include_directories(SDKTests

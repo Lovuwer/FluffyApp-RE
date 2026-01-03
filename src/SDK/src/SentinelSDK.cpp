@@ -26,6 +26,8 @@
 #include "Internal/PerfTelemetry.hpp"  // Task 17: Performance telemetry
 #include "Internal/SignatureManager.hpp"  // Task 25: Dynamic signature updates
 #include "Network/UpdateClient.hpp"  // Task 25: Signature update client
+#include <Sentinel/Core/Heartbeat.hpp>  // Task 04: Heartbeat for liveness detection
+#include <Sentinel/Core/HttpClient.hpp>  // Task 04: HTTP client for heartbeat
 
 #include <atomic>
 #include <chrono>
@@ -121,6 +123,10 @@ struct SDKContext {
     
     // Task 29: Redundant detection architecture
     std::unique_ptr<DetectionRegistry> detection_registry;
+    
+    // Task 04: Heartbeat for liveness detection
+    std::shared_ptr<Network::HttpClient> http_client;
+    std::unique_ptr<Network::Heartbeat> heartbeat;
     
     // Session info
     std::string session_token;
@@ -814,6 +820,61 @@ SENTINEL_API ErrorCode SENTINEL_CALL Initialize(const Configuration* config) {
     // Initialize all registered detection implementations
     g_context->detection_registry->InitializeAll();
     
+    // Task 04: Initialize Heartbeat for liveness detection
+    if (config->cloud_endpoint && strlen(config->cloud_endpoint) > 0) {
+        SENTINEL_LOG_DEBUG("Initializing Heartbeat for liveness detection");
+        
+        // Create shared HTTP client for heartbeat
+        g_context->http_client = std::make_shared<Network::HttpClient>();
+        
+        // Configure heartbeat
+        Network::HeartbeatConfig heartbeat_config;
+        heartbeat_config.interval = Milliseconds{30000};  // 30 seconds
+        heartbeat_config.jitterMax = Milliseconds{5000};  // 5 seconds jitter
+        heartbeat_config.serverUrl = std::string(config->cloud_endpoint) + "/heartbeat";
+        heartbeat_config.clientId = g_context->hardware_id;
+        heartbeat_config.sessionToken = g_context->session_token;
+        heartbeat_config.maxRetries = 3;
+        heartbeat_config.retryDelay = Milliseconds{1000};
+        heartbeat_config.requestTimeout = Milliseconds{5000};
+        heartbeat_config.enableLogging = config->debug_mode;
+        
+        // Create heartbeat instance
+        g_context->heartbeat = std::make_unique<Network::Heartbeat>(
+            heartbeat_config,
+            g_context->http_client,
+            nullptr  // No request signer for now
+        );
+        
+        // Set failure callback for logging (non-crashing)
+        g_context->heartbeat->setCallbacks(
+            [](uint64_t sequence) {
+                // Success callback
+                SENTINEL_LOG_DEBUG_F("Heartbeat %llu sent successfully", 
+                    static_cast<unsigned long long>(sequence));
+            },
+            [](Sentinel::ErrorCode error, uint64_t sequence) {
+                // Failure callback - log but don't crash the game
+                SENTINEL_LOG_WARNING_F("Heartbeat %llu failed: error code %d", 
+                    static_cast<unsigned long long>(sequence),
+                    static_cast<int>(error));
+            }
+        );
+        
+        // Start heartbeat
+        auto heartbeat_result = g_context->heartbeat->start();
+        if (heartbeat_result.isSuccess()) {
+            SENTINEL_LOG_INFO("Heartbeat started successfully");
+        } else {
+            SENTINEL_LOG_ERROR_F("Failed to start heartbeat: error code %d", 
+                static_cast<int>(heartbeat_result.error()));
+            // Don't fail initialization - heartbeat failure should not crash game
+            g_context->heartbeat.reset();
+        }
+    } else {
+        SENTINEL_LOG_INFO("Heartbeat not initialized - cloud endpoint not configured");
+    }
+    
     // Start heartbeat thread
     SENTINEL_LOG_DEBUG("Starting heartbeat thread");
     g_context->heartbeat_thread = std::make_unique<std::thread>(HeartbeatThreadFunc);
@@ -840,6 +901,13 @@ SENTINEL_API void SENTINEL_CALL Shutdown() {
     // Signal shutdown
     g_context->shutdown_requested.store(true);
     g_context->active.store(false);
+    
+    // Task 04: Stop Heartbeat before waiting for heartbeat thread
+    if (g_context->heartbeat) {
+        SENTINEL_LOG_DEBUG("Stopping Heartbeat");
+        g_context->heartbeat->stop();
+        g_context->heartbeat.reset();
+    }
     
     // Wait for heartbeat thread
     if (g_context->heartbeat_thread && g_context->heartbeat_thread->joinable()) {
@@ -899,6 +967,9 @@ SENTINEL_API void SENTINEL_CALL Shutdown() {
         g_context->detection_registry->ShutdownAll();
     }
     g_context->detection_registry.reset();
+    
+    // Task 04: Cleanup HTTP client
+    g_context->http_client.reset();
     
     // Cleanup whitelist manager
     if (g_whitelist) {
