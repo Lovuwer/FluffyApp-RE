@@ -98,6 +98,42 @@ cmake --build build --target PerformanceMetricsDemo
 
 ---
 
+### 4. SentinelFlappy3D (Planned) 🎮
+
+**Purpose**: Full-featured 3D game demonstrating production-ready SDK integration  
+**Status**: Planning Phase - See [SENTINELFLAPPY3D_PLAN.md](../docs/SENTINELFLAPPY3D_PLAN.md)  
+**Complexity**: Production Reference Implementation  
+**Use Case**: Studio reference implementation, complete integration example
+
+**Features:**
+- Real game (Flappy Bird-style 3D)
+- Full SDK integration (init, update, telemetry, heartbeat)
+- Minimal server component (telemetry + heartbeat validation)
+- Automated tests (unit, integration, failure injection)
+- Cross-platform (Windows/Linux)
+- Graceful degradation
+- Production-ready patterns
+
+**What This Proves:**
+- Clean integration (<10 lines)
+- Low performance impact (60 FPS maintained)
+- Observable monitoring (telemetry flows)
+- Realistic production workflow
+- Server-side validation patterns
+
+**Implementation Plan:**
+See comprehensive plan: [../docs/SENTINELFLAPPY3D_PLAN.md](../docs/SENTINELFLAPPY3D_PLAN.md)
+
+**Tech Stack:**
+- Game Engine: Custom OpenGL + GLFW
+- Language: C++20
+- Build System: CMake 3.21+
+- Server: C++ with cpp-httplib
+
+This is a **reference implementation** for studios to see how Sentinel integrates into a real game, not just a minimal example.
+
+---
+
 ## Quick Start Guide
 
 ### For Studios: 5-Minute Integration
