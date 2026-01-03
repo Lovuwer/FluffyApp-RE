@@ -24,9 +24,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Dependencies - OpenGL, GLFW, GLM
 # ============================================================================
 
+include(FetchContent)
+
 # Find OpenGL (required for rendering)
-# Note: In headless/CI environments, OpenGL may not be available
-# This is fine for Step 1 (skeleton only)
 find_package(OpenGL QUIET)
 
 # Check if OpenGL was found
@@ -34,106 +34,116 @@ if(OpenGL_FOUND)
     message(STATUS "OpenGL found: ${OPENGL_LIBRARIES}")
 else()
     message(STATUS "OpenGL not found (expected in headless/CI environments)")
-    message(STATUS "  Will be required in Step 2 when game is implemented")
+    message(STATUS "  Game will still build but may not run without OpenGL drivers")
 endif()
 
-# Find or fetch GLFW (window and input handling)
-find_package(glfw3 QUIET)
-if(NOT glfw3_FOUND)
-    message(STATUS "GLFW not found, will be fetched if needed in future steps")
-    # Note: GLFW will be added via FetchContent in later steps
-    # For now, just note that it's required
-endif()
+# Fetch GLFW (window and input handling)
+message(STATUS "Fetching GLFW...")
+FetchContent_Declare(
+    glfw
+    GIT_REPOSITORY https://github.com/glfw/glfw.git
+    GIT_TAG 3.4
+    GIT_SHALLOW TRUE
+)
+set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_WAYLAND OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_X11 ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(glfw)
 
-# Find or fetch GLM (math library for 3D transformations)
-find_package(glm QUIET)
-if(NOT glm_FOUND)
-    message(STATUS "GLM not found, will be fetched if needed in future steps")
-    # Note: GLM will be added via FetchContent in later steps
-    # For now, just note that it's required
-endif()
+# Fetch GLM (math library for 3D transformations)
+message(STATUS "Fetching GLM...")
+FetchContent_Declare(
+    glm
+    GIT_REPOSITORY https://github.com/g-truc/glm.git
+    GIT_TAG 1.0.1
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(glm)
 
 # ============================================================================
 # Source Files
 # ============================================================================
 
 set(GAME_SOURCES
-    # Main entry point (to be created in future steps)
-    # src/main.cpp
-    # src/Game.cpp
-    # src/Renderer.cpp
-    # src/Player.cpp
-    # src/Obstacle.cpp
-    # src/Physics.cpp
-    # src/Input.cpp
-    # src/SentinelIntegration.cpp
+    src/main.cpp
+    src/Game.cpp
+    src/Renderer.cpp
+    src/Player.cpp
+    src/Obstacle.cpp
+    src/Physics.cpp
+    src/Input.cpp
 )
 
 set(GAME_HEADERS
-    # Game headers (to be created in future steps)
-    # src/Game.hpp
-    # src/Renderer.hpp
-    # src/Player.hpp
-    # src/Obstacle.hpp
-    # src/Physics.hpp
-    # src/Input.hpp
-    # src/SentinelIntegration.hpp
+    src/Game.hpp
+    src/Renderer.hpp
+    src/Player.hpp
+    src/Obstacle.hpp
+    src/Physics.hpp
+    src/Input.hpp
 )
 
 # ============================================================================
 # Executable Target
 # ============================================================================
 
-# Note: Executable will be created once source files exist
-# For now, this is a skeleton that will be populated in later steps
+add_executable(SentinelFlappy3D ${GAME_SOURCES} ${GAME_HEADERS})
 
-message(STATUS "Game CMakeLists.txt configured")
-message(STATUS "  Source files will be added in Step 2")
-message(STATUS "  Dependencies (GLFW, GLM) will be configured in Step 2")
-message(STATUS "  Sentinel SDK will be integrated in Step 4")
+target_include_directories(SentinelFlappy3D PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
 
 # ============================================================================
-# Future Configuration Notes
+# Link Libraries
 # ============================================================================
 
-# When implementing Step 2:
-# - Uncomment source files above
-# - Add executable target: add_executable(SentinelFlappy3D ${GAME_SOURCES})
-# - Link OpenGL: target_link_libraries(SentinelFlappy3D PRIVATE OpenGL::GL)
-# - Link GLFW: target_link_libraries(SentinelFlappy3D PRIVATE glfw)
-# - Link GLM: target_link_libraries(SentinelFlappy3D PRIVATE glm::glm)
+# Link GLFW
+target_link_libraries(SentinelFlappy3D PRIVATE glfw)
 
-# When implementing Step 4 (Sentinel SDK):
-# - Find Sentinel SDK: find_package(SentinelSDK)
-# - Link SDK: target_link_libraries(SentinelFlappy3D PRIVATE SentinelSDK)
-# - Add include paths for SDK headers
+# Link GLM (header-only)
+target_link_libraries(SentinelFlappy3D PRIVATE glm::glm)
+
+# Link OpenGL if found
+if(OpenGL_FOUND)
+    target_link_libraries(SentinelFlappy3D PRIVATE OpenGL::GL)
+endif()
 
 # ============================================================================
 # Platform-Specific Configuration
 # ============================================================================
 
-# Windows-specific settings (for future)
-# if(WIN32)
-#     target_compile_definitions(SentinelFlappy3D PRIVATE
-#         _WIN32_WINNT=0x0A00
-#         NOMINMAX
-#     )
-# endif()
-
-# Linux-specific settings (for future)
-# if(UNIX AND NOT APPLE)
-#     target_link_libraries(SentinelFlappy3D PRIVATE
-#         pthread
-#         dl
-#     )
-# endif()
+if(WIN32)
+    target_compile_definitions(SentinelFlappy3D PRIVATE
+        _WIN32_WINNT=0x0A00
+        NOMINMAX
+    )
+elseif(UNIX AND NOT APPLE)
+    target_link_libraries(SentinelFlappy3D PRIVATE
+        pthread
+        dl
+    )
+endif()
 
 # ============================================================================
 # Compiler Warnings
 # ============================================================================
 
-# if(MSVC)
-#     target_compile_options(SentinelFlappy3D PRIVATE /W4)
-# else()
-#     target_compile_options(SentinelFlappy3D PRIVATE -Wall -Wextra -Wpedantic)
-# endif()
+if(MSVC)
+    target_compile_options(SentinelFlappy3D PRIVATE /W4)
+else()
+    target_compile_options(SentinelFlappy3D PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+# ============================================================================
+# Post-Build Messages
+# ============================================================================
+
+add_custom_command(TARGET SentinelFlappy3D POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E echo "=========================================="
+    COMMAND ${CMAKE_COMMAND} -E echo "  SentinelFlappy3D built successfully!"
+    COMMAND ${CMAKE_COMMAND} -E echo "  Executable: $<TARGET_FILE:SentinelFlappy3D>"
+    COMMAND ${CMAKE_COMMAND} -E echo "=========================================="
+)
