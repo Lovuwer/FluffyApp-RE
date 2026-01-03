@@ -12,6 +12,10 @@
 #include <vector>
 #include <cstring>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 using namespace Sentinel::VM;
 
 // ============================================================================
@@ -1444,8 +1448,8 @@ TEST(VMInterpreterTests, OpCheckSyscallDetectsInt3) {
  * Test that OP_CHECK_SYSCALL handles invalid memory address gracefully
  */
 TEST(VMInterpreterTests, OpCheckSyscallInvalidAddress) {
-    // Use an invalid address (NULL or known invalid)
-    uint64_t invalid_addr = 0x1000;  // Typically unmapped
+    // Use NULL address which is guaranteed to be invalid
+    uint64_t invalid_addr = 0x0;
     
     // Create bytecode to check invalid address
     std::vector<uint8_t> instructions = {
@@ -1575,20 +1579,33 @@ TEST(VMInterpreterTests, OpCheckSyscallPerformance) {
     
     VMInterpreter vm;
     
+    // Warmup phase to eliminate cold start effects
+    for (int i = 0; i < 10; ++i) {
+        VMOutput warmup = vm.execute(bytecode);
+        ASSERT_EQ(warmup.result, VMResult::Halted);
+    }
+    
     // Run multiple times to get average
     const int iterations = 100;
-    int64_t total_us = 0;
+    uint64_t total_us = 0;
     
     for (int i = 0; i < iterations; ++i) {
         VMOutput output = vm.execute(bytecode);
         ASSERT_EQ(output.result, VMResult::Halted);
-        total_us += output.elapsed.count();
+        // Check for overflow and accumulate safely
+        uint64_t elapsed = static_cast<uint64_t>(output.elapsed.count());
+        if (total_us + elapsed < total_us) {
+            // Overflow detected, skip this test
+            GTEST_SKIP() << "Timer overflow detected";
+            return;
+        }
+        total_us += elapsed;
     }
     
-    int64_t avg_us = total_us / iterations;
+    uint64_t avg_us = total_us / iterations;
     
     // Should complete in < 50μs on average
-    EXPECT_LT(avg_us, 50) << "OP_CHECK_SYSCALL took " << avg_us << "μs (expected < 50μs)";
+    EXPECT_LT(avg_us, 50ULL) << "OP_CHECK_SYSCALL took " << avg_us << "μs (expected < 50μs)";
 }
 #endif // _WIN32
 

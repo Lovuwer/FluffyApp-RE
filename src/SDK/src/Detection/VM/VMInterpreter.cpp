@@ -900,8 +900,10 @@ private:
                         else if (stub[0] == 0x4C && stub[1] == 0x8B && stub[2] == 0xD1 &&  // mov r10, rcx
                                  stub[3] == 0xB8) {  // mov eax, imm32
                             // Extract syscall number (little-endian at offset 4)
-                            syscall_num = stub[4] | (stub[5] << 8) | 
-                                         (stub[6] << 16) | (stub[7] << 24);
+                            // Use memcpy for safe type-punning
+                            uint32_t syscall_num_32;
+                            std::memcpy(&syscall_num_32, &stub[4], sizeof(uint32_t));
+                            syscall_num = syscall_num_32;
                             
                             // Validate syscall/ret sequence
                             // Note: Some Windows versions have test/jne before syscall
