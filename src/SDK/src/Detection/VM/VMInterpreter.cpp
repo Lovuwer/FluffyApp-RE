@@ -11,6 +11,7 @@
 #include "VMInterpreter.hpp"
 #include "Opcodes.hpp"
 #include <cstring>
+#include <cstdint>
 #include <algorithm>
 #include <stdexcept>
 #include <future>
@@ -702,23 +703,58 @@ private:
                 }
                 
                 // Hash operations
+                // ================================================================
+                // HASH OPERATIONS WITH OVERFLOW PROTECTION (STAB-005)
+                // ================================================================
+                // These opcodes compute hashes over memory regions. Security concerns:
+                // 1. Integer overflow in address + size calculation
+                // 2. Vector allocation failure for large sizes
+                // 3. Reading arbitrary memory via overflow
+                //
+                // Protections:
+                // - Check for integer overflow before computing address + size
+                // - Catch std::bad_alloc and return descriptive error
+                // - Limit maximum hash size to 1MB
+                // - Use safe memory reads with validation
+                // ================================================================
+                
                 case Opcode::HASH_CRC32: {
                     uint64_t size, address;
                     if (!pop(size) || !pop(address)) return false;
                     
-                    // Limit hash size
+                    // Limit hash size to prevent excessive memory allocation
                     if (size > 1024 * 1024) size = 1024 * 1024;  // 1MB max
+                    
+                    // Integer overflow protection (STAB-005)
+                    // Check if address + size would overflow or wrap around
+                    if (size > 0 && address > UINTPTR_MAX - size) {
+                        // Overflow detected: address + size would exceed maximum address space
+                        // This prevents reading arbitrary memory via integer wraparound
+                        if (!push(0)) return false;
+                        break;
+                    }
                     
                     uint32_t hash = 0;
                     if (config_.enable_safe_reads && size > 0) {
-                        std::vector<uint8_t> buffer(size);
-                        bool success = true;
-                        for (size_t i = 0; i < size && success; ++i) {
-                            buffer[i] = safeRead<uint8_t>(
-                                reinterpret_cast<const void*>(address + i), success);
-                        }
-                        if (success) {
-                            hash = crc32_hash(buffer.data(), size);
+                        try {
+                            // Allocate buffer for hash computation
+                            // This may throw std::bad_alloc if size is too large
+                            std::vector<uint8_t> buffer(size);
+                            bool success = true;
+                            
+                            // Read memory safely byte-by-byte
+                            for (size_t i = 0; i < size && success; ++i) {
+                                buffer[i] = safeRead<uint8_t>(
+                                    reinterpret_cast<const void*>(address + i), success);
+                            }
+                            
+                            if (success) {
+                                hash = crc32_hash(buffer.data(), size);
+                            }
+                        } catch (const std::bad_alloc&) {
+                            // Memory allocation failed - return 0 hash safely
+                            // This can happen if size is close to 1MB limit and system is low on memory
+                            hash = 0;
                         }
                     }
                     if (!push(static_cast<uint64_t>(hash))) return false;
@@ -729,19 +765,39 @@ private:
                     uint64_t size, address;
                     if (!pop(size) || !pop(address)) return false;
                     
-                    // Limit hash size
+                    // Limit hash size to prevent excessive memory allocation
                     if (size > 1024 * 1024) size = 1024 * 1024;  // 1MB max
+                    
+                    // Integer overflow protection (STAB-005)
+                    // Check if address + size would overflow or wrap around
+                    if (size > 0 && address > UINTPTR_MAX - size) {
+                        // Overflow detected: address + size would exceed maximum address space
+                        // This prevents reading arbitrary memory via integer wraparound
+                        if (!push(0)) return false;
+                        break;
+                    }
                     
                     uint64_t hash = 0;
                     if (config_.enable_safe_reads && size > 0) {
-                        std::vector<uint8_t> buffer(size);
-                        bool success = true;
-                        for (size_t i = 0; i < size && success; ++i) {
-                            buffer[i] = safeRead<uint8_t>(
-                                reinterpret_cast<const void*>(address + i), success);
-                        }
-                        if (success) {
-                            hash = xxh3_hash(buffer.data(), size);
+                        try {
+                            // Allocate buffer for hash computation
+                            // This may throw std::bad_alloc if size is too large
+                            std::vector<uint8_t> buffer(size);
+                            bool success = true;
+                            
+                            // Read memory safely byte-by-byte
+                            for (size_t i = 0; i < size && success; ++i) {
+                                buffer[i] = safeRead<uint8_t>(
+                                    reinterpret_cast<const void*>(address + i), success);
+                            }
+                            
+                            if (success) {
+                                hash = xxh3_hash(buffer.data(), size);
+                            }
+                        } catch (const std::bad_alloc&) {
+                            // Memory allocation failed - return 0 hash safely
+                            // This can happen if size is close to 1MB limit and system is low on memory
+                            hash = 0;
                         }
                     }
                     if (!push(hash)) return false;

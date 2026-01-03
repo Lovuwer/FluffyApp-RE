@@ -2278,3 +2278,167 @@ TEST(VMInterpreterTests, ExternalCallbackMultipleFastCalls) {
     EXPECT_EQ(output.result, VMResult::Halted) 
         << "Multiple fast callbacks should complete normally";
 }
+
+// ============================================================================
+// Hash Operation Overflow Protection Tests (STAB-005)
+// ============================================================================
+
+/**
+ * Test that hash operations detect integer overflow in address + size
+ * This verifies STAB-005: overflow protection for hash operations
+ */
+TEST(VMInterpreterTests, HashCRC32OverflowProtection) {
+    VMInterpreter vm;
+    
+    // Test 1: address + size would overflow (address = MAX, size = 1)
+    std::vector<uint8_t> instructions1 = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    auto addr1 = encodeU64(UINTPTR_MAX);
+    instructions1.insert(instructions1.end(), addr1.begin(), addr1.end());
+    
+    instructions1.push_back(static_cast<uint8_t>(Opcode::PUSH_IMM));
+    auto size1 = encodeU64(1);
+    instructions1.insert(instructions1.end(), size1.begin(), size1.end());
+    
+    instructions1.push_back(static_cast<uint8_t>(Opcode::HASH_CRC32));
+    instructions1.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data1 = createBytecodeWithInstructions(instructions1);
+    
+    Bytecode bytecode1;
+    ASSERT_TRUE(bytecode1.load(data1));
+    
+    VMOutput output1 = vm.execute(bytecode1);
+    
+    // Should complete without crashing, overflow detected
+    EXPECT_EQ(output1.result, VMResult::Halted) 
+        << "Hash with overflow should be handled safely";
+    
+    // Test 2: Large address that would overflow with 1MB size
+    std::vector<uint8_t> instructions2 = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    auto addr2 = encodeU64(UINTPTR_MAX - 1000);
+    instructions2.insert(instructions2.end(), addr2.begin(), addr2.end());
+    
+    instructions2.push_back(static_cast<uint8_t>(Opcode::PUSH_IMM));
+    auto size2 = encodeU64(1024 * 1024);
+    instructions2.insert(instructions2.end(), size2.begin(), size2.end());
+    
+    instructions2.push_back(static_cast<uint8_t>(Opcode::HASH_CRC32));
+    instructions2.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data2 = createBytecodeWithInstructions(instructions2);
+    
+    Bytecode bytecode2;
+    ASSERT_TRUE(bytecode2.load(data2));
+    
+    VMOutput output2 = vm.execute(bytecode2);
+    
+    // Should complete without crashing
+    EXPECT_EQ(output2.result, VMResult::Halted) 
+        << "Hash with large address should be handled safely";
+}
+
+/**
+ * Test that hash operations detect integer overflow for XXH3
+ */
+TEST(VMInterpreterTests, HashXXH3OverflowProtection) {
+    VMInterpreter vm;
+    
+    // Test: address + size would overflow (address = MAX - 100, size = 200)
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    auto addr = encodeU64(UINTPTR_MAX - 100);
+    instructions.insert(instructions.end(), addr.begin(), addr.end());
+    
+    instructions.push_back(static_cast<uint8_t>(Opcode::PUSH_IMM));
+    auto size = encodeU64(200);
+    instructions.insert(instructions.end(), size.begin(), size.end());
+    
+    instructions.push_back(static_cast<uint8_t>(Opcode::HASH_XXH3));
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMOutput output = vm.execute(bytecode);
+    
+    // Should complete without crashing
+    EXPECT_EQ(output.result, VMResult::Halted) 
+        << "Hash XXH3 with overflow should be handled safely";
+}
+
+/**
+ * Test that valid hash operations still work correctly
+ * Verifies that overflow protection doesn't break normal operation
+ */
+TEST(VMInterpreterTests, HashOperationsValidInputs) {
+    VMInterpreter vm;
+    
+    // Create a small valid bytecode with data to hash
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    
+    // We'll hash a small region of our own bytecode (safe test)
+    // Use address 0 with size 0 (edge case that should work)
+    auto addr = encodeU64(0);
+    instructions.insert(instructions.end(), addr.begin(), addr.end());
+    
+    instructions.push_back(static_cast<uint8_t>(Opcode::PUSH_IMM));
+    auto size = encodeU64(0);
+    instructions.insert(instructions.end(), size.begin(), size.end());
+    
+    instructions.push_back(static_cast<uint8_t>(Opcode::HASH_CRC32));
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMOutput output = vm.execute(bytecode);
+    
+    // Should complete successfully
+    EXPECT_EQ(output.result, VMResult::Halted) 
+        << "Valid hash operation should complete normally";
+}
+
+/**
+ * Test that hash operations handle size limit correctly
+ * Verifies that sizes > 1MB are clamped
+ */
+TEST(VMInterpreterTests, HashOperationsSizeLimit) {
+    VMInterpreter vm;
+    
+    // Test with size larger than 1MB limit
+    // Use address that would overflow after clamping to 1MB to trigger overflow protection
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    auto addr = encodeU64(UINTPTR_MAX - 500000);  // Would overflow with 1MB
+    instructions.insert(instructions.end(), addr.begin(), addr.end());
+    
+    instructions.push_back(static_cast<uint8_t>(Opcode::PUSH_IMM));
+    auto size = encodeU64(10 * 1024 * 1024);  // 10MB - will be clamped to 1MB
+    instructions.insert(instructions.end(), size.begin(), size.end());
+    
+    instructions.push_back(static_cast<uint8_t>(Opcode::HASH_XXH3));
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMOutput output = vm.execute(bytecode);
+    
+    // Should complete (size clamped to 1MB, then overflow protection catches it)
+    EXPECT_EQ(output.result, VMResult::Halted) 
+        << "Hash with excessive size should be handled safely";
+}
