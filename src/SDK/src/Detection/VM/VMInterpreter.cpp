@@ -861,6 +861,84 @@ private:
                     break;
                 }
                 
+                case Opcode::OP_CHECK_SYSCALL: {
+#ifdef _WIN32
+                    uint64_t func_addr;
+                    if (!pop(func_addr)) return false;
+                    
+                    uint64_t syscall_num = 0;
+                    bool is_hooked = false;
+                    
+                    // Read first 16 bytes of function
+                    uint8_t stub[16] = {0};
+                    bool read_success = true;
+                    for (int i = 0; i < 16 && read_success; ++i) {
+                        stub[i] = safeRead<uint8_t>(
+                            reinterpret_cast<const void*>(func_addr + i), read_success);
+                    }
+                    
+                    if (read_success) {
+                        // Check for hook signatures FIRST (before pattern validation)
+                        
+                        // E9 XX XX XX XX = JMP rel32 (most common detour)
+                        if (stub[0] == 0xE9) {
+                            is_hooked = true;
+                        }
+                        // FF 25 XX XX XX XX = JMP [rip+disp32] (IAT-style hook)
+                        else if (stub[0] == 0xFF && stub[1] == 0x25) {
+                            is_hooked = true;
+                        }
+                        // 48 B8 = MOV RAX, imm64 (setup for absolute jump)
+                        else if (stub[0] == 0x48 && stub[1] == 0xB8) {
+                            is_hooked = true;
+                        }
+                        // CC = INT3 breakpoint
+                        else if (stub[0] == 0xCC) {
+                            is_hooked = true;
+                        }
+                        // Check for valid syscall stub pattern
+                        else if (stub[0] == 0x4C && stub[1] == 0x8B && stub[2] == 0xD1 &&  // mov r10, rcx
+                                 stub[3] == 0xB8) {  // mov eax, imm32
+                            // Extract syscall number (little-endian at offset 4)
+                            syscall_num = stub[4] | (stub[5] << 8) | 
+                                         (stub[6] << 16) | (stub[7] << 24);
+                            
+                            // Validate syscall/ret sequence
+                            // Note: Some Windows versions have test/jne before syscall
+                            bool found_syscall = false;
+                            for (int i = 8; i < 14; ++i) {
+                                if (stub[i] == 0x0F && stub[i+1] == 0x05) {  // syscall
+                                    found_syscall = true;
+                                    break;
+                                }
+                            }
+                            
+                            if (!found_syscall) {
+                                is_hooked = true;
+                                syscall_num = 0;
+                            }
+                        } else {
+                            // Pattern doesn't match - either hooked or unknown format
+                            is_hooked = true;
+                        }
+                    } else {
+                        is_hooked = true;  // Couldn't read memory
+                    }
+                    
+                    if (is_hooked) {
+                        detection_flags_ |= (1ULL << 10);  // Hook detection flag
+                        syscall_num = 0;
+                    }
+                    
+                    if (!push(syscall_num)) return false;
+#else
+                    uint64_t dummy;
+                    if (!pop(dummy)) return false;
+                    if (!push(0)) return false;  // No syscalls on Linux equivalent
+#endif
+                    break;
+                }
+                
                 default:
                     // Unknown opcode
                     return false;
