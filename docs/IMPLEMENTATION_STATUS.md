@@ -100,36 +100,43 @@ This document categorizes all security features by actual implementation status,
 
 ### CorrelationEngine (`src/SDK/src/Internal/CorrelationEngine.cpp`)
 
-**Status:** 🟡 **PARTIAL** (with known test failures)
+**Status:** 🔴 **NOT PRODUCTION-READY - CRITICAL CRASHES**
+
+⚠️ **WARNING: Do not use CorrelationEngine in production until STAB-004 is resolved.**
 
 **What's Implemented:**
-- 🟡 Correlation score calculation with confidence weights
-- 🟡 Multi-signal correlation logic
-- 🟡 Enforcement threshold evaluation
-- 🟡 Cooling-off period tracking
-- 🟡 Sub-threshold telemetry
+- 🟡 Correlation score calculation with confidence weights (CRASHES - not usable)
+- 🟡 Multi-signal correlation logic (CRASHES - not usable)
+- 🟡 Enforcement threshold evaluation (CRASHES - not usable)
+- 🟡 Cooling-off period tracking (CRASHES - not usable)
+- 🟡 Sub-threshold telemetry (CRASHES - not usable)
 
-**Known Issues:**
-- ⚠️ **7 test failures** - Segmentation faults in CorrelationEnhancementTest
-- ⚠️ Null pointer dereference in specific configuration paths
-- ⚠️ Crashes on `GetCorrelationScore()` with certain confidence weight combinations
-- ⚠️ Memory access violations in correlation state management
+**Critical Issues (STAB-004):**
+All 7 correlation engine tests crash with SIGSEGV (segmentation fault), indicating fundamental stability issues that make this component completely unusable in production. These are not edge case failures - the system crashes on basic operations.
 
-**Test Failures:**
-1. `CorrelationEnhancementTest.NewConfidenceWeights` - Crashes on score retrieval
-2. `CorrelationEnhancementTest.EnforcementThreshold` - Crashes on ProcessViolation
-3. `CorrelationEnhancementTest.CoolingOffPeriod` - Crashes on state access
-4. `CorrelationEnhancementTest.SubThresholdTelemetry` - Crashes on violation processing
-5. `CorrelationEnhancementTest.MultiSignalCorrelation` - Crashes on correlation logic
-6. `CorrelationEnhancementTest.ScoreDecay` - Crashes on score calculation
-7. `CorrelationEnhancementTest.PersistedState` - Crashes on state persistence
+**Test Failures (7/7 tests crash with SIGSEGV):**
+1. `CorrelationEnhancementTest.NewConfidenceWeights` - SIGSEGV on score retrieval with null pointer dereference
+2. `CorrelationEnhancementTest.EnforcementThreshold` - SIGSEGV on ProcessViolation call, memory access violation
+3. `CorrelationEnhancementTest.CoolingOffPeriod` - SIGSEGV on state access, uninitialized pointer
+4. `CorrelationEnhancementTest.SubThresholdTelemetry` - SIGSEGV on violation processing, null module_name
+5. `CorrelationEnhancementTest.MultiSignalCorrelation` - SIGSEGV on correlation logic, invalid memory access
+6. `CorrelationEnhancementTest.ScoreDecay` - SIGSEGV on score calculation, null pointer in state management
+7. `CorrelationEnhancementTest.PersistedState` - SIGSEGV on state persistence, memory corruption
+
+**Root Causes:**
+- ❌ Missing null pointer checks in initialization paths
+- ❌ Improper ViolationEvent module_name handling (expects non-null, receives null)
+- ❌ Uninitialized state pointers in confidence weight management
+- ❌ Memory access violations in correlation state management
+- ❌ Lack of defensive programming for edge cases
 
 **What's Missing:**
-- ❌ Null pointer checks in initialization
-- ❌ Proper ViolationEvent module_name handling
-- ❌ Defensive programming for edge cases
+- ❌ Proper initialization validation
+- ❌ Null safety checks throughout
+- ❌ Memory safety guarantees
+- ❌ Error handling for invalid configurations
 
-**Production Readiness:** 🔴 **NOT PRODUCTION-READY** - Critical test failures must be fixed
+**Production Readiness:** 🔴 **NOT PRODUCTION-READY** - System is completely unusable due to crashes. All tests fail with SIGSEGV. Fix tracked in STAB-004.
 
 ---
 
@@ -591,7 +598,7 @@ This document categorizes all security features by actual implementation status,
 |-----------|--------|------------------|-------|
 | AntiDebug | ✅ Implemented | 🟡 Partial | High FP in VMs, needs tuning |
 | AntiHook | ✅ Implemented | ✅ Yes | TOCTOU in periodic scan, use inline macro for critical |
-| CorrelationEngine | 🟡 Partial | 🔴 No | **7 test failures - segfaults, not production-ready** |
+| CorrelationEngine | 🔴 Critical Crashes | 🔴 No | **ALL 7/7 tests crash with SIGSEGV - completely unusable (STAB-004)** |
 | Integrity Check | ✅ Implemented | 🟡 Partial | Basic hashing only, no signing |
 | Injection Detection | ✅ Implemented | ✅ Yes | Needs JIT whitelist configuration |
 | Speed Hack (Client) | 🟡 Partial | 🔴 No | **Requires server validation** |
@@ -625,7 +632,7 @@ This document categorizes all security features by actual implementation status,
 
 ### High Priority (Production Blockers)
 
-1. **Fix CorrelationEngine Test Failures** - 7 segfaults must be resolved before production
+1. **Fix CorrelationEngine Critical Crashes (STAB-004)** - All 7/7 tests crash with SIGSEGV. System is completely unusable. Must fix before any production use.
 2. **Complete SDK Heartbeat Integration** - Core is implemented, SDK wrapper needed
 3. **Implement Server-Side Speed Validation** - Client-side is insufficient
 4. **Complete Certificate Pinning** - Required for secure cloud communication
@@ -665,9 +672,9 @@ A subsystem is production-ready when:
 **Current Overall Status: 🟡 PARTIAL PRODUCTION READINESS**
 
 **Blocking Issues:**
-1. **CorrelationEngine has 7 test failures** - Segmentation faults must be fixed
+1. **CorrelationEngine completely unusable (STAB-004)** - All 7/7 tests crash with SIGSEGV. System cannot be used in any capacity until fixed.
 2. Speed hack detection requires server validation
 3. SDK Heartbeat integration pending (Core implemented)
 4. Network security features incomplete (certificate pinning)
 
-**Recommended Action:** Fix CorrelationEngine crashes, complete SDK Heartbeat integration, and implement certificate pinning before production deployment.
+**Recommended Action:** Fix CorrelationEngine critical crashes (STAB-004) as highest priority. Then complete SDK Heartbeat integration and implement certificate pinning before production deployment.

@@ -17,7 +17,7 @@ infrastructure and network security features are incomplete.
 **In Progress:**
 - Cloud/Heartbeat reporting (Core implemented, SDK integration pending)
 - HTTP client security (certificate pinning, request signing)
-- Correlation engine stability (known test failures)
+- Correlation engine (CRITICAL: All tests crash with SIGSEGV - see STAB-004)
 
 **Not Yet Implemented:**
 - Memory protection API
