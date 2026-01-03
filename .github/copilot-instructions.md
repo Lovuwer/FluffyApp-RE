@@ -160,7 +160,7 @@ std::vector<uintptr_t> ScanMemory(
 
 - All security-sensitive code requires review
 - Run CodeQL static analysis before submitting
-- Report vulnerabilities privately to security@sentinel.dev
+- Report vulnerabilities privately to security@sentinelware.store
 - See [docs/security/](docs/security/) for detailed security documentation
 
 ## Performance Targets
@@ -362,7 +362,7 @@ cmake -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 ## Contact and Support
 
 - **Issues:** GitHub Issues tracker
-- **Security:** security@sentinel.dev (private disclosure)
+- **Security:** security@sentinelware.store (private disclosure)
 - **Documentation:** [docs/](docs/) directory
 
 ---
