@@ -209,6 +209,17 @@ bool CorrelationEngine::ProcessViolation(
 bool CorrelationEngine::ShouldAllowAction(ResponseAction action) const {
     std::lock_guard<std::mutex> lock(mutex_);
     
+    // Defensive: Empty signals vector means no detections - allow only non-enforcement actions
+    // This is a safety check, though the vector should always be managed correctly
+    if (state_.signals.empty()) {
+        // No signals means no enforcement actions should be allowed
+        uint32_t action_bits = static_cast<uint32_t>(action);
+        bool is_enforcement = (action_bits & (static_cast<uint32_t>(ResponseAction::Ban) | 
+                                              static_cast<uint32_t>(ResponseAction::Terminate) |
+                                              static_cast<uint32_t>(ResponseAction::Kick))) != 0;
+        return !is_enforcement;  // Only allow non-enforcement actions
+    }
+    
     // Check if action requires multi-signal confirmation
     uint32_t action_bits = static_cast<uint32_t>(action);
     bool is_ban = (action_bits & static_cast<uint32_t>(ResponseAction::Ban)) != 0;
@@ -337,20 +348,26 @@ void CorrelationEngine::ApplyTimeDecay() {
     double decay_factor = std::pow(0.5, elapsed / HALF_LIFE_SECONDS);
     state_.score *= decay_factor;
     
-    // Remove old signals (older than 60 seconds)
-    state_.signals.erase(
-        std::remove_if(state_.signals.begin(), state_.signals.end(),
-            [now](const DetectionSignal& sig) {
-                auto age = std::chrono::duration<double>(now - sig.timestamp).count();
-                return age > 60.0;
-            }),
-        state_.signals.end()
-    );
-    
-    // Recalculate unique categories from remaining signals
-    state_.unique_categories = 0;
-    for (const auto& sig : state_.signals) {
-        state_.unique_categories |= (1u << static_cast<uint8_t>(sig.category));
+    // Defensive: Only process signals if vector is not empty
+    if (!state_.signals.empty()) {
+        // Remove old signals (older than 60 seconds)
+        state_.signals.erase(
+            std::remove_if(state_.signals.begin(), state_.signals.end(),
+                [now](const DetectionSignal& sig) {
+                    auto age = std::chrono::duration<double>(now - sig.timestamp).count();
+                    return age > 60.0;
+                }),
+            state_.signals.end()
+        );
+        
+        // Recalculate unique categories from remaining signals
+        state_.unique_categories = 0;
+        for (const auto& sig : state_.signals) {
+            state_.unique_categories |= (1u << static_cast<uint8_t>(sig.category));
+        }
+    } else {
+        // No signals, ensure categories bitmask is cleared
+        state_.unique_categories = 0;
     }
     
     state_.last_update = now;
