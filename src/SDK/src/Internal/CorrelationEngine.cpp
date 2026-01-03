@@ -215,6 +215,11 @@ bool CorrelationEngine::ShouldAllowAction(ResponseAction action) const {
     bool is_terminate = (action_bits & static_cast<uint32_t>(ResponseAction::Terminate)) != 0;
     bool is_kick = (action_bits & static_cast<uint32_t>(ResponseAction::Kick)) != 0;
     
+    // Defensive: Empty signals vector means no detections - don't allow any enforcement actions
+    if (state_.signals.empty()) {
+        return !(is_ban || is_terminate || is_kick);
+    }
+    
     if (is_ban || is_terminate) {
         // Count only persistent signals (3+ scan cycles)
         uint32_t persistent_signals = 0;
@@ -337,20 +342,26 @@ void CorrelationEngine::ApplyTimeDecay() {
     double decay_factor = std::pow(0.5, elapsed / HALF_LIFE_SECONDS);
     state_.score *= decay_factor;
     
-    // Remove old signals (older than 60 seconds)
-    state_.signals.erase(
-        std::remove_if(state_.signals.begin(), state_.signals.end(),
-            [now](const DetectionSignal& sig) {
-                auto age = std::chrono::duration<double>(now - sig.timestamp).count();
-                return age > 60.0;
-            }),
-        state_.signals.end()
-    );
-    
-    // Recalculate unique categories from remaining signals
-    state_.unique_categories = 0;
-    for (const auto& sig : state_.signals) {
-        state_.unique_categories |= (1u << static_cast<uint8_t>(sig.category));
+    // Defensive: Only process signals if vector is not empty
+    if (!state_.signals.empty()) {
+        // Remove old signals (older than 60 seconds)
+        state_.signals.erase(
+            std::remove_if(state_.signals.begin(), state_.signals.end(),
+                [now](const DetectionSignal& sig) {
+                    auto age = std::chrono::duration<double>(now - sig.timestamp).count();
+                    return age > 60.0;
+                }),
+            state_.signals.end()
+        );
+        
+        // Recalculate unique categories from remaining signals
+        state_.unique_categories = 0;
+        for (const auto& sig : state_.signals) {
+            state_.unique_categories |= (1u << static_cast<uint8_t>(sig.category));
+        }
+    } else {
+        // No signals, ensure categories bitmask is cleared
+        state_.unique_categories = 0;
     }
     
     state_.last_update = now;

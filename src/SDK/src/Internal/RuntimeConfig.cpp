@@ -15,10 +15,8 @@ RuntimeConfig::RuntimeConfig()
     : last_update_time_ms_(0)
     , initialized_(false)
 {
-    // Initialize detection configs
-    for (size_t i = 0; i < NUM_DETECTION_TYPES; ++i) {
-        detection_configs_[i] = DetectionConfig();
-    }
+    // Initialize detection configs - use std::fill to avoid false positive warnings
+    std::fill(std::begin(detection_configs_), std::end(detection_configs_), DetectionConfig());
 }
 
 RuntimeConfig::~RuntimeConfig() {
