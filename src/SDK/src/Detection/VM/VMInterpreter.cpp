@@ -17,6 +17,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <intrin.h>
+#include <immintrin.h>
 #else
 #include <sys/mman.h>
 #include <unistd.h>
@@ -812,7 +813,7 @@ private:
                         detection_flags_ |= (1ULL << 9);  // Emulation detected flag
                     }
                     
-                    if (!push(is_emulated ?  0ULL : 1ULL)) return false;
+                    if (!push(is_emulated ? 0ULL : 1ULL)) return false;
 #else
                     // Non-Windows: Basic timing check using clock_gettime
                     struct timespec ts1, ts2;
@@ -827,7 +828,7 @@ private:
                     // 50 ops should take > 100ns on real hardware
                     bool is_emulated = (delta_ns < 50 || delta_ns > 100000000);
                     if (is_emulated) detection_flags_ |= (1ULL << 9);
-                    if (!push(is_emulated ?  0ULL : 1ULL)) return false;
+                    if (!push(is_emulated ? 0ULL : 1ULL)) return false;
 #endif
                     break;
                 }

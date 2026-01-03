@@ -973,7 +973,11 @@ TEST(VMInterpreterTests, OpRdtscDiffPerformance) {
  * This mimics the requirement: "1000 consecutive OP_RDTSC_DIFF calls 
  * maintain < 5% false positive rate"
  * 
- * Note: In hypervisor environments, timing is inherently less stable, so we
+ * Note: Each iteration creates a fresh VM instance, so the variance check
+ * won't accumulate samples across iterations. This tests the low/high
+ * threshold checks primarily.
+ * 
+ * In hypervisor environments, timing is inherently less stable, so we
  * accept a higher false positive rate there (< 50%) while maintaining strict
  * requirements for bare metal (< 5%).
  */
