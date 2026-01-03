@@ -217,7 +217,7 @@ public:
             
             // Compute hash of instructions and verify
             size_t instruction_offset = sizeof(BytecodeHeader) + (header->constant_count * 8);
-            if (raw_size < instruction_offset) {
+            if (raw_size < instruction_offset + header->instruction_count) {
                 output.result = VMResult::Error;
                 output.error_message = "Invalid bytecode size";
                 return output;
@@ -225,7 +225,7 @@ public:
             
             uint64_t computed_hash = xxh3_hash(
                 raw + instruction_offset, 
-                raw_size - instruction_offset
+                header->instruction_count  // Use exact instruction count from header
             );
             
             if (computed_hash != header->xxh3_hash) {

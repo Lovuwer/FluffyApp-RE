@@ -1409,7 +1409,7 @@ TEST(VMInterpreterTests, InvalidMagicNumberRejectedDuringLoad) {
 
 /**
  * Test: Memory-tampered magic number is caught during execute
- * This simulates an attacker patching bytecode in memory after successful load
+ * This test verifies that bytecode with invalid magic cannot be loaded
  */
 TEST(VMInterpreterTests, TamperedMagicNumberDetectedAtRuntime) {
     std::vector<uint8_t> instructions = {
@@ -1418,21 +1418,17 @@ TEST(VMInterpreterTests, TamperedMagicNumberDetectedAtRuntime) {
     
     auto bytecode_data = createBytecodeWithInstructions(instructions);
     
-    // Load valid bytecode first
-    Bytecode bytecode;
-    ASSERT_TRUE(bytecode.load(bytecode_data));
-    
-    // Now simulate memory tampering by corrupting the raw data after load
-    // In the actual attack scenario, attacker would patch the m_data vector in memory
-    // For testing, we modify the original data and reload
+    // Simulate memory tampering by corrupting the magic number
     bytecode_data[0] = 0xFF;  // Corrupt magic
     
     Bytecode tampered_bytecode;
-    ASSERT_TRUE(tampered_bytecode.load(bytecode_data) == false || true);  // May fail to load
+    // Load should fail with corrupted magic
+    EXPECT_FALSE(tampered_bytecode.load(bytecode_data)) 
+        << "Load should fail with corrupted magic number";
     
-    // If it somehow loads, execute should catch it
-    // Note: In our implementation, load() checks magic, so this won't execute
-    // But the integrity check in execute() provides defense-in-depth
+    // This test ensures that even if an attacker tries to load corrupted bytecode,
+    // it will be rejected at load time (first line of defense)
+    // The execute() method provides additional defense-in-depth by re-checking magic
 }
 
 /**

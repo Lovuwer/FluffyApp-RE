@@ -84,15 +84,24 @@ bool Bytecode::load(const std::vector<uint8_t>& data) {
     uint32_t instruction_count = readLE<uint32_t>(data.data() + 16);
     uint32_t constant_count = readLE<uint32_t>(data.data() + 20);
     
-    // Calculate constant pool size
-    uint32_t constant_pool_size = constant_count * 8;
+    // Calculate constant pool size (check for overflow)
+    uint64_t constant_pool_size = static_cast<uint64_t>(constant_count) * 8;
+    if (constant_pool_size > SIZE_MAX - sizeof(BytecodeHeader)) {
+        return false;  // Would overflow
+    }
     
-    // Calculate constant pool offset and instruction offset
+    // Calculate offsets
     m_constant_pool_offset = sizeof(BytecodeHeader);
     m_instruction_offset = m_constant_pool_offset + constant_pool_size;
     
-    // Verify data size
-    if (data.size() < m_instruction_offset + instruction_count) {
+    // Check for overflow in instruction offset calculation
+    if (m_instruction_offset < m_constant_pool_offset) {
+        return false;  // Overflow occurred
+    }
+    
+    // Verify data size (check for overflow)
+    if (instruction_count > data.size() || 
+        m_instruction_offset > data.size() - instruction_count) {
         return false;
     }
     
