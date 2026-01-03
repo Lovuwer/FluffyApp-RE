@@ -48,6 +48,10 @@ option(SENTINEL_ENABLE_ASAN "Enable Address Sanitizer" OFF)
 option(SENTINEL_ENABLE_UBSAN "Enable Undefined Behavior Sanitizer" OFF)
 option(SENTINEL_ENABLE_TSAN "Enable Thread Sanitizer" OFF)
 option(SENTINEL_ENABLE_ANALYSIS_RESISTANCE "Enable analysis resistance in release builds (Task 28)" ON)
+# Task 5.1: Fuzzing support for security testing
+# Requires Clang compiler with LibFuzzer support (Clang 6.0+)
+# Usage: cmake -DSENTINEL_ENABLE_FUZZING=ON -DCMAKE_CXX_COMPILER=clang++ ..
+option(SENTINEL_ENABLE_FUZZING "Enable fuzzing targets (requires Clang)" OFF)
 
 # ============================================================================
 # Compiler Configuration
