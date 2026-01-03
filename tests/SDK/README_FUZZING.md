@@ -18,6 +18,24 @@ This directory contains fuzzing infrastructure for testing the VMInterpreter aga
 
 Note: Fuzzing does **not** work with GCC or MSVC. You must use Clang.
 
+**KNOWN BUILD ISSUE**: The current SDK codebase has compilation warnings with Clang 18+ that are treated as errors. This is a pre-existing issue unrelated to the fuzzing infrastructure. To build the fuzzer, you need to either:
+
+1. **Fix the SDK warnings** (recommended for production):
+   - Fix unused field warnings in `src/SDK/src/Internal/Detection.hpp`
+   - Fix unused variable warnings in `src/SDK/src/Internal/CorrelationEngine.cpp`
+
+2. **Temporarily disable -Werror** (for testing fuzzing):
+   ```bash
+   # In src/SDK/CMakeLists.txt, change line ~288 from:
+   #   -Werror
+   # to:
+   #   -Wno-error
+   ```
+
+3. **Use GCC for SDK, Clang only for fuzzer** (workaround):
+   - Build SDK with GCC first
+   - Then build fuzzer separately with Clang (advanced)
+
 ## Building the Fuzzer
 
 ```bash

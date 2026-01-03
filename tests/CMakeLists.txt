@@ -344,10 +344,16 @@ if(SENTINEL_ENABLE_FUZZING)
         # - It can cause false positives in optimized code
         # - It significantly slows down fuzzing
         # - ASan catches most critical issues
+        #
+        # -Wno-error: Disable warnings-as-errors for fuzzer target
+        #   - The SDK has pre-existing unused field warnings with Clang
+        #   - These are unrelated to fuzzing functionality
+        #   - We suppress them here to enable fuzzer compilation
         target_compile_options(fuzz_vm 
             PRIVATE 
                 -fsanitize=fuzzer,address
                 -g  # Debug symbols for better crash reports
+                -Wno-error  # Disable warnings-as-errors to work around SDK build issues
         )
         
         # Fuzzer link options
