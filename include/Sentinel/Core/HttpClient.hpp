@@ -222,15 +222,18 @@ private:
  *   openssl pkey -pubin -outform der | \
  *   openssl dgst -sha256 -binary | \
  *   openssl enc -base64
+ * 
+ * Note: These placeholder values are intentionally invalid and will fail pinning.
+ * Replace with real hashes before production deployment.
  */
 namespace DefaultPins {
-    /// Primary production certificate SPKI hash
+    /// Primary production certificate SPKI hash (44 chars, base64-encoded SHA-256)
     constexpr std::string_view PRIMARY_PIN = 
-        "sha256/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=";
+        "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
     
-    /// Backup certificate SPKI hash (for rotation)
+    /// Backup certificate SPKI hash for rotation (44 chars, base64-encoded SHA-256)
     constexpr std::string_view BACKUP_PIN = 
-        "sha256/BACKUP_CERT_HASH_FOR_ROTATION===================";
+        "sha256/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=";
     
     /// Example pins array for convenience
     constexpr std::array<std::string_view, 2> PRODUCTION_PINS = {
