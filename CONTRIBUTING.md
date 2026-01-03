@@ -139,6 +139,39 @@ cd build && ctest
 - [ ] Code follows style guide
 - [ ] Commit messages are clear
 
+## 🛡️ Memory Safety
+
+All PRs must pass AddressSanitizer (ASAN) and ThreadSanitizer (TSAN) checks.  
+If your PR introduces a memory error or data race, CI will fail.
+
+### Running Sanitizers Locally
+
+**AddressSanitizer (detects memory errors):**
+```bash
+cmake -B build -DSENTINEL_ENABLE_ASAN=ON -DCMAKE_BUILD_TYPE=Debug \
+  -DSENTINEL_BUILD_TESTS=ON
+cmake --build build && cd build && ctest
+```
+
+**ThreadSanitizer (detects data races):**
+```bash
+cmake -B build -DSENTINEL_ENABLE_TSAN=ON -DCMAKE_BUILD_TYPE=Debug \
+  -DSENTINEL_BUILD_TESTS=ON
+cmake --build build && cd build && ctest
+```
+
+### Understanding Sanitizer Failures
+
+- **ASAN errors**: Memory leaks, buffer overflows, use-after-free, etc.
+- **TSAN errors**: Data races, deadlocks, thread safety issues
+
+Both sanitizers will print detailed error reports showing:
+- The type of error detected
+- Stack traces of the problematic code
+- Memory addresses and access patterns
+
+Fix all sanitizer errors before submitting your PR. The CI pipeline will automatically run these checks on all pull requests.
+
 ## 🐛 Common Issues
 
 ### Build Failures
