@@ -79,6 +79,48 @@ enum class VMResult : uint8_t {
 
 /**
  * @brief Detailed execution output
+ * 
+ * TELEMETRY INTEGRATION (STAB-012):
+ * ===================================
+ * VMOutput contains critical metrics that should be logged and sent to telemetry
+ * for production monitoring. These metrics enable:
+ * 
+ * 1. **Performance Regression Detection**
+ *    - Monitor `elapsed` time: Alert if p95 > 100ms or p99 > 500ms
+ *    - Track `instructions_executed`: Detect abnormally complex bytecode
+ *    - Correlate with game frame times to ensure VM doesn't degrade performance
+ * 
+ * 2. **Security Anomaly Detection**
+ *    - Monitor `memory_reads_performed`: Alert if exceeding normal patterns (possible attack)
+ *    - Track timeout frequency: High timeout rate (>1%) indicates malformed bytecode
+ *    - Analyze `result` distribution: Violation spike may indicate cheat tool deployment
+ * 
+ * 3. **Operational Health**
+ *    - Track Error vs Clean ratio: High error rate indicates bytecode compatibility issues
+ *    - Monitor timeout rate: Indicates need for bytecode optimization
+ *    - Measure execution time variance: High variance indicates VM performance instability
+ * 
+ * RECOMMENDED TELEMETRY IMPLEMENTATION:
+ * - Use PerfTelemetry::RecordOperation() to log execution time
+ * - Use TelemetryEmitter to report aggregated metrics (every 100th execution to reduce overhead)
+ * - Log format: [VMResult][instructions][memory_reads][elapsed_us][detection_flags]
+ * - DO NOT log: error_message (may contain PII), bytecode content, memory addresses
+ * - Sampling: Report every Nth execution where N is configurable (default: 100)
+ * 
+ * METRICS DEFINITIONS:
+ * - result: Execution outcome (Clean=0, Violation=1, Error=2, Timeout=3, Halted=4)
+ * - detection_flags: Bitmask of detected issues (64-bit, see opcodes for flag meanings)
+ * - instructions_executed: Number of opcodes executed (max: config.max_instructions)
+ * - memory_reads_performed: Number of safe memory read operations (max: config.max_memory_reads)
+ * - elapsed: Wall-clock execution time including callback time (microseconds)
+ * - error_message: Human-readable error (debug only, DO NOT send to telemetry)
+ * 
+ * ALERTING THRESHOLDS (Recommended):
+ * - P95 elapsed > 100ms: Performance regression
+ * - P99 elapsed > 500ms: Critical performance issue
+ * - Timeout rate > 1%: Bytecode needs optimization
+ * - Error rate > 5%: Compatibility issues
+ * - Memory reads spike >2x baseline: Possible attack pattern
  */
 struct VMOutput {
     VMResult result = VMResult::Clean;
