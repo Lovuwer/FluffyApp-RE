@@ -283,6 +283,13 @@ static_assert(sizeof(BytecodeHeader) == 24, "BytecodeHeader must be 24 bytes");
  * 
  * Format: [Header (24 bytes)] [Constant Pool] [Instructions]
  * 
+ * BYTECODE INTEGRITY:
+ * verify() and execute() hash identical byte ranges to prevent: 
+ * - Trailing data smuggling (attacker appends bytes after instruction_count)
+ * - Hash collision exploitation (different inputs, same hash)
+ * 
+ * INVARIANT:  hash_input = raw[instruction_offset : instruction_offset + instruction_count]
+ * 
  * INTEGRITY VERIFICATION (STAB-001 - Fixed 2026-01-03):
  * - verify() reads instruction_count from header (offset 16)
  * - Hashes exactly instruction_count bytes (not all remaining data)
