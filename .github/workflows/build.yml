@@ -65,6 +65,8 @@ jobs:
   asan-build:
     name: Build with AddressSanitizer
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     
     steps:
     - name: Checkout code
@@ -103,6 +105,8 @@ jobs:
   tsan-build:
     name: Build with ThreadSanitizer
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     
     steps:
     - name: Checkout code
