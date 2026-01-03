@@ -67,6 +67,8 @@ struct HeartbeatConfig {
 
 /**
  * @brief Heartbeat status information
+ * 
+ * Contains metrics and state for replay protection and monitoring.
  */
 struct HeartbeatStatus {
     /// Whether heartbeat thread is running
@@ -78,7 +80,9 @@ struct HeartbeatStatus {
     /// Number of failed heartbeat attempts
     uint64_t failureCount = 0;
     
-    /// Current sequence number
+    /// Current sequence number (REPLAY PROTECTION)
+    /// This monotonically increasing counter is included in each heartbeat.
+    /// Server must reject heartbeats with sequence <= last_seen_sequence.
     uint64_t sequenceNumber = 0;
     
     /// Timestamp of last successful heartbeat
@@ -96,6 +100,27 @@ struct HeartbeatStatus {
  * 
  * Provides periodic heartbeat transmission to detect client liveness.
  * Critical for detecting process termination and thread suspension attacks.
+ * 
+ * REPLAY PROTECTION (STAB-009):
+ * ==============================
+ * Each heartbeat includes:
+ * 1. Sequence Number: Monotonically increasing counter that prevents
+ *    replay of old heartbeats. Server must reject sequence <= last_seen.
+ * 2. Timestamp: UTC milliseconds since epoch for freshness validation.
+ *    Server should reject timestamps outside ±60s window.
+ * 3. Session Token: Authentication token (signed via RequestSigner).
+ * 
+ * Server-Side Requirements:
+ * - Maintain last-seen sequence number per client
+ * - Reject duplicate or old sequence numbers
+ * - Validate timestamp freshness (±60s window)
+ * - Verify cryptographic signature
+ * 
+ * Client-Side Behavior:
+ * - Sequence resets to 0 on start() (new session)
+ * - Sequence increments on every send attempt (success or failure)
+ * - Timestamp generated fresh for each heartbeat
+ * - No client-side replay detection (server's responsibility)
  * 
  * Features:
  * - Configurable interval with random jitter
