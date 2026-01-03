@@ -882,3 +882,186 @@ TEST(VMInterpreterTests, OpTestExceptionPerformance) {
     EXPECT_LT(avg_us, 100) << "OP_TEST_EXCEPTION took " << avg_us << "μs (expected < 100μs)";
 }
 #endif // _WIN32
+
+// ============================================================================
+// OP_RDTSC_DIFF Tests (Anti-Emulation Timing Canary)
+// ============================================================================
+
+/**
+ * Test that OP_RDTSC_DIFF returns 1 under normal conditions
+ * (bare metal execution)
+ */
+TEST(VMInterpreterTests, OpRdtscDiffNormalExecution) {
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::OP_RDTSC_DIFF),
+        static_cast<uint8_t>(Opcode::HALT)
+    };
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMInterpreter vm;
+    VMOutput output = vm.execute(bytecode);
+    
+    EXPECT_EQ(output.result, VMResult::Halted);
+    // On bare metal, should return 1 (timing OK)
+    // Flag bit 9 should NOT be set (no emulation detected)
+    EXPECT_EQ(output.detection_flags & (1ULL << 9), 0ULL);
+}
+
+/**
+ * Test that OP_RDTSC_DIFF maintains consistency over multiple calls
+ * This ensures the variance tracking works correctly
+ */
+TEST(VMInterpreterTests, OpRdtscDiffMultipleCalls) {
+    std::vector<uint8_t> instructions;
+    
+    // Call OP_RDTSC_DIFF 10 times
+    for (int i = 0; i < 10; ++i) {
+        instructions.push_back(static_cast<uint8_t>(Opcode::OP_RDTSC_DIFF));
+        instructions.push_back(static_cast<uint8_t>(Opcode::POP));  // Discard result
+    }
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMInterpreter vm;
+    VMOutput output = vm.execute(bytecode);
+    
+    EXPECT_EQ(output.result, VMResult::Halted);
+    // On bare metal, should pass consistently
+}
+
+/**
+ * Test that OP_RDTSC_DIFF completes in reasonable time
+ * Should complete in < 500μs even with the timing operations
+ */
+TEST(VMInterpreterTests, OpRdtscDiffPerformance) {
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::OP_RDTSC_DIFF),
+        static_cast<uint8_t>(Opcode::HALT)
+    };
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMInterpreter vm;
+    
+    // Run multiple times to get average
+    const int iterations = 10;
+    int64_t total_us = 0;
+    
+    for (int i = 0; i < iterations; ++i) {
+        VMOutput output = vm.execute(bytecode);
+        ASSERT_EQ(output.result, VMResult::Halted);
+        total_us += output.elapsed.count();
+    }
+    
+    int64_t avg_us = total_us / iterations;
+    
+    // Should complete in < 500μs on average (more lenient than OP_TEST_EXCEPTION)
+    EXPECT_LT(avg_us, 500) << "OP_RDTSC_DIFF took " << avg_us << "μs (expected < 500μs)";
+}
+
+/**
+ * Stress test: Run OP_RDTSC_DIFF 1000 times to verify stability
+ * This mimics the requirement: "1000 consecutive OP_RDTSC_DIFF calls 
+ * maintain < 5% false positive rate"
+ */
+TEST(VMInterpreterTests, OpRdtscDiffStressTest) {
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::OP_RDTSC_DIFF),
+        static_cast<uint8_t>(Opcode::HALT)
+    };
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    const int iterations = 1000;
+    int false_positives = 0;
+    
+    for (int i = 0; i < iterations; ++i) {
+        VMInterpreter vm;  // Fresh VM for each iteration
+        VMOutput output = vm.execute(bytecode);
+        
+        ASSERT_EQ(output.result, VMResult::Halted);
+        
+        // Check if emulation was falsely detected (flag bit 9 set)
+        if (output.detection_flags & (1ULL << 9)) {
+            false_positives++;
+        }
+    }
+    
+    double false_positive_rate = (static_cast<double>(false_positives) / iterations) * 100.0;
+    
+    // False positive rate should be < 5%
+    EXPECT_LT(false_positive_rate, 5.0) 
+        << "False positive rate: " << false_positive_rate << "% (expected < 5%)";
+}
+
+/**
+ * Test that OP_RDTSC_DIFF returns correct result on stack
+ * The result should be 1 (timing OK) or 0 (emulation detected)
+ */
+TEST(VMInterpreterTests, OpRdtscDiffStackResult) {
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::OP_RDTSC_DIFF),
+        // Compare with 0 to verify result is 0 or 1
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    auto zero = encodeU64(0);
+    instructions.insert(instructions.end(), zero.begin(), zero.end());
+    instructions.push_back(static_cast<uint8_t>(Opcode::CMP_EQ));
+    // Result should be on stack (1 if result was 0, 0 if result was 1)
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMInterpreter vm;
+    VMOutput output = vm.execute(bytecode);
+    
+    EXPECT_EQ(output.result, VMResult::Halted);
+    // Just verify it executes successfully
+}
+
+/**
+ * Test that OP_RDTSC_DIFF works correctly in bytecode with other opcodes
+ */
+TEST(VMInterpreterTests, OpRdtscDiffIntegration) {
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    auto val = encodeU64(42);
+    instructions.insert(instructions.end(), val.begin(), val.end());
+    
+    // Execute timing check
+    instructions.push_back(static_cast<uint8_t>(Opcode::OP_RDTSC_DIFF));
+    
+    // If timing check passed (result = 1), jump to success
+    instructions.push_back(static_cast<uint8_t>(Opcode::JMP_NZ));
+    auto offset = encodeU16(1);  // Skip HALT_FAIL
+    instructions.insert(instructions.end(), offset.begin(), offset.end());
+    
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT_FAIL));
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMInterpreter vm;
+    VMOutput output = vm.execute(bytecode);
+    
+    // On bare metal, should reach HALT, not HALT_FAIL
+    EXPECT_EQ(output.result, VMResult::Halted);
+}

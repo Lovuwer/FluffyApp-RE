@@ -20,6 +20,7 @@
 #else
 #include <sys/mman.h>
 #include <unistd.h>
+#include <time.h>
 #endif
 
 namespace Sentinel::VM {
@@ -711,6 +712,93 @@ private:
 #else
                     // Non-Windows always passes
                     if (!push(1)) return false;
+#endif
+                    break;
+                }
+                
+                case Opcode::OP_RDTSC_DIFF: {
+#ifdef _WIN32
+                    // Serialize with CPUID (forces emulator to handle this)
+                    int cpuid_data[4];
+                    __cpuid(cpuid_data, 0);
+                    
+                    uint64_t tsc1 = __rdtsc();
+                    
+                    // Known-cost operations that must take measurable time
+                    // These operations are chosen to stress emulator accuracy: 
+                    // - Memory fence (MFENCE via interlocked op)
+                    // - Floating point (often poorly emulated)
+                    // - Cache interaction
+                    volatile int64_t accumulator = 0;
+                    for (int i = 0; i < 50; ++i) {
+                        accumulator += i * i;  // Integer multiply
+                        _mm_mfence();          // Memory barrier (forces serialization)
+                    }
+                    
+                    // Serialize again
+                    __cpuid(cpuid_data, 0);
+                    uint64_t tsc2 = __rdtsc();
+                    
+                    uint64_t delta = tsc2 - tsc1;
+                    (void)accumulator;  // Prevent optimization
+                    
+                    bool is_emulated = false;
+                    
+                    // Check 1: Delta too low (emulator returning fake constant TSC)
+                    // 50 iterations with MFENCE should take AT MINIMUM 1000 cycles on real hardware
+                    // Even a 5GHz CPU:  50 * ~20 cycles per MFENCE = 1000+ cycles
+                    if (delta < 500) {
+                        is_emulated = true;
+                    }
+                    
+                    // Check 2: Delta suspiciously high (single-stepping or breakpoint)
+                    // Normal execution: 1000-50000 cycles
+                    // Single-stepping: 1,000,000+ cycles per iteration
+                    if (delta > 5000000) {  // 5M cycles = obvious debugging
+                        is_emulated = true;
+                    }
+                    
+                    // Check 3: Statistical consistency check over multiple samples
+                    // Real hardware has variance; emulators often don't
+                    static thread_local uint64_t last_deltas[8] = {0};
+                    static thread_local int delta_index = 0;
+                    
+                    last_deltas[delta_index++ & 7] = delta;
+                    
+                    if (delta_index >= 8) {
+                        uint64_t sum = 0, variance_sum = 0;
+                        for (int i = 0; i < 8; ++i) sum += last_deltas[i];
+                        uint64_t mean = sum / 8;
+                        for (int i = 0; i < 8; ++i) {
+                            int64_t diff = static_cast<int64_t>(last_deltas[i]) - static_cast<int64_t>(mean);
+                            variance_sum += diff * diff;
+                        }
+                        // If variance is near-zero, likely emulation
+                        if (variance_sum < 10000) {  // Threshold tuned for real hardware
+                            is_emulated = true;
+                        }
+                    }
+                    
+                    if (is_emulated) {
+                        detection_flags_ |= (1ULL << 9);  // Emulation detected flag
+                    }
+                    
+                    if (!push(is_emulated ?  0ULL : 1ULL)) return false;
+#else
+                    // Non-Windows: Basic timing check using clock_gettime
+                    struct timespec ts1, ts2;
+                    clock_gettime(CLOCK_MONOTONIC, &ts1);
+                    volatile int64_t acc = 0;
+                    for (int i = 0; i < 50; ++i) acc += i * i;
+                    clock_gettime(CLOCK_MONOTONIC, &ts2);
+                    (void)acc;
+                    
+                    uint64_t delta_ns = (ts2.tv_sec - ts1.tv_sec) * 1000000000ULL + 
+                                        (ts2.tv_nsec - ts1.tv_nsec);
+                    // 50 ops should take > 100ns on real hardware
+                    bool is_emulated = (delta_ns < 50 || delta_ns > 100000000);
+                    if (is_emulated) detection_flags_ |= (1ULL << 9);
+                    if (!push(is_emulated ?  0ULL : 1ULL)) return false;
 #endif
                     break;
                 }
