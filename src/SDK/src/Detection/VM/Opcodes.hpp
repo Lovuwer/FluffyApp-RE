@@ -205,6 +205,28 @@ enum class Opcode : uint8_t {
      */
     OP_RDTSC_DIFF = 0xA1,
     
+    /**
+     * @brief Read Thread Environment Block base address
+     * 
+     * Stack:  [] → [teb_address]
+     * 
+     * Windows x64: Returns GS:[0x30] (self-pointer to TEB)
+     * Windows x86: Returns FS:[0x18] (self-pointer to TEB)
+     * Linux: Returns 0 (placeholder)
+     */
+    OP_READ_TEB = 0xA2,
+
+    /**
+     * @brief Read Process Environment Block base address  
+     * 
+     * Stack: [] → [peb_address]
+     * 
+     * Windows x64: Returns GS:[0x60] (TEB.ProcessEnvironmentBlock)
+     * Windows x86: Returns FS:[0x30] (TEB.ProcessEnvironmentBlock)
+     * Linux: Returns 0 (placeholder)
+     */
+    OP_READ_PEB = 0xA3,
+    
     // Reserved:  0xF0-0xFF for future/custom use
 };
 

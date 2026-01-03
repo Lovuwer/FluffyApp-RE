@@ -833,6 +833,34 @@ private:
                     break;
                 }
                 
+                case Opcode::OP_READ_TEB: {
+#ifdef _WIN32
+    #ifdef _WIN64
+                    uint64_t teb = __readgsqword(0x30);
+    #else
+                    uint64_t teb = __readfsdword(0x18);
+    #endif
+                    if (!push(teb)) return false;
+#else
+                    if (!push(0)) return false;  // Linux placeholder
+#endif
+                    break;
+                }
+
+                case Opcode::OP_READ_PEB: {
+#ifdef _WIN32
+    #ifdef _WIN64
+                    uint64_t peb = __readgsqword(0x60);
+    #else  
+                    uint64_t peb = __readfsdword(0x30);
+    #endif
+                    if (!push(peb)) return false;
+#else
+                    if (!push(0)) return false;  // Linux placeholder
+#endif
+                    break;
+                }
+                
                 default:
                     // Unknown opcode
                     return false;
