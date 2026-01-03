@@ -226,6 +226,28 @@ enum class Opcode : uint8_t {
      * Linux: Returns 0 (placeholder)
      */
     OP_READ_PEB = 0xA3,
+
+    /**
+     * @brief Syscall stub integrity check (Anti-Hook Detection)
+     * 
+     * Stack: [func_address] → [result]
+     * 
+     * Behavior:
+     * 1. Read first 16 bytes of function address
+     * 2. Validate x64 syscall stub pattern: 
+     *    - 4C 8B D1: mov r10, rcx (parameter marshaling)
+     *    - B8 XX XX XX XX: mov eax, imm32 (syscall number)
+     *    - 0F 05: syscall
+     *    - C3: ret
+     * 3. Detect common hook signatures:
+     *    - E9:  JMP rel32 (detour)
+     *    - FF 25: JMP [rip+disp] (IAT hook)
+     *    - 48 B8: MOV RAX, imm64 (absolute jump setup)
+     * 4. Cross-reference syscall number against known values
+     * 
+     * Result:  Pushes syscall number if valid (non-zero), 0 if hooked (sets flag bit 10)
+     */
+    OP_CHECK_SYSCALL = 0xA4,
     
     // Reserved:  0xF0-0xFF for future/custom use
 };
@@ -247,6 +269,7 @@ constexpr uint8_t opcodeStackConsume(Opcode op) noexcept {
         case Opcode::READ_SAFE_2:
         case Opcode::READ_SAFE_1:
         case Opcode::SET_FLAG:
+        case Opcode::OP_CHECK_SYSCALL:
             return 1;
         
         case Opcode::ADD:
