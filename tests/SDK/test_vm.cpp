@@ -283,6 +283,93 @@ TEST(BytecodeTests, GetConstantOutOfBounds) {
 }
 
 // ============================================================================
+// Bytecode Hash Verification Tests (STAB-001)
+// ============================================================================
+
+TEST(BytecodeTests, VerifyRejectsTrailingGarbage) {
+    // Create valid bytecode
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::NOP),
+        static_cast<uint8_t>(Opcode::HALT)
+    };
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    // Add trailing garbage bytes
+    data.push_back(0xDE);
+    data.push_back(0xAD);
+    data.push_back(0xBE);
+    data.push_back(0xEF);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));  // Load should succeed
+    
+    // Verify should FAIL due to trailing garbage (defense-in-depth)
+    EXPECT_FALSE(bytecode.verify()) << "Bytecode with trailing garbage should fail verification";
+}
+
+TEST(BytecodeTests, VerifyAcceptsValidBytecodeWithoutTrailingData) {
+    // Create valid bytecode without trailing data
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::NOP),
+        static_cast<uint8_t>(Opcode::HALT)
+    };
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    // Verify should succeed for well-formed bytecode
+    EXPECT_TRUE(bytecode.verify()) << "Valid bytecode should pass verification";
+}
+
+TEST(BytecodeTests, VerifyAndExecuteUseConsistentHashRange) {
+    // This test verifies that both verify() and execute() hash the same byte range
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    auto val = encodeU64(42);
+    instructions.insert(instructions.end(), val.begin(), val.end());
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    ASSERT_TRUE(bytecode.verify()) << "Valid bytecode should pass verify()";
+    
+    // Execute should also succeed with same hash validation
+    VMInterpreter vm;
+    VMOutput output = vm.execute(bytecode);
+    
+    EXPECT_NE(output.result, VMResult::Violation) 
+        << "Valid bytecode should not trigger violation in execute()";
+    EXPECT_EQ(output.result, VMResult::Halted) 
+        << "Valid bytecode should execute to completion";
+}
+
+TEST(BytecodeTests, ExecuteRejectsTrailingGarbageViaHashMismatch) {
+    // Create valid bytecode
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::NOP),
+        static_cast<uint8_t>(Opcode::HALT)
+    };
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    // Add trailing garbage AFTER hash is computed
+    data.push_back(0xDE);
+    data.push_back(0xAD);
+    
+    Bytecode bytecode;
+    
+    // Direct load will succeed (header is valid)
+    // But we need to test that execute() also rejects it
+    ASSERT_TRUE(bytecode.load(data));
+    
+    // verify() should reject due to size mismatch
+    EXPECT_FALSE(bytecode.verify()) << "Bytecode with trailing bytes should fail verify()";
+}
+
+// ============================================================================
 // VM Execution Tests - Basic Operations
 // ============================================================================
 

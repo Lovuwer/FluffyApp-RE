@@ -383,6 +383,45 @@ public:
                 output.result = VMResult::Clean;
             }
             
+            // ================================================================
+            // TELEMETRY INTEGRATION POINT (STAB-012)
+            // ================================================================
+            // TODO: Add VM execution metrics to telemetry here
+            // 
+            // RECOMMENDED IMPLEMENTATION:
+            // 1. Log execution metrics for debugging:
+            //    Logger::Debug("VM executed: result={} instructions={} elapsed={}us",
+            //                  static_cast<int>(output.result), 
+            //                  output.instructions_executed,
+            //                  output.elapsed.count());
+            // 
+            // 2. Report to telemetry with sampling (every Nth execution):
+            //    static thread_local uint32_t execution_count = 0;
+            //    if (++execution_count % 100 == 0) {
+            //        TelemetryEmitter::ReportVMExecution(
+            //            output.result,
+            //            output.instructions_executed,
+            //            output.memory_reads_performed,
+            //            output.elapsed.count()
+            //            // DO NOT include: detection_flags (sensitive), error_message (PII)
+            //        );
+            //    }
+            // 
+            // 3. Record performance metrics:
+            //    PerfTelemetry::RecordOperation(OperationType::VMExecution, output.elapsed);
+            // 
+            // 4. Alert on anomalies:
+            //    if (output.elapsed.count() > 100000) { // 100ms
+            //        Logger::Warn("VM execution took {}us (threshold: 100ms)", output.elapsed.count());
+            //    }
+            //    if (output.result == VMResult::Timeout) {
+            //        Logger::Warn("VM execution timeout ({}us)", output.elapsed.count());
+            //    }
+            // 
+            // IMPORTANT: Use sampling to avoid performance overhead. Do NOT log
+            // every execution in production. Recommended sample rate: 1/100 or 1/1000.
+            // ================================================================
+            
         } catch (const std::exception& e) {
             output.result = VMResult::Error;
             output.error_message = e.what();
@@ -1224,6 +1263,22 @@ VMInterpreter::VMInterpreter(VMInterpreter&&) noexcept = default;
 VMInterpreter& VMInterpreter::operator=(VMInterpreter&&) noexcept = default;
 
 VMOutput VMInterpreter::execute(const Bytecode& bytecode) noexcept {
+    // Execute the bytecode and return metrics
+    // 
+    // TELEMETRY NOTE (STAB-012): 
+    // The returned VMOutput contains important execution metrics that should be
+    // logged and reported to telemetry for production monitoring. See VMOutput
+    // documentation in VMInterpreter.hpp for complete telemetry integration guide.
+    // 
+    // Key metrics available:
+    // - result: Execution outcome (Clean, Violation, Error, Timeout, Halted)
+    // - instructions_executed: Number of opcodes executed
+    // - memory_reads_performed: Number of safe memory read operations
+    // - elapsed: Wall-clock execution time (microseconds)
+    // - detection_flags: Bitmask of detected security issues
+    // 
+    // Recommended: Log these metrics with sampling (e.g., every 100th execution)
+    // to enable performance regression detection and security anomaly monitoring.
     return m_impl->execute(bytecode);
 }
 

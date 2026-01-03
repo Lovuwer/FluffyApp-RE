@@ -16,14 +16,14 @@ infrastructure and network security features are incomplete.
 
 **In Progress:**
 - Cloud/Heartbeat reporting (Core implemented, SDK integration pending)
-- HTTP client security (certificate pinning, request signing)
-- Correlation engine stability (known test failures)
+- Correlation engine (CRITICAL: All tests crash with SIGSEGV - see STAB-004)
 
 **Not Yet Implemented:**
+- Certificate pinning (MITM risk - P0 blocker for production)
+- Request signing with replay protection
 - Memory protection API
 - Value protection API
 - Server-side speed validation (client-side only)
-- Production-grade network security
 
 **Explicitly Out of Scope:**
 - Kernel-mode protection
@@ -308,16 +308,17 @@ See [docs/security/defensive-gaps.md](docs/security/defensive-gaps.md) for compl
 - ✅ Cryptography primitives
 
 **Needs Work Before Production:**
+- 🔴 Certificate pinning (P0 BLOCKER - no code exists, MITM risk)
+- 🔴 Request signing and replay protection (P0 BLOCKER - no code exists)
 - 🔴 Server-side speed validation (mandatory)
 - 🔴 Heartbeat/cloud reporting system
-- 🔴 Certificate pinning
-- 🔴 Request signing and replay protection
 - 🔴 Memory/value protection APIs
 
 **Blocking Issues:**
-1. Cloud infrastructure not implemented
-2. Speed hack detection requires server component
-3. Network security features incomplete
+1. Certificate pinning not implemented (MITM vulnerability)
+2. Request signing not implemented (replay attack vulnerability)
+3. Cloud infrastructure not implemented
+4. Speed hack detection requires server component
 
 📖 **Detailed status:** [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md)
 

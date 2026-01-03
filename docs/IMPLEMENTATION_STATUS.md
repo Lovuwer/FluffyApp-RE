@@ -100,36 +100,43 @@ This document categorizes all security features by actual implementation status,
 
 ### CorrelationEngine (`src/SDK/src/Internal/CorrelationEngine.cpp`)
 
-**Status:** 🟡 **PARTIAL** (with known test failures)
+**Status:** 🔴 **NOT PRODUCTION-READY - CRITICAL CRASHES**
+
+⚠️ **WARNING: Do not use CorrelationEngine in production until STAB-004 is resolved.**
 
 **What's Implemented:**
-- 🟡 Correlation score calculation with confidence weights
-- 🟡 Multi-signal correlation logic
-- 🟡 Enforcement threshold evaluation
-- 🟡 Cooling-off period tracking
-- 🟡 Sub-threshold telemetry
+- 🟡 Correlation score calculation with confidence weights (CRASHES - not usable)
+- 🟡 Multi-signal correlation logic (CRASHES - not usable)
+- 🟡 Enforcement threshold evaluation (CRASHES - not usable)
+- 🟡 Cooling-off period tracking (CRASHES - not usable)
+- 🟡 Sub-threshold telemetry (CRASHES - not usable)
 
-**Known Issues:**
-- ⚠️ **7 test failures** - Segmentation faults in CorrelationEnhancementTest
-- ⚠️ Null pointer dereference in specific configuration paths
-- ⚠️ Crashes on `GetCorrelationScore()` with certain confidence weight combinations
-- ⚠️ Memory access violations in correlation state management
+**Critical Issues (STAB-004):**
+All 7 correlation engine tests crash with SIGSEGV (segmentation fault), indicating fundamental stability issues that make this component completely unusable in production. These are not edge case failures - the system crashes on basic operations.
 
-**Test Failures:**
-1. `CorrelationEnhancementTest.NewConfidenceWeights` - Crashes on score retrieval
-2. `CorrelationEnhancementTest.EnforcementThreshold` - Crashes on ProcessViolation
-3. `CorrelationEnhancementTest.CoolingOffPeriod` - Crashes on state access
-4. `CorrelationEnhancementTest.SubThresholdTelemetry` - Crashes on violation processing
-5. `CorrelationEnhancementTest.MultiSignalCorrelation` - Crashes on correlation logic
-6. `CorrelationEnhancementTest.ScoreDecay` - Crashes on score calculation
-7. `CorrelationEnhancementTest.PersistedState` - Crashes on state persistence
+**Test Failures (7/7 tests crash with SIGSEGV):**
+1. `CorrelationEnhancementTest.NewConfidenceWeights` - SIGSEGV on score retrieval with null pointer dereference
+2. `CorrelationEnhancementTest.EnforcementThreshold` - SIGSEGV on ProcessViolation call, memory access violation
+3. `CorrelationEnhancementTest.CoolingOffPeriod` - SIGSEGV on state access, uninitialized pointer
+4. `CorrelationEnhancementTest.SubThresholdTelemetry` - SIGSEGV on violation processing, null module_name
+5. `CorrelationEnhancementTest.MultiSignalCorrelation` - SIGSEGV on correlation logic, invalid memory access
+6. `CorrelationEnhancementTest.ScoreDecay` - SIGSEGV on score calculation, null pointer in state management
+7. `CorrelationEnhancementTest.PersistedState` - SIGSEGV on state persistence, memory corruption
+
+**Root Causes:**
+- ❌ Missing null pointer checks in initialization paths
+- ❌ Improper ViolationEvent module_name handling (expects non-null, receives null)
+- ❌ Uninitialized state pointers in confidence weight management
+- ❌ Memory access violations in correlation state management
+- ❌ Lack of defensive programming for edge cases
 
 **What's Missing:**
-- ❌ Null pointer checks in initialization
-- ❌ Proper ViolationEvent module_name handling
-- ❌ Defensive programming for edge cases
+- ❌ Proper initialization validation
+- ❌ Null safety checks throughout
+- ❌ Memory safety guarantees
+- ❌ Error handling for invalid configurations
 
-**Production Readiness:** 🔴 **NOT PRODUCTION-READY** - Critical test failures must be fixed
+**Production Readiness:** 🔴 **NOT PRODUCTION-READY** - System is completely unusable due to crashes. All tests fail with SIGSEGV. Fix tracked in STAB-004.
 
 ---
 
@@ -216,6 +223,49 @@ This document categorizes all security features by actual implementation status,
 **Production Readiness:** 🔴 **INCOMPLETE** - **CLIENT-SIDE ONLY, NOT PRODUCTION-SAFE**
 
 **Critical Note:** Documentation explicitly states server validation is REQUIRED. Client-side is telemetry only.
+
+---
+
+### VM Interpreter (`src/SDK/src/Detection/VM/`)
+
+**Status:** ✅ **IMPLEMENTED** (comprehensive with documented limitations)
+
+**What's Implemented:**
+- ✅ Stack-based bytecode interpreter with 40+ opcodes
+- ✅ Bytecode integrity verification (XXH3 hash)
+- ✅ Safe memory reads with VirtualQuery validation
+- ✅ Hash operations (CRC32, XXH3) with overflow protection
+- ✅ External callback support with timeout enforcement
+- ✅ Re-entrancy protection for callbacks
+- ✅ Stack overflow protection
+- ✅ Infinite loop protection (instruction counter)
+- ✅ Exception handling (SEH on Windows)
+- ✅ Opcode polymorphism support
+- ✅ Anti-debug opcodes (RDTSC, VEH integrity, syscall checking)
+- ✅ Constant pool support
+
+**Test Coverage:** 83 tests across 3 suites
+- **OpcodeTests** (7 tests): Opcode map generation, inversion, metadata
+- **BytecodeTests** (13 tests): Loading, verification, constants, hash consistency
+- **VMInterpreterTests** (63 tests): Execution, safety limits, callbacks, security
+
+**Security Fixes Applied:**
+- ✅ STAB-001: Bytecode hash verification consistency (verify() matches execute())
+- ✅ STAB-003: External callback timeout enforcement (async execution)
+- ✅ STAB-005: Hash operation overflow protection (integer wraparound checks)
+
+**Known Limitations (Documented in VMInterpreter.hpp):**
+- External callbacks may continue after timeout (background thread)
+- Hash operations allocate memory proportional to size (capped at 1MB)
+- Bytecode with trailing bytes fails verification (defense-in-depth)
+- Timing-based detection has false positives in VMs (adjusted thresholds)
+
+**What's Missing:**
+- ❌ Bytecode compiler/assembler (server-side component)
+- ❌ Bytecode obfuscation tooling
+- ❌ JIT compilation for performance-critical paths
+
+**Production Readiness:** ✅ **IMPLEMENTED** - Production-ready interpreter with comprehensive test coverage and documented limitations. Timing checks may need game-specific tuning in VM environments.
 
 ---
 
@@ -435,18 +485,22 @@ This document categorizes all security features by actual implementation status,
 
 ### Certificate Pinning (`src/Core/Network/CertPinner.cpp`)
 
-**Status:** 🔴 **STUB**
+**Status:** ❌ **NOT IMPLEMENTED** (P0 Production Blocker)
+
+⚠️ **WARNING: No certificate pinning implementation exists. All HTTPS connections are vulnerable to MITM attacks.**
 
 **What's Implemented:**
-- 🔴 Stub structure
+- 🔴 Stub structure only (no functional code)
 
 **What's Missing:**
 - ❌ Certificate hash validation
 - ❌ Pin storage and loading
 - ❌ OCSP stapling
 - ❌ Certificate rotation handling
+- ❌ Pin verification during TLS handshake
+- ❌ Fallback mechanisms for pin failures
 
-**Production Readiness:** ❌ **NOT IMPLEMENTED**
+**Production Readiness:** ❌ **NOT IMPLEMENTED** - P0 blocker. Cannot deploy to production without this. All network communication is vulnerable to man-in-the-middle attacks.
 
 ---
 
@@ -548,10 +602,11 @@ This document categorizes all security features by actual implementation status,
 |-----------|--------|------------------|-------|
 | AntiDebug | ✅ Implemented | 🟡 Partial | High FP in VMs, needs tuning |
 | AntiHook | ✅ Implemented | ✅ Yes | TOCTOU in periodic scan, use inline macro for critical |
-| CorrelationEngine | 🟡 Partial | 🔴 No | **7 test failures - segfaults, not production-ready** |
+| CorrelationEngine | 🔴 Critical Crashes | 🔴 No | **ALL 7/7 tests crash with SIGSEGV - completely unusable (STAB-004)** |
 | Integrity Check | ✅ Implemented | 🟡 Partial | Basic hashing only, no signing |
 | Injection Detection | ✅ Implemented | ✅ Yes | Needs JIT whitelist configuration |
 | Speed Hack (Client) | 🟡 Partial | 🔴 No | **Requires server validation** |
+| VM Interpreter | ✅ Implemented | ✅ Yes | 83 tests, documented limitations, timing may need tuning |
 
 ### Protection Subsystems
 
@@ -573,7 +628,7 @@ This document categorizes all security features by actual implementation status,
 | Heartbeat (SDK) | 🔴 Stub | ❌ No | SDK integration pending |
 | CloudReporter | 🟡 Partial (~80%) | 🟡 Partial | Functional, missing cert pinning |
 | HTTP Client | ✅ Implemented | ✅ Yes (with cURL) | Full implementation with cURL, missing cert pinning |
-| Cert Pinning | 🔴 Stub | ❌ No | Not implemented |
+| Cert Pinning | ❌ Missing | ❌ No | **P0 BLOCKER - No code exists, MITM vulnerability** |
 
 ---
 
@@ -581,11 +636,12 @@ This document categorizes all security features by actual implementation status,
 
 ### High Priority (Production Blockers)
 
-1. **Fix CorrelationEngine Test Failures** - 7 segfaults must be resolved before production
-2. **Complete SDK Heartbeat Integration** - Core is implemented, SDK wrapper needed
-3. **Implement Server-Side Speed Validation** - Client-side is insufficient
-4. **Complete Certificate Pinning** - Required for secure cloud communication
-5. **Tune JIT Signature Database** - Reduce false positives with game engines
+1. **Implement Certificate Pinning (P0)** - No code exists. All HTTPS connections vulnerable to MITM attacks. Cannot deploy without this.
+2. **Implement Request Signing with Replay Protection (P0)** - No code exists. API requests can be intercepted and replayed.
+3. **Fix CorrelationEngine Critical Crashes (STAB-004)** - All 7/7 tests crash with SIGSEGV. System is completely unusable. Must fix before any production use.
+4. **Complete SDK Heartbeat Integration** - Core is implemented, SDK wrapper needed
+5. **Implement Server-Side Speed Validation** - Client-side is insufficient
+6. **Tune JIT Signature Database** - Reduce false positives with game engines
 
 ### Medium Priority (Security Hardening)
 
@@ -621,9 +677,10 @@ A subsystem is production-ready when:
 **Current Overall Status: 🟡 PARTIAL PRODUCTION READINESS**
 
 **Blocking Issues:**
-1. **CorrelationEngine has 7 test failures** - Segmentation faults must be fixed
-2. Speed hack detection requires server validation
-3. SDK Heartbeat integration pending (Core implemented)
-4. Network security features incomplete (certificate pinning)
+1. **Certificate Pinning NOT IMPLEMENTED (P0)** - No code exists. All HTTPS vulnerable to MITM. Cannot deploy to production.
+2. **Request Signing NOT IMPLEMENTED (P0)** - No code exists. API requests can be intercepted and replayed.
+3. **CorrelationEngine completely unusable (STAB-004)** - All 7/7 tests crash with SIGSEGV. System cannot be used in any capacity until fixed.
+4. Speed hack detection requires server validation
+5. SDK Heartbeat integration pending (Core implemented)
 
-**Recommended Action:** Fix CorrelationEngine crashes, complete SDK Heartbeat integration, and implement certificate pinning before production deployment.
+**Recommended Action:** Implement certificate pinning and request signing (P0 blockers) before any production deployment. Fix CorrelationEngine critical crashes (STAB-004). Complete SDK Heartbeat integration.

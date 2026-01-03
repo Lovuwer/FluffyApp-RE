@@ -116,11 +116,24 @@ bool Bytecode::verify() const noexcept {
         return false;
     }
     
-    // Calculate XXH3 hash of instructions
-    const uint8_t* instr_start = m_data.data() + m_instruction_offset;
-    size_t instr_size = m_data.size() - m_instruction_offset;
+    // Parse header to get instruction_count
+    if (m_data.size() < sizeof(BytecodeHeader)) {
+        return false;
+    }
     
-    uint64_t computed_hash = xxh3_hash(instr_start, instr_size);
+    uint32_t instruction_count = readLE<uint32_t>(m_data.data() + 16);
+    
+    // Check if data has trailing bytes beyond instruction_count (defense-in-depth)
+    size_t actual_instruction_size = m_data.size() - m_instruction_offset;
+    if (actual_instruction_size != instruction_count) {
+        // Fail verification if sizes don't match - prevents accepting bytecode with trailing garbage
+        return false;
+    }
+    
+    // Calculate XXH3 hash of exactly instruction_count bytes (must match execute())
+    const uint8_t* instr_start = m_data.data() + m_instruction_offset;
+    
+    uint64_t computed_hash = xxh3_hash(instr_start, instruction_count);
     return computed_hash == m_xxh3_hash;
 }
 
@@ -132,10 +145,11 @@ const uint8_t* Bytecode::instructions() const noexcept {
 }
 
 size_t Bytecode::instructionCount() const noexcept {
-    if (m_data.size() < m_instruction_offset) {
+    if (m_data.size() < sizeof(BytecodeHeader)) {
         return 0;
     }
-    return m_data.size() - m_instruction_offset;
+    // Return the instruction_count from the header (not computed from size)
+    return readLE<uint32_t>(m_data.data() + 16);
 }
 
 uint64_t Bytecode::getConstant(uint16_t index) const noexcept {
