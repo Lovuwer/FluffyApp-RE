@@ -136,7 +136,7 @@ struct VMExecutionMetrics {
     uint64_t detection_flags;          ///< Detection flags (REDACTED in production - set to 0)
     
     VMExecutionMetrics()
-        : result(static_cast<VM::VMResult>(0))
+        : result(static_cast<VM::VMResult>(0))  // Clean = 0 (forward declaration prevents using VMResult::Clean)
         , instructions_executed(0)
         , memory_reads(0)
         , elapsed_us(0)

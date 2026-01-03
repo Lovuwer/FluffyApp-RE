@@ -390,6 +390,9 @@ public:
             // ================================================================
             
             // Sample at 1/100 rate to minimize overhead
+            // Note: thread_local counter is intentional - each thread samples independently
+            // to avoid contention on a shared counter. This maintains overall ~1% sampling
+            // rate across all threads without synchronization overhead.
             static thread_local uint32_t execution_count = 0;
             if (++execution_count % 100 == 0) {
                 if (SDK::g_telemetry) {
