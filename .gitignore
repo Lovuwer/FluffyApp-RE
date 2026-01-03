@@ -83,3 +83,22 @@ _deps/
 _codeql_detected_source_root
 _codeql_build_dir/
 build-release/
+
+# Fuzzing artifacts (Task 5.1)
+# Fuzzer crash files (contain crashing inputs)
+crash-*
+leak-*
+timeout-*
+oom-*
+
+# Fuzzing slow units
+slow-unit-*
+
+# Fuzzing corpus (except seed files)
+# We keep seed_*.bin files but ignore the grown corpus
+corpus/
+!corpus/**/seed_*.bin
+
+# Fuzzing statistics
+fuzz-*.log
+
