@@ -62,6 +62,86 @@ jobs:
           build/lib/libSentinelSDK_static.a
         retention-days: 7
 
+  asan-build:
+    name: Build with AddressSanitizer
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          cmake \
+          build-essential \
+          ninja-build \
+          libssl-dev \
+          libcurl4-openssl-dev
+    
+    - name: Configure CMake with ASAN
+      run: |
+        cmake -B build \
+          -G "Ninja" \
+          -DCMAKE_BUILD_TYPE=Debug \
+          -DSENTINEL_BUILD_CORTEX=OFF \
+          -DSENTINEL_BUILD_WATCHTOWER=OFF \
+          -DSENTINEL_BUILD_TESTS=ON \
+          -DSENTINEL_ENABLE_ASAN=ON
+    
+    - name: Build with ASAN
+      run: cmake --build build
+    
+    - name: Test with ASAN
+      run: |
+        cd build
+        ASAN_OPTIONS=detect_stack_use_after_return=1 ctest --output-on-failure
+
+  tsan-build:
+    name: Build with ThreadSanitizer
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          cmake \
+          build-essential \
+          ninja-build \
+          libssl-dev \
+          libcurl4-openssl-dev
+    
+    - name: Configure CMake with TSAN
+      run: |
+        cmake -B build \
+          -G "Ninja" \
+          -DCMAKE_BUILD_TYPE=Debug \
+          -DSENTINEL_BUILD_CORTEX=OFF \
+          -DSENTINEL_BUILD_WATCHTOWER=OFF \
+          -DSENTINEL_BUILD_TESTS=ON \
+          -DSENTINEL_ENABLE_TSAN=ON
+    
+    - name: Build with TSAN
+      run: cmake --build build
+    
+    - name: Test with TSAN
+      run: |
+        cd build
+        TSAN_OPTIONS=second_deadlock_stack=1 ctest --output-on-failure
+
   # Future: Add Windows build
   # build-windows:
   #   name: Build on Windows
