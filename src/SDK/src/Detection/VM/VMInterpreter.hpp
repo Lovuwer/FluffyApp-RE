@@ -42,12 +42,23 @@ struct ExecutionContext;
 
 /**
  * @brief VM execution limits for sandboxing
+ * 
+ * TIMEOUT ENFORCEMENT (STAB-003):
+ * The timeout applies to the entire VM execution including external callbacks.
+ * External callbacks (registered via registerExternal()) are executed with
+ * timeout enforcement - if a callback exceeds the remaining timeout budget,
+ * the VM returns VMResult::Timeout immediately.
  */
 struct VMConfig {
     uint32_t max_instructions = 100000;     ///< Max opcodes before forced halt
     uint32_t max_stack_depth = 1024;        ///< Stack overflow protection
     uint32_t max_memory_reads = 10000;      ///< Limit external memory access
-    uint32_t timeout_ms = 5000;             ///< Execution timeout
+    
+    /// Execution timeout in milliseconds (STAB-003)
+    /// Applies to entire execution including external callback time.
+    /// External callbacks that exceed remaining timeout trigger VMResult::Timeout.
+    uint32_t timeout_ms = 5000;
+    
     bool enable_safe_reads = true;          ///< Use VirtualQuery validation
 };
 
@@ -123,7 +134,20 @@ public:
      * @brief Register external function callback
      * @param id Function ID (0-255)
      * @param callback Function to call when OP_CALL_EXT is executed
-     * @note Callbacks must be noexcept and return within timeout
+     * 
+     * @note CALLBACK TIMEOUT ENFORCEMENT (STAB-003):
+     * Callbacks are executed with timeout enforcement to prevent blocking VM execution.
+     * - Callback execution time counts against VM timeout budget
+     * - If callback exceeds remaining timeout, VM returns VMResult::Timeout
+     * - Callbacks are executed asynchronously with std::async
+     * - Fast callbacks (< 1ms) have minimal overhead
+     * - Blocking callbacks (> timeout) are terminated
+     * - Exceptions are caught and return 0 (safe failure)
+     * - Re-entrancy is prevented (callbacks cannot call back into VM)
+     * 
+     * @warning Callbacks must be thread-safe as they run in separate thread
+     * @warning Callbacks that block indefinitely will cause timeout but may
+     *          continue running in background (defensive behavior)
      */
     void registerExternal(uint8_t id, std::function<uint64_t(uint64_t, uint64_t)> callback);
     

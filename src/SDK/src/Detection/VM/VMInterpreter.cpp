@@ -13,6 +13,8 @@
 #include <cstring>
 #include <algorithm>
 #include <stdexcept>
+#include <future>
+#include <atomic>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -194,6 +196,21 @@ public:
         VMOutput output;
         
         try {
+            // Re-entrancy protection (STAB-003)
+            // Prevent external callbacks from calling back into VM
+            bool expected = false;
+            if (!executing_.compare_exchange_strong(expected, true)) {
+                output.result = VMResult::Error;
+                output.error_message = "VM re-entrancy detected";
+                return output;
+            }
+            
+            // Ensure we reset the flag on exit
+            struct ExecutionGuard {
+                std::atomic<bool>& flag;
+                ~ExecutionGuard() { flag.store(false); }
+            } guard{executing_};
+            
             auto start_time = std::chrono::high_resolution_clock::now();
             
             // Verify bytecode integrity FIRST
@@ -278,7 +295,64 @@ public:
                 uint8_t canonical_opcode = opcode_map_inverse_[encoded_opcode];
                 Opcode op = static_cast<Opcode>(canonical_opcode);
                 
-                // Execute opcode
+                // ================================================================
+                // SPECIAL HANDLING: CALL_EXT with Timeout Enforcement (STAB-003)
+                // ================================================================
+                // External callbacks are handled here (not in executeOpcode) to
+                // access start_time and enforce timeout against remaining budget.
+                // ================================================================
+                if (op == Opcode::CALL_EXT) {
+                    if (ip >= instruction_count) {
+                        output.result = VMResult::Error;
+                        output.error_message = "CALL_EXT: Invalid instruction pointer";
+                        output.instructions_executed = instr_executed;
+                        return output;
+                    }
+                    
+                    uint8_t func_id = instructions[ip++];
+                    
+                    uint64_t arg2, arg1;
+                    if (!pop(arg2) || !pop(arg1)) {
+                        output.result = VMResult::Error;
+                        output.error_message = "CALL_EXT: Stack underflow";
+                        output.instructions_executed = instr_executed;
+                        return output;
+                    }
+                    
+                    uint64_t result = 0;
+                    auto it = external_functions_.find(func_id);
+                    if (it != external_functions_.end() && it->second) {
+                        // Calculate remaining timeout budget
+                        auto now = std::chrono::high_resolution_clock::now();
+                        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time);
+                        int64_t remaining_ms = config_.timeout_ms - elapsed.count();
+                        
+                        // Execute callback with timeout enforcement
+                        bool timed_out = false;
+                        result = executeCallbackWithTimeout(it->second, arg1, arg2, remaining_ms, timed_out);
+                        
+                        if (timed_out) {
+                            // Callback exceeded timeout - return immediately
+                            output.result = VMResult::Timeout;
+                            output.instructions_executed = instr_executed;
+                            auto final_elapsed = std::chrono::high_resolution_clock::now() - start_time;
+                            output.elapsed = std::chrono::duration_cast<std::chrono::microseconds>(final_elapsed);
+                            return output;
+                        }
+                    }
+                    
+                    if (!push(result)) {
+                        output.result = VMResult::Error;
+                        output.error_message = "CALL_EXT: Stack overflow";
+                        output.instructions_executed = instr_executed;
+                        return output;
+                    }
+                    
+                    // Continue to next instruction
+                    continue;
+                }
+                
+                // Execute other opcodes normally
                 bool should_halt = false;
                 if (!executeOpcode(op, instructions, instruction_count, ip, bytecode, should_halt)) {
                     output.result = VMResult::Error;
@@ -332,6 +406,62 @@ public:
     }
 
 private:
+    /**
+     * @brief Execute external callback with timeout enforcement (STAB-003)
+     * @param callback The callback function to execute
+     * @param arg1 First argument
+     * @param arg2 Second argument
+     * @param timeout_ms Maximum time allowed for callback
+     * @param timed_out Output parameter set to true if callback times out
+     * @return Result from callback, or 0 if timeout/exception
+     * 
+     * This method executes an external callback asynchronously with timeout
+     * enforcement. If the callback exceeds the timeout, it returns 0 and
+     * sets timed_out to true. The callback may continue running in background.
+     */
+    uint64_t executeCallbackWithTimeout(
+        const std::function<uint64_t(uint64_t, uint64_t)>& callback,
+        uint64_t arg1,
+        uint64_t arg2,
+        int64_t timeout_ms,
+        bool& timed_out) noexcept 
+    {
+        timed_out = false;
+        
+        if (timeout_ms <= 0) {
+            timed_out = true;
+            return 0;
+        }
+        
+        try {
+            // Launch callback asynchronously
+            auto callback_future = std::async(std::launch::async,
+                [&callback, arg1, arg2]() -> uint64_t {
+                    try {
+                        return callback(arg1, arg2);
+                    } catch (...) {
+                        return 0;
+                    }
+                });
+            
+            // Wait for callback with timeout
+            auto wait_status = callback_future.wait_for(
+                std::chrono::milliseconds(timeout_ms));
+            
+            if (wait_status == std::future_status::ready) {
+                // Callback completed within timeout
+                return callback_future.get();
+            } else {
+                // Callback timed out
+                timed_out = true;
+                return 0;
+            }
+        } catch (...) {
+            // Exception in async mechanism - fail safely
+            return 0;
+        }
+    }
+
     bool executeOpcode(Opcode op, const uint8_t* instructions, size_t instruction_count,
                       size_t& ip, const Bytecode& bytecode, bool& should_halt) noexcept {
         try {
@@ -1020,6 +1150,7 @@ private:
     std::unordered_map<uint8_t, std::function<uint64_t(uint64_t, uint64_t)>> external_functions_;
     uint64_t detection_flags_ = 0;
     uint32_t memory_reads_ = 0;
+    std::atomic<bool> executing_{false};  // Re-entrancy protection for callbacks
 };
 
 // ============================================================================
