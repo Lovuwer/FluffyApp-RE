@@ -1,0 +1,722 @@
+/**
+ * @file VMInterpreter.cpp
+ * @brief Sentinel VM Interpreter Implementation
+ * @author Sentinel Security Team
+ * @version 1.0.0
+ * @date 2026
+ * 
+ * @copyright Copyright (c) 2026 Sentinel Security. All rights reserved.
+ */
+
+#include "VMInterpreter.hpp"
+#include "Opcodes.hpp"
+#include <cstring>
+#include <algorithm>
+#include <stdexcept>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <intrin.h>
+#else
+#include <sys/mman.h>
+#include <unistd.h>
+#endif
+
+namespace Sentinel::VM {
+
+namespace {
+    // Read little-endian values
+    template<typename T>
+    T readLE(const uint8_t* data) noexcept {
+        T value = 0;
+        for (size_t i = 0; i < sizeof(T); ++i) {
+            value |= static_cast<T>(data[i]) << (i * 8);
+        }
+        return value;
+    }
+    
+    // Simple CRC32 for hash operations
+    uint32_t crc32_hash(const uint8_t* data, size_t length) noexcept {
+        static constexpr uint32_t polynomial = 0xEDB88320;
+        
+        uint32_t crc = 0xFFFFFFFF;
+        for (size_t i = 0; i < length; ++i) {
+            crc ^= data[i];
+            for (int j = 0; j < 8; ++j) {
+                crc = (crc >> 1) ^ ((crc & 1) ? polynomial : 0);
+            }
+        }
+        return ~crc;
+    }
+    
+    // Simple XXH3-like hash for hash operations
+    uint64_t xxh3_hash(const uint8_t* data, size_t length) noexcept {
+        constexpr uint64_t PRIME64_1 = 0x9E3779B185EBCA87ULL;
+        constexpr uint64_t PRIME64_2 = 0xC2B2AE3D27D4EB4FULL;
+        constexpr uint64_t PRIME64_3 = 0x165667B19E3779F9ULL;
+        constexpr uint64_t PRIME64_4 = 0x85EBCA77C2B2AE63ULL;
+        constexpr uint64_t PRIME64_5 = 0x27D4EB2F165667C5ULL;
+        
+        uint64_t h64 = PRIME64_5 + length;
+        
+        // Process 8-byte chunks
+        size_t i = 0;
+        while (i + 8 <= length) {
+            uint64_t k1 = readLE<uint64_t>(data + i);
+            k1 *= PRIME64_2;
+            k1 = (k1 << 31) | (k1 >> 33);
+            k1 *= PRIME64_1;
+            h64 ^= k1;
+            h64 = ((h64 << 27) | (h64 >> 37)) * PRIME64_1 + PRIME64_4;
+            i += 8;
+        }
+        
+        // Process remaining bytes
+        while (i < length) {
+            h64 ^= static_cast<uint64_t>(data[i]) * PRIME64_5;
+            h64 = ((h64 << 11) | (h64 >> 53)) * PRIME64_1;
+            ++i;
+        }
+        
+        // Avalanche
+        h64 ^= h64 >> 33;
+        h64 *= PRIME64_2;
+        h64 ^= h64 >> 29;
+        h64 *= PRIME64_3;
+        h64 ^= h64 >> 32;
+        
+        return h64;
+    }
+    
+    // Rotate left
+    inline uint64_t rotl64(uint64_t value, int shift) noexcept {
+        shift &= 63;
+        return (value << shift) | (value >> (64 - shift));
+    }
+    
+    // Rotate right
+    inline uint64_t rotr64(uint64_t value, int shift) noexcept {
+        shift &= 63;
+        return (value >> shift) | (value << (64 - shift));
+    }
+    
+    // Safe memory read with validation
+    bool isMemoryReadable(const void* address, size_t size) noexcept {
+#ifdef _WIN32
+        MEMORY_BASIC_INFORMATION mbi;
+        if (VirtualQuery(address, &mbi, sizeof(mbi)) == 0) {
+            return false;
+        }
+        
+        // Check if memory is committed
+        if (mbi.State != MEM_COMMIT) {
+            return false;
+        }
+        
+        // Check if memory is readable
+        const DWORD readable_flags = PAGE_READONLY | PAGE_READWRITE | 
+                                    PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE |
+                                    PAGE_WRITECOPY | PAGE_EXECUTE_WRITECOPY;
+        if ((mbi.Protect & readable_flags) == 0) {
+            return false;
+        }
+        
+        // Check if entire range is within the region
+        uintptr_t start = reinterpret_cast<uintptr_t>(address);
+        uintptr_t end = start + size;
+        uintptr_t region_end = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
+        
+        return end <= region_end;
+#else
+        // On Linux, attempt to use mincore or just try-catch approach
+        // For simplicity, we'll use a basic check
+        (void)address;  // Unused in simplified implementation
+        (void)size;     // Unused in simplified implementation
+        int page_size = sysconf(_SC_PAGESIZE);
+        if (page_size <= 0) page_size = 4096;
+        
+        // Very basic check - production would use mincore
+        // Try to access first byte - would need proper signal handling in production
+        return true;  // Simplified for this implementation
+#endif
+    }
+    
+    template<typename T>
+    T safeRead(const void* address, bool& success) noexcept {
+        if (!isMemoryReadable(address, sizeof(T))) {
+            success = false;
+            return 0;
+        }
+        
+        try {
+#ifdef _WIN32
+            __try {
+                T value;
+                memcpy(&value, address, sizeof(T));
+                success = true;
+                return value;
+            }
+            __except(EXCEPTION_EXECUTE_HANDLER) {
+                success = false;
+                return 0;
+            }
+#else
+            T value;
+            memcpy(&value, address, sizeof(T));
+            success = true;
+            return value;
+#endif
+        } catch (...) {
+            success = false;
+            return 0;
+        }
+    }
+}
+
+// ============================================================================
+// VMInterpreter::Impl
+// ============================================================================
+
+class VMInterpreter::Impl {
+public:
+    explicit Impl(const VMConfig& config) 
+        : config_(config)
+    {
+        // Initialize identity opcode map
+        for (uint32_t i = 0; i < 256; ++i) {
+            opcode_map_inverse_[i] = static_cast<uint8_t>(i);
+        }
+    }
+    
+    VMOutput execute(const Bytecode& bytecode) noexcept {
+        VMOutput output;
+        
+        try {
+            auto start_time = std::chrono::high_resolution_clock::now();
+            
+            // Reset state
+            stack_.clear();
+            detection_flags_ = 0;
+            memory_reads_ = 0;
+            
+            // Get instructions
+            const uint8_t* instructions = bytecode.instructions();
+            size_t instruction_count = bytecode.instructionCount();
+            
+            if (!instructions || instruction_count == 0) {
+                output.result = VMResult::Error;
+                output.error_message = "No instructions";
+                return output;
+            }
+            
+            // Execute
+            size_t ip = 0;
+            uint32_t instr_executed = 0;
+            
+            while (ip < instruction_count) {
+                // Check instruction limit
+                if (++instr_executed > config_.max_instructions) {
+                    output.result = VMResult::Timeout;
+                    output.instructions_executed = instr_executed;
+                    return output;
+                }
+                
+                // Check timeout
+                auto now = std::chrono::high_resolution_clock::now();
+                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time);
+                if (elapsed.count() > config_.timeout_ms) {
+                    output.result = VMResult::Timeout;
+                    output.instructions_executed = instr_executed;
+                    output.elapsed = std::chrono::duration_cast<std::chrono::microseconds>(elapsed);
+                    return output;
+                }
+                
+                // Decode opcode
+                uint8_t encoded_opcode = instructions[ip++];
+                uint8_t canonical_opcode = opcode_map_inverse_[encoded_opcode];
+                Opcode op = static_cast<Opcode>(canonical_opcode);
+                
+                // Execute opcode
+                bool should_halt = false;
+                if (!executeOpcode(op, instructions, instruction_count, ip, bytecode, should_halt)) {
+                    output.result = VMResult::Error;
+                    output.error_message = "Execution error";
+                    output.instructions_executed = instr_executed;
+                    return output;
+                }
+                
+                if (should_halt) {
+                    if (op == Opcode::HALT_FAIL) {
+                        output.result = VMResult::Violation;
+                    } else {
+                        output.result = VMResult::Halted;
+                    }
+                    break;
+                }
+            }
+            
+            // Set output
+            auto end_time = std::chrono::high_resolution_clock::now();
+            output.detection_flags = detection_flags_;
+            output.instructions_executed = instr_executed;
+            output.memory_reads_performed = memory_reads_;
+            output.elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+            
+            if (output.result != VMResult::Halted && output.result != VMResult::Violation) {
+                output.result = VMResult::Clean;
+            }
+            
+        } catch (const std::exception& e) {
+            output.result = VMResult::Error;
+            output.error_message = e.what();
+        } catch (...) {
+            output.result = VMResult::Error;
+            output.error_message = "Unknown error";
+        }
+        
+        return output;
+    }
+    
+    void registerExternal(uint8_t id, std::function<uint64_t(uint64_t, uint64_t)> callback) {
+        external_functions_[id] = std::move(callback);
+    }
+    
+    void setOpcodeMap(const std::array<uint8_t, 256>& new_map) {
+        opcode_map_inverse_ = invertOpcodeMap(new_map);
+    }
+    
+    const VMConfig& getConfig() const noexcept {
+        return config_;
+    }
+
+private:
+    bool executeOpcode(Opcode op, const uint8_t* instructions, size_t instruction_count,
+                      size_t& ip, const Bytecode& bytecode, bool& should_halt) noexcept {
+        try {
+            switch (op) {
+                case Opcode::NOP:
+                    break;
+                    
+                case Opcode::HALT:
+                    should_halt = true;
+                    break;
+                    
+                case Opcode::HALT_FAIL:
+                    should_halt = true;
+                    break;
+                    
+                case Opcode::PUSH_IMM: {
+                    if (ip + 8 > instruction_count) return false;
+                    uint64_t value = readLE<uint64_t>(instructions + ip);
+                    ip += 8;
+                    if (!push(value)) return false;
+                    break;
+                }
+                
+                case Opcode::PUSH_CONST: {
+                    if (ip + 2 > instruction_count) return false;
+                    uint16_t index = readLE<uint16_t>(instructions + ip);
+                    ip += 2;
+                    uint64_t value = bytecode.getConstant(index);
+                    if (!push(value)) return false;
+                    break;
+                }
+                
+                case Opcode::POP: {
+                    uint64_t dummy;
+                    if (!pop(dummy)) return false;
+                    break;
+                }
+                
+                case Opcode::DUP: {
+                    if (stack_.empty()) return false;
+                    uint64_t value = stack_.back();
+                    if (!push(value)) return false;
+                    break;
+                }
+                
+                case Opcode::SWAP: {
+                    if (stack_.size() < 2) return false;
+                    std::swap(stack_[stack_.size() - 1], stack_[stack_.size() - 2]);
+                    break;
+                }
+                
+                // Arithmetic operations
+                case Opcode::ADD: {
+                    uint64_t b, a;
+                    if (!pop(b) || !pop(a)) return false;
+                    if (!push(a + b)) return false;
+                    break;
+                }
+                
+                case Opcode::SUB: {
+                    uint64_t b, a;
+                    if (!pop(b) || !pop(a)) return false;
+                    if (!push(a - b)) return false;
+                    break;
+                }
+                
+                case Opcode::MUL: {
+                    uint64_t b, a;
+                    if (!pop(b) || !pop(a)) return false;
+                    if (!push(a * b)) return false;
+                    break;
+                }
+                
+                case Opcode::XOR: {
+                    uint64_t b, a;
+                    if (!pop(b) || !pop(a)) return false;
+                    if (!push(a ^ b)) return false;
+                    break;
+                }
+                
+                case Opcode::AND: {
+                    uint64_t b, a;
+                    if (!pop(b) || !pop(a)) return false;
+                    if (!push(a & b)) return false;
+                    break;
+                }
+                
+                case Opcode::OR: {
+                    uint64_t b, a;
+                    if (!pop(b) || !pop(a)) return false;
+                    if (!push(a | b)) return false;
+                    break;
+                }
+                
+                case Opcode::SHL: {
+                    uint64_t b, a;
+                    if (!pop(b) || !pop(a)) return false;
+                    if (!push(a << (b & 63))) return false;
+                    break;
+                }
+                
+                case Opcode::SHR: {
+                    uint64_t b, a;
+                    if (!pop(b) || !pop(a)) return false;
+                    if (!push(a >> (b & 63))) return false;
+                    break;
+                }
+                
+                case Opcode::ROL: {
+                    uint64_t b, a;
+                    if (!pop(b) || !pop(a)) return false;
+                    if (!push(rotl64(a, static_cast<int>(b)))) return false;
+                    break;
+                }
+                
+                case Opcode::ROR: {
+                    uint64_t b, a;
+                    if (!pop(b) || !pop(a)) return false;
+                    if (!push(rotr64(a, static_cast<int>(b)))) return false;
+                    break;
+                }
+                
+                // Comparison operations
+                case Opcode::CMP_EQ: {
+                    uint64_t b, a;
+                    if (!pop(b) || !pop(a)) return false;
+                    if (!push(a == b ? 1 : 0)) return false;
+                    break;
+                }
+                
+                case Opcode::CMP_NE: {
+                    uint64_t b, a;
+                    if (!pop(b) || !pop(a)) return false;
+                    if (!push(a != b ? 1 : 0)) return false;
+                    break;
+                }
+                
+                case Opcode::CMP_LT: {
+                    uint64_t b, a;
+                    if (!pop(b) || !pop(a)) return false;
+                    if (!push(a < b ? 1 : 0)) return false;
+                    break;
+                }
+                
+                case Opcode::CMP_GT: {
+                    uint64_t b, a;
+                    if (!pop(b) || !pop(a)) return false;
+                    if (!push(a > b ? 1 : 0)) return false;
+                    break;
+                }
+                
+                // Branching
+                case Opcode::JMP: {
+                    if (ip + 2 > instruction_count) return false;
+                    int16_t offset = static_cast<int16_t>(readLE<uint16_t>(instructions + ip));
+                    ip += 2;
+                    size_t new_ip = static_cast<size_t>(static_cast<int64_t>(ip) + offset);
+                    if (new_ip > instruction_count) return false;
+                    ip = new_ip;
+                    break;
+                }
+                
+                case Opcode::JMP_Z: {
+                    if (ip + 2 > instruction_count) return false;
+                    int16_t offset = static_cast<int16_t>(readLE<uint16_t>(instructions + ip));
+                    ip += 2;
+                    uint64_t value;
+                    if (!pop(value)) return false;
+                    if (value == 0) {
+                        size_t new_ip = static_cast<size_t>(static_cast<int64_t>(ip) + offset);
+                        if (new_ip > instruction_count) return false;
+                        ip = new_ip;
+                    }
+                    break;
+                }
+                
+                case Opcode::JMP_NZ: {
+                    if (ip + 2 > instruction_count) return false;
+                    int16_t offset = static_cast<int16_t>(readLE<uint16_t>(instructions + ip));
+                    ip += 2;
+                    uint64_t value;
+                    if (!pop(value)) return false;
+                    if (value != 0) {
+                        size_t new_ip = static_cast<size_t>(static_cast<int64_t>(ip) + offset);
+                        if (new_ip > instruction_count) return false;
+                        ip = new_ip;
+                    }
+                    break;
+                }
+                
+                // Safe memory reads
+                case Opcode::READ_SAFE_8: {
+                    uint64_t address;
+                    if (!pop(address)) return false;
+                    if (++memory_reads_ > config_.max_memory_reads) return false;
+                    
+                    bool success = false;
+                    uint64_t value = config_.enable_safe_reads ? 
+                        safeRead<uint64_t>(reinterpret_cast<const void*>(address), success) : 0;
+                    if (!push(value)) return false;
+                    break;
+                }
+                
+                case Opcode::READ_SAFE_4: {
+                    uint64_t address;
+                    if (!pop(address)) return false;
+                    if (++memory_reads_ > config_.max_memory_reads) return false;
+                    
+                    bool success = false;
+                    uint32_t value = config_.enable_safe_reads ? 
+                        safeRead<uint32_t>(reinterpret_cast<const void*>(address), success) : 0;
+                    if (!push(static_cast<uint64_t>(value))) return false;
+                    break;
+                }
+                
+                case Opcode::READ_SAFE_2: {
+                    uint64_t address;
+                    if (!pop(address)) return false;
+                    if (++memory_reads_ > config_.max_memory_reads) return false;
+                    
+                    bool success = false;
+                    uint16_t value = config_.enable_safe_reads ? 
+                        safeRead<uint16_t>(reinterpret_cast<const void*>(address), success) : 0;
+                    if (!push(static_cast<uint64_t>(value))) return false;
+                    break;
+                }
+                
+                case Opcode::READ_SAFE_1: {
+                    uint64_t address;
+                    if (!pop(address)) return false;
+                    if (++memory_reads_ > config_.max_memory_reads) return false;
+                    
+                    bool success = false;
+                    uint8_t value = config_.enable_safe_reads ? 
+                        safeRead<uint8_t>(reinterpret_cast<const void*>(address), success) : 0;
+                    if (!push(static_cast<uint64_t>(value))) return false;
+                    break;
+                }
+                
+                // Hash operations
+                case Opcode::HASH_CRC32: {
+                    uint64_t size, address;
+                    if (!pop(size) || !pop(address)) return false;
+                    
+                    // Limit hash size
+                    if (size > 1024 * 1024) size = 1024 * 1024;  // 1MB max
+                    
+                    uint32_t hash = 0;
+                    if (config_.enable_safe_reads && size > 0) {
+                        std::vector<uint8_t> buffer(size);
+                        bool success = true;
+                        for (size_t i = 0; i < size && success; ++i) {
+                            buffer[i] = safeRead<uint8_t>(
+                                reinterpret_cast<const void*>(address + i), success);
+                        }
+                        if (success) {
+                            hash = crc32_hash(buffer.data(), size);
+                        }
+                    }
+                    if (!push(static_cast<uint64_t>(hash))) return false;
+                    break;
+                }
+                
+                case Opcode::HASH_XXH3: {
+                    uint64_t size, address;
+                    if (!pop(size) || !pop(address)) return false;
+                    
+                    // Limit hash size
+                    if (size > 1024 * 1024) size = 1024 * 1024;  // 1MB max
+                    
+                    uint64_t hash = 0;
+                    if (config_.enable_safe_reads && size > 0) {
+                        std::vector<uint8_t> buffer(size);
+                        bool success = true;
+                        for (size_t i = 0; i < size && success; ++i) {
+                            buffer[i] = safeRead<uint8_t>(
+                                reinterpret_cast<const void*>(address + i), success);
+                        }
+                        if (success) {
+                            hash = xxh3_hash(buffer.data(), size);
+                        }
+                    }
+                    if (!push(hash)) return false;
+                    break;
+                }
+                
+                case Opcode::CHECK_HASH: {
+                    uint64_t expected, computed;
+                    if (!pop(expected) || !pop(computed)) return false;
+                    bool match = (computed == expected);
+                    if (!match) {
+                        detection_flags_ |= 0x01;  // Generic hash mismatch flag
+                    }
+                    if (!push(match ? 1 : 0)) return false;
+                    break;
+                }
+                
+                // Detection flags
+                case Opcode::SET_FLAG: {
+                    uint64_t flag_bit;
+                    if (!pop(flag_bit)) return false;
+                    if (flag_bit < 64) {
+                        detection_flags_ |= (1ULL << flag_bit);
+                    }
+                    break;
+                }
+                
+                case Opcode::GET_FLAGS: {
+                    if (!push(detection_flags_)) return false;
+                    break;
+                }
+                
+                // External calls
+                case Opcode::CALL_EXT: {
+                    if (ip >= instruction_count) return false;
+                    uint8_t func_id = instructions[ip++];
+                    
+                    uint64_t arg2, arg1;
+                    if (!pop(arg2) || !pop(arg1)) return false;
+                    
+                    uint64_t result = 0;
+                    auto it = external_functions_.find(func_id);
+                    if (it != external_functions_.end() && it->second) {
+                        try {
+                            result = it->second(arg1, arg2);
+                        } catch (...) {
+                            result = 0;
+                        }
+                    }
+                    if (!push(result)) return false;
+                    break;
+                }
+                
+                // Anti-analysis
+                case Opcode::RDTSC_LOW: {
+#ifdef _WIN32
+                    uint64_t tsc = __rdtsc();
+                    if (!push(tsc & 0xFFFFFFFF)) return false;
+#else
+                    // Simplified timestamp for non-Windows
+                    auto now = std::chrono::high_resolution_clock::now();
+                    auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        now.time_since_epoch()).count();
+                    if (!push(static_cast<uint64_t>(nanos) & 0xFFFFFFFF)) return false;
+#endif
+                    break;
+                }
+                
+                case Opcode::OPAQUE_TRUE: {
+                    if (!push(1)) return false;
+                    break;
+                }
+                
+                case Opcode::OPAQUE_FALSE: {
+                    if (!push(0)) return false;
+                    break;
+                }
+                
+                default:
+                    // Unknown opcode
+                    return false;
+            }
+            
+            return true;
+            
+        } catch (...) {
+            return false;
+        }
+    }
+    
+    bool push(uint64_t value) noexcept {
+        if (stack_.size() >= config_.max_stack_depth) {
+            return false;
+        }
+        try {
+            stack_.push_back(value);
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+    
+    bool pop(uint64_t& value) noexcept {
+        if (stack_.empty()) {
+            return false;
+        }
+        value = stack_.back();
+        stack_.pop_back();
+        return true;
+    }
+    
+    VMConfig config_;
+    std::vector<uint64_t> stack_;
+    std::array<uint8_t, 256> opcode_map_inverse_;
+    std::unordered_map<uint8_t, std::function<uint64_t(uint64_t, uint64_t)>> external_functions_;
+    uint64_t detection_flags_ = 0;
+    uint32_t memory_reads_ = 0;
+};
+
+// ============================================================================
+// VMInterpreter Public API
+// ============================================================================
+
+VMInterpreter::VMInterpreter(const VMConfig& config)
+    : m_impl(std::make_unique<Impl>(config))
+{
+}
+
+VMInterpreter::~VMInterpreter() = default;
+
+VMInterpreter::VMInterpreter(VMInterpreter&&) noexcept = default;
+VMInterpreter& VMInterpreter::operator=(VMInterpreter&&) noexcept = default;
+
+VMOutput VMInterpreter::execute(const Bytecode& bytecode) noexcept {
+    return m_impl->execute(bytecode);
+}
+
+void VMInterpreter::registerExternal(uint8_t id, std::function<uint64_t(uint64_t, uint64_t)> callback) {
+    m_impl->registerExternal(id, std::move(callback));
+}
+
+void VMInterpreter::setOpcodeMap(const std::array<uint8_t, 256>& new_map) {
+    m_impl->setOpcodeMap(new_map);
+}
+
+const VMConfig& VMInterpreter::getConfig() const noexcept {
+    return m_impl->getConfig();
+}
+
+} // namespace Sentinel::VM

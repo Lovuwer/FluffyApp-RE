@@ -57,6 +57,9 @@ set(SDK_SOURCES
     src/Detection/SpeedHack.cpp
     src/Detection/InjectionDetect.cpp
     src/Detection/EnvironmentDetection.cpp
+    src/Detection/VM/Opcodes.cpp
+    src/Detection/VM/Bytecode.cpp
+    src/Detection/VM/VMInterpreter.cpp
     src/Network/PacketEncryption.cpp
     src/Network/CloudReporter.cpp
     src/Network/UpdateClient.cpp
@@ -90,6 +93,8 @@ set(SDK_HEADERS
     src/Internal/BehavioralCollector.hpp
     src/Internal/DetectionRegistry.hpp
     src/Internal/RedundantAntiDebug.hpp
+    src/Detection/VM/Opcodes.hpp
+    src/Detection/VM/VMInterpreter.hpp
 )
 
 # Header files for IDE organization only (not compiled)
