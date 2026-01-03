@@ -52,6 +52,16 @@ def xxh3_hash(data):
     
     This is a simplified version for corpus generation.
     The actual implementation is in src/SDK/src/Detection/VM/Bytecode.cpp
+    
+    MAINTENANCE NOTE:
+    This implementation is a direct port of the C++ code in Bytecode.cpp.
+    If you modify the hash algorithm in Bytecode.cpp, you MUST update this.
+    To verify consistency:
+    1. Generate corpus with this script
+    2. Load bytecode in test_vm.cpp and call verify()
+    3. verify() should return true for all seed files
+    
+    Alternative: Use xxhash Python library (requires external dependency)
     """
     PRIME64_1 = 0x9E3779B185EBCA87
     PRIME64_2 = 0xC2B2AE3D27D4EB4F
