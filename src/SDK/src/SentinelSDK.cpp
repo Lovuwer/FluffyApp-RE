@@ -1607,6 +1607,54 @@ SENTINEL_API void SENTINEL_CALL SetServerDirectiveCallback(
     }
 }
 
+// ==================== Heartbeat Monitoring (Task 3.2) ====================
+
+namespace {
+    // Helper function to calculate failure rate
+    double getFailureRate(const Network::HeartbeatStatus& status) {
+        uint64_t total = status.successCount + status.failureCount;
+        if (total == 0) {
+            return 0.0;
+        }
+        return (static_cast<double>(status.failureCount) / static_cast<double>(total));
+    }
+}
+
+SENTINEL_API ErrorCode SENTINEL_CALL GetHeartbeatStatus(Network::HeartbeatStatus* status) {
+    if (!g_context || !g_context->heartbeat) {
+        return ErrorCode::NotInitialized;
+    }
+    if (!status) {
+        return ErrorCode::InvalidParameter;  // Using InvalidParameter for null pointer
+    }
+    *status = g_context->heartbeat->getStatus();
+    return ErrorCode::Success;
+}
+
+SENTINEL_API bool SENTINEL_CALL IsHeartbeatHealthy() {
+    Network::HeartbeatStatus status;
+    if (GetHeartbeatStatus(&status) != ErrorCode::Success) {
+        return false;
+    }
+    
+    // Healthy if: running, recent success, low failure rate
+    bool isRunning = status.isRunning;
+    
+    // Check if there has been at least one successful heartbeat
+    bool hasSuccess = (status.successCount > 0);
+    
+    // Check if last success was within the last 5 minutes
+    auto now = Sentinel::Clock::now();
+    auto timeSinceSuccess = now - status.lastSuccess;
+    bool recentSuccess = (std::chrono::duration_cast<std::chrono::minutes>(timeSinceSuccess).count() < 5);
+    
+    // Check failure rate is below 50%
+    double failureRate = getFailureRate(status);
+    bool lowFailureRate = (failureRate < 0.5);
+    
+    return isRunning && hasSuccess && recentSuccess && lowFailureRate;
+}
+
 // ==================== Statistics ====================
 
 SENTINEL_API void SENTINEL_CALL GetStatistics(Statistics* stats) {

@@ -122,6 +122,9 @@
 #include <cstddef>
 #include <string>
 
+// Forward declarations for Heartbeat types
+#include <Sentinel/Core/Heartbeat.hpp>
+
 namespace Sentinel {
 namespace SDK {
 
@@ -717,6 +720,74 @@ SENTINEL_API bool SENTINEL_CALL GetLastServerDirective(ServerDirective* out_dire
 SENTINEL_API void SENTINEL_CALL SetServerDirectiveCallback(
     ServerDirectiveCallback callback,
     void* user_data);
+
+// ==================== Heartbeat Monitoring (Task 3.2) ====================
+
+/**
+ * HEARTBEAT MONITORING:
+ * Games should monitor heartbeat health to detect:
+ * - Network blocking by cheater
+ * - Server connectivity issues
+ * - Process suspension attacks
+ * 
+ * RECOMMENDED USAGE:
+ * ```cpp
+ * // In game's main loop or periodic timer
+ * if (!Sentinel::SDK::IsHeartbeatHealthy()) {
+ *     ShowWarning("Connection to anti-cheat server lost");
+ *     // Consider: force disconnect after N minutes
+ * }
+ * ```
+ */
+
+/**
+ * Get heartbeat status
+ * 
+ * Retrieves detailed information about the heartbeat system including:
+ * - Running state
+ * - Success/failure counts
+ * - Last success/failure timestamps
+ * - Current sequence number
+ * - Last error code
+ * 
+ * @param status Pointer to HeartbeatStatus structure to receive status
+ * @return Error code (Success, NotInitialized, or InvalidParameter)
+ * 
+ * @example
+ * ```cpp
+ * Sentinel::Network::HeartbeatStatus status;
+ * auto result = Sentinel::SDK::GetHeartbeatStatus(&status);
+ * if (result == Sentinel::SDK::ErrorCode::Success) {
+ *     std::cout << "Heartbeats sent: " << status.successCount << std::endl;
+ *     std::cout << "Failures: " << status.failureCount << std::endl;
+ * }
+ * ```
+ */
+SENTINEL_API ErrorCode SENTINEL_CALL GetHeartbeatStatus(Sentinel::Network::HeartbeatStatus* status);
+
+/**
+ * Check if heartbeat is healthy
+ * 
+ * Convenience method that checks if the heartbeat system is in a healthy state:
+ * - Heartbeat is running
+ * - Recent successful heartbeat (within last 5 minutes)
+ * - Failure rate is below 50%
+ * 
+ * This provides a simple yes/no answer about heartbeat health.
+ * For detailed status information, use GetHeartbeatStatus().
+ * 
+ * @return true if heartbeat is healthy, false otherwise
+ * 
+ * @example
+ * ```cpp
+ * // In game's main loop or periodic check
+ * if (!Sentinel::SDK::IsHeartbeatHealthy()) {
+ *     LogWarning("Anti-cheat connection unhealthy");
+ *     ShowPlayerWarning("Connection to anti-cheat server lost");
+ * }
+ * ```
+ */
+SENTINEL_API bool SENTINEL_CALL IsHeartbeatHealthy();
 
 // ==================== Statistics ====================
 
