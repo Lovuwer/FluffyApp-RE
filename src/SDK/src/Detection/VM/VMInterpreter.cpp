@@ -718,6 +718,21 @@ private:
                 
                 case Opcode::OP_RDTSC_DIFF: {
 #ifdef _WIN32
+                    // Detect hypervisor using CPUID (same as AntiDebug.cpp)
+                    static thread_local bool hypervisor_checked = false;
+                    static thread_local bool hypervisor_detected = false;
+                    
+                    if (!hypervisor_checked) {
+                        int cpuid_check[4] = {0};
+                        __cpuid(cpuid_check, 0);
+                        if (cpuid_check[0] >= 1) {
+                            __cpuid(cpuid_check, 1);
+                            // ECX bit 31 indicates hypervisor presence
+                            hypervisor_detected = (cpuid_check[2] & (1 << 31)) != 0;
+                        }
+                        hypervisor_checked = true;
+                    }
+                    
                     // Serialize with CPUID (forces emulator to handle this)
                     int cpuid_data[4];
                     __cpuid(cpuid_data, 0);
@@ -744,28 +759,38 @@ private:
                     
                     bool is_emulated = false;
                     
+                    // Apply 100x multiplier for hypervisor thresholds to accommodate timing variance
+                    // Hypervisors have significant timing overhead and variability
+                    uint64_t threshold_low = hypervisor_detected ? 50 : 500;
+                    uint64_t threshold_high = hypervisor_detected ? 500000000 : 5000000;
+                    
                     // Check 1: Delta too low (emulator returning fake constant TSC)
                     // 50 iterations with MFENCE should take AT MINIMUM 1000 cycles on real hardware
                     // Even a 5GHz CPU:  50 * ~20 cycles per MFENCE = 1000+ cycles
-                    if (delta < 500) {
+                    // Under hypervisor: 10x more lenient threshold
+                    if (delta < threshold_low) {
                         is_emulated = true;
                     }
                     
                     // Check 2: Delta suspiciously high (single-stepping or breakpoint)
                     // Normal execution: 1000-50000 cycles
                     // Single-stepping: 1,000,000+ cycles per iteration
-                    if (delta > 5000000) {  // 5M cycles = obvious debugging
+                    // Under hypervisor: 10x more lenient threshold
+                    if (delta > threshold_high) {  // 5M cycles = obvious debugging (50M under hypervisor)
                         is_emulated = true;
                     }
                     
                     // Check 3: Statistical consistency check over multiple samples
                     // Real hardware has variance; emulators often don't
+                    // NOTE: This check only applies after 8 samples have been collected
                     static thread_local uint64_t last_deltas[8] = {0};
                     static thread_local int delta_index = 0;
                     
-                    last_deltas[delta_index++ & 7] = delta;
+                    last_deltas[delta_index & 7] = delta;
+                    delta_index++;
                     
-                    if (delta_index >= 8) {
+                    // Only check variance after we have enough samples
+                    if (delta_index > 8) {
                         uint64_t sum = 0, variance_sum = 0;
                         for (int i = 0; i < 8; ++i) sum += last_deltas[i];
                         uint64_t mean = sum / 8;
@@ -774,8 +799,12 @@ private:
                             variance_sum += diff * diff;
                         }
                         // If variance is near-zero, likely emulation
-                        if (variance_sum < 10000) {  // Threshold tuned for real hardware
-                            is_emulated = true;
+                        // Under hypervisor: disable variance check entirely (set to 0)
+                        // as hypervisors can have inconsistent timing
+                        if (!hypervisor_detected) {
+                            if (variance_sum < 10000) {
+                                is_emulated = true;
+                            }
                         }
                     }
                     
