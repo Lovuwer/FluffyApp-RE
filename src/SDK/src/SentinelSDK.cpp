@@ -1644,7 +1644,7 @@ SENTINEL_API bool SENTINEL_CALL IsHeartbeatHealthy() {
     bool hasSuccess = (status.successCount > 0);
     
     // Check if last success was within the last 5 minutes
-    auto now = std::chrono::steady_clock::now();
+    auto now = Sentinel::Clock::now();
     auto timeSinceSuccess = now - status.lastSuccess;
     bool recentSuccess = (std::chrono::duration_cast<std::chrono::minutes>(timeSinceSuccess).count() < 5);
     
