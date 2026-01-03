@@ -209,22 +209,16 @@ bool CorrelationEngine::ProcessViolation(
 bool CorrelationEngine::ShouldAllowAction(ResponseAction action) const {
     std::lock_guard<std::mutex> lock(mutex_);
     
-    // Defensive: Empty signals vector means no detections - allow only non-enforcement actions
-    // This is a safety check, though the vector should always be managed correctly
-    if (state_.signals.empty()) {
-        // No signals means no enforcement actions should be allowed
-        uint32_t action_bits = static_cast<uint32_t>(action);
-        bool is_enforcement = (action_bits & (static_cast<uint32_t>(ResponseAction::Ban) | 
-                                              static_cast<uint32_t>(ResponseAction::Terminate) |
-                                              static_cast<uint32_t>(ResponseAction::Kick))) != 0;
-        return !is_enforcement;  // Only allow non-enforcement actions
-    }
-    
     // Check if action requires multi-signal confirmation
     uint32_t action_bits = static_cast<uint32_t>(action);
     bool is_ban = (action_bits & static_cast<uint32_t>(ResponseAction::Ban)) != 0;
     bool is_terminate = (action_bits & static_cast<uint32_t>(ResponseAction::Terminate)) != 0;
     bool is_kick = (action_bits & static_cast<uint32_t>(ResponseAction::Kick)) != 0;
+    
+    // Defensive: Empty signals vector means no detections - don't allow any enforcement actions
+    if (state_.signals.empty()) {
+        return !(is_ban || is_terminate || is_kick);
+    }
     
     if (is_ban || is_terminate) {
         // Count only persistent signals (3+ scan cycles)
