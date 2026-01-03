@@ -5,6 +5,8 @@
 **Status**: Planning Phase  
 **Author**: Sentinel Security Team
 
+> **Quick Reference**: For a condensed overview, see [SENTINELFLAPPY3D_QUICKREF.md](SENTINELFLAPPY3D_QUICKREF.md)
+
 ---
 
 ## 1. High-Level Goal of SentinelFlappy3D
