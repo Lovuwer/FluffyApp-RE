@@ -75,6 +75,7 @@ set(GAME_SOURCES
     src/Obstacle.cpp
     src/Physics.cpp
     src/Input.cpp
+    src/SentinelIntegration.cpp
 )
 
 set(GAME_HEADERS
@@ -84,6 +85,7 @@ set(GAME_HEADERS
     src/Obstacle.hpp
     src/Physics.hpp
     src/Input.hpp
+    src/SentinelIntegration.hpp
 )
 
 # ============================================================================

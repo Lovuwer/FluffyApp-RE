@@ -53,6 +53,12 @@ bool Game::Initialize() {
     // Initialize input
     m_input.Initialize(m_window);
 
+    // Initialize Sentinel SDK (Step 4 - stub only, actual init in Step 5)
+    if (!m_sentinel.Initialize()) {
+        std::cout << "Warning: Sentinel SDK initialization failed - continuing in degraded mode" << std::endl;
+        // Game continues even if SDK fails (graceful degradation)
+    }
+
     // Initialize game state
     Reset();
 
@@ -65,6 +71,9 @@ bool Game::Initialize() {
 }
 
 void Game::Shutdown() {
+    // Shutdown Sentinel SDK
+    m_sentinel.Shutdown();
+    
     m_renderer.Shutdown();
 
     if (m_window) {
@@ -92,6 +101,11 @@ void Game::Run() {
 
         // Update input
         m_input.Update();
+
+        // Update Sentinel SDK (lightweight per-frame check)
+        if (m_sentinel.IsInitialized()) {
+            m_sentinel.Update();
+        }
 
         // Update game
         Update(deltaTime);

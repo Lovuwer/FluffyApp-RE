@@ -5,6 +5,7 @@
 #include "Player.hpp"
 #include "Obstacle.hpp"
 #include "Input.hpp"
+#include "SentinelIntegration.hpp"
 
 namespace SentinelFlappy3D {
 
@@ -42,6 +43,7 @@ private:
     Player m_player;
     Obstacle m_obstacle;
     Input m_input;
+    SentinelIntegration m_sentinel;
 
     // Game logic
     void Update(float deltaTime);
