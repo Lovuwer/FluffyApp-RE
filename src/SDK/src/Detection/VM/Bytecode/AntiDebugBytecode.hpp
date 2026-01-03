@@ -89,9 +89,8 @@ inline std::vector<uint8_t> generateIsDebuggerPresentCheck() {
     // CMP_NE - check if BeingDebugged != 0
     bytecode.push_back(static_cast<uint8_t>(Opcode::CMP_NE));
     
-    // JMP_Z +5 - if result is 0 (not debugging), skip detection block
-    // Jump offset is 5 bytes: PUSH_IMM(1) + 8-byte operand(8) + SET_FLAG(1) + HALT_FAIL(1) = 11 bytes total
-    // But we need to skip to the HALT after HALT_FAIL, so we skip 11 bytes
+    // JMP_Z +11 - if result is 0 (not debugging), skip detection block
+    // Jump offset is 11 bytes to skip: PUSH_IMM(1) + 8-byte operand(8) + SET_FLAG(1) + HALT_FAIL(1)
     bytecode.push_back(static_cast<uint8_t>(Opcode::JMP_Z));
     bytecode.push_back(0x0B);  // Skip 11 bytes (little-endian 16-bit)
     bytecode.push_back(0x00);

@@ -636,7 +636,11 @@ bool AntiDebugDetector::CheckIsDebuggerPresent() {
     VM::Bytecode bytecode;
     if (!bytecode.load(cached_bytecode_raw)) {
         // Fallback to native check if bytecode fails to load
+        #ifdef _WIN64
         PPEB peb = (PPEB)__readgsqword(0x60);
+        #else
+        PPEB peb = (PPEB)__readfsdword(0x30);
+        #endif
         return peb && peb->BeingDebugged;
     }
     
@@ -648,9 +652,10 @@ bool AntiDebugDetector::CheckIsDebuggerPresent() {
     VM::VMInterpreter vm(config);
     VM::VMOutput result = vm.execute(bytecode);
     
-    // If VM returned HALT_FAIL or flag bit 1 is set, debugger detected
+    // If VM returned HALT_FAIL or flag bit 0 is set, debugger detected
+    // Note: Bytecode uses flag value 0x01 which sets bit position 0
     return (result.result == VM::VMResult::Violation) || 
-           (result.detection_flags & 0x02);  // Bit 1
+           (result.detection_flags & 0x01);  // Bit 0
 #else
     return false;
 #endif
