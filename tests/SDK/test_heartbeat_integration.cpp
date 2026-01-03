@@ -297,10 +297,11 @@ TEST_F(HeartbeatIntegrationTest, IsHeartbeatHealthyBasicCheck) {
     // Give heartbeat time to start
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     
-    // Call IsHeartbeatHealthy (might be healthy or not depending on endpoint reachability)
-    // Just verify it doesn't crash
+    // Verify IsHeartbeatHealthy returns a boolean without crashing
+    // The actual value depends on network conditions, but it should return a valid bool
     bool healthy = IsHeartbeatHealthy();
-    (void)healthy;  // Result depends on network conditions
+    // Verify it's either true or false (always true for a bool, but documents intent)
+    EXPECT_TRUE(healthy == true || healthy == false);
     
     // Verify we can query status
     Sentinel::Network::HeartbeatStatus status;

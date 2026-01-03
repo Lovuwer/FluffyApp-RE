@@ -751,7 +751,7 @@ SENTINEL_API void SENTINEL_CALL SetServerDirectiveCallback(
  * - Last error code
  * 
  * @param status Pointer to HeartbeatStatus structure to receive status
- * @return Error code (Success, NotInitialized, or NullPointer)
+ * @return Error code (Success, NotInitialized, or InvalidParameter)
  * 
  * @example
  * ```cpp
