@@ -52,6 +52,8 @@
 #include "Internal/Detection.hpp"
 #include "Internal/DiversityEngine.hpp"
 #include <Sentinel/Core/AnalysisResistance.hpp>
+#include "VM/VMInterpreter.hpp"
+#include "VM/Bytecode/AntiDebugBytecode.hpp"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -571,24 +573,87 @@ std::vector<ViolationEvent> AntiDebugDetector::FullCheck() {
 
 bool AntiDebugDetector::CheckIsDebuggerPresent() {
 #ifdef _WIN32
-    // Method 1: API call (easily hooked, baseline check)
-    if (IsDebuggerPresent()) {
-        return true;
+    // Execute virtualized check via VM instead of native code
+    // This approach makes the detection logic resistant to static analysis and binary patching
+    static thread_local std::vector<uint8_t> cached_bytecode_raw;
+    static thread_local bool bytecode_initialized = false;
+    
+    if (!bytecode_initialized) {
+        // Generate bytecode instructions
+        auto instructions = VM::BytecodeGen::generateIsDebuggerPresentCheck();
+        
+        // Create complete bytecode with header
+        // Magic "SENT" (0x53454E54)
+        cached_bytecode_raw.push_back(0x54);
+        cached_bytecode_raw.push_back(0x4E);
+        cached_bytecode_raw.push_back(0x45);
+        cached_bytecode_raw.push_back(0x53);
+        
+        // Version (1.0)
+        cached_bytecode_raw.push_back(0x00);
+        cached_bytecode_raw.push_back(0x01);
+        
+        // Flags (0)
+        cached_bytecode_raw.push_back(0x00);
+        cached_bytecode_raw.push_back(0x00);
+        
+        // Checksum placeholder
+        size_t checksum_offset = cached_bytecode_raw.size();
+        cached_bytecode_raw.push_back(0x00);
+        cached_bytecode_raw.push_back(0x00);
+        cached_bytecode_raw.push_back(0x00);
+        cached_bytecode_raw.push_back(0x00);
+        
+        // Constant pool size (0 - no constants)
+        cached_bytecode_raw.push_back(0x00);
+        cached_bytecode_raw.push_back(0x00);
+        cached_bytecode_raw.push_back(0x00);
+        cached_bytecode_raw.push_back(0x00);
+        
+        // Instructions
+        cached_bytecode_raw.insert(cached_bytecode_raw.end(), instructions.begin(), instructions.end());
+        
+        // Calculate CRC32 of instructions
+        uint32_t crc = 0xFFFFFFFF;
+        for (size_t i = 16; i < cached_bytecode_raw.size(); ++i) {
+            crc ^= cached_bytecode_raw[i];
+            for (int j = 0; j < 8; ++j) {
+                crc = (crc >> 1) ^ ((crc & 1) ? 0xEDB88320 : 0);
+            }
+        }
+        crc = ~crc;
+        
+        // Store checksum
+        cached_bytecode_raw[checksum_offset + 0] = crc & 0xFF;
+        cached_bytecode_raw[checksum_offset + 1] = (crc >> 8) & 0xFF;
+        cached_bytecode_raw[checksum_offset + 2] = (crc >> 16) & 0xFF;
+        cached_bytecode_raw[checksum_offset + 3] = (crc >> 24) & 0xFF;
+        
+        bytecode_initialized = true;
     }
     
-    // Method 2: Direct PEB read (harder to hook)
-    #ifdef _WIN64
+    // Load and execute bytecode
+    VM::Bytecode bytecode;
+    if (!bytecode.load(cached_bytecode_raw)) {
+        // Fallback to native check if bytecode fails to load
         PPEB peb = (PPEB)__readgsqword(0x60);
-    #else
-        PPEB peb = (PPEB)__readfsdword(0x30);
-    #endif
-    
-    if (peb && peb->BeingDebugged) {
-        return true;
+        return peb && peb->BeingDebugged;
     }
-#endif
     
+    VM::VMConfig config;
+    config.max_instructions = 100;
+    config.timeout_ms = 10;
+    config.enable_safe_reads = true;
+    
+    VM::VMInterpreter vm(config);
+    VM::VMOutput result = vm.execute(bytecode);
+    
+    // If VM returned HALT_FAIL or flag bit 1 is set, debugger detected
+    return (result.result == VM::VMResult::Violation) || 
+           (result.detection_flags & 0x02);  // Bit 1
+#else
     return false;
+#endif
 }
 
 bool AntiDebugDetector::CheckRemoteDebugger() {
