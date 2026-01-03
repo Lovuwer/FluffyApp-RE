@@ -15,6 +15,16 @@
 namespace Sentinel::VM {
 
 namespace {
+    // Read little-endian values
+    template<typename T>
+    T readLE(const uint8_t* data) noexcept {
+        T value = 0;
+        for (size_t i = 0; i < sizeof(T); ++i) {
+            value |= static_cast<T>(data[i]) << (i * 8);
+        }
+        return value;
+    }
+    
     // Simple XXH3-like hash implementation
     uint64_t xxh3_hash(const uint8_t* data, size_t length) noexcept {
         constexpr uint64_t PRIME64_1 = 0x9E3779B185EBCA87ULL;
@@ -52,30 +62,6 @@ namespace {
         h64 ^= h64 >> 32;
         
         return h64;
-    }
-    
-    // Simple CRC32 implementation (kept for backward compatibility)
-    uint32_t crc32(const uint8_t* data, size_t length) noexcept {
-        static constexpr uint32_t polynomial = 0xEDB88320;
-        
-        uint32_t crc = 0xFFFFFFFF;
-        for (size_t i = 0; i < length; ++i) {
-            crc ^= data[i];
-            for (int j = 0; j < 8; ++j) {
-                crc = (crc >> 1) ^ ((crc & 1) ? polynomial : 0);
-            }
-        }
-        return ~crc;
-    }
-    
-    // Read little-endian values
-    template<typename T>
-    T readLE(const uint8_t* data) noexcept {
-        T value = 0;
-        for (size_t i = 0; i < sizeof(T); ++i) {
-            value |= static_cast<T>(data[i]) << (i * 8);
-        }
-        return value;
     }
 }
 
