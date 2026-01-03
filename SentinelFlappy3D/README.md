@@ -14,10 +14,16 @@ SentinelFlappy3D is a **reference implementation** that shows game studios how t
 
 ## Current Status
 
-**Step 1 Complete**: Project skeleton and CMake structure created
+**Steps 1-3 Complete**: Project skeleton, game implementation, and standalone build
+
+**Completed Steps**:
+- ✅ Step 1: Project skeleton and CMake structure
+- ✅ Step 2: Basic Flappy Bird gameplay implementation
+- ✅ Step 3: Build verification (standalone without Sentinel)
 
 **Next Steps**:
-- Step 2: Implement basic Flappy Bird gameplay
+- Step 2: Implement basic Flappy Bird gameplay ✅
+- Step 3: Build and run without Sentinel ✅
 - Step 3: Build and run without Sentinel
 - Step 4: Add Sentinel SDK integration
 - Step 5: Initialize Sentinel correctly
@@ -78,9 +84,20 @@ SentinelFlappy3D/
   sudo apt install libgl1-mesa-dev libglu1-mesa-dev
   ```
 
-## Building (Step 1 - Skeleton Only)
+## Building
 
-Currently, only the CMake skeleton is implemented. This will be expanded in later steps.
+### Prerequisites Installed
+
+The project requires:
+- C++20 compiler (GCC 11+ or Clang 13+ or MSVC 2019+)
+- CMake 3.21+
+- OpenGL development libraries
+- X11 development libraries (Linux)
+
+On Ubuntu/Debian:
+```bash
+sudo apt-get install libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl1-mesa-dev
+```
 
 ### Configure
 
@@ -89,26 +106,43 @@ cd SentinelFlappy3D
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 ```
 
+**Note**: GLFW and GLM are automatically fetched via CMake FetchContent.
+
 ### Build
 
 ```bash
 cmake --build build
 ```
 
-**Note**: In Step 1, there are no executables yet. This will build successfully but produce no binaries.
+**Output**: Executable is placed in `build/bin/SentinelFlappy3D`
 
-## Running (Not Yet Implemented)
+### Build Verification
 
-Game and server executables will be available after Step 2 (game) and Step 9 (server).
+✅ **Steps 2 & 3**: Game builds successfully and creates executable (338 KB)
 
-Once implemented:
+## Running
+
+### Game Executable
+
+The game requires a display to run. In headless CI environments, the build succeeds but the game cannot be executed without a display server.
+
+To run locally (with display):
 ```bash
-# Run the game
 ./build/bin/SentinelFlappy3D
-
-# Run the server (in another terminal)
-./build/bin/SentinelFlappy3DServer
 ```
+
+**Controls**:
+- `SPACE`: Flap (apply upward velocity)
+- `ESC`: Quit game
+
+**Gameplay**:
+- Avoid the pipes by flapping
+- Score increases when passing pipes
+- Press SPACE after game over to restart
+
+### Server
+
+Server implementation coming in Step 9.
 
 ## Integration Guide
 
@@ -159,6 +193,6 @@ For questions about this reference implementation:
 
 ---
 
-**Implementation Status**: Step 1 Complete (Project Skeleton)  
-**Next Milestone**: Step 2 - Implement Basic Gameplay  
+**Implementation Status**: Steps 1-3 Complete (Game Playable)  
+**Next Milestone**: Step 4 - Add Sentinel SDK Integration  
 **Full Plan**: See [SENTINELFLAPPY3D_PLAN.md](../docs/SENTINELFLAPPY3D_PLAN.md)
