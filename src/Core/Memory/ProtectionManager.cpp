@@ -32,6 +32,8 @@ namespace {
  */
 class ProtectionManager::Impl {
 public:
+    // Friend declaration to allow global handler access
+    friend void* g_activeManager;
     Impl() {
         installVEH();
     }
@@ -76,7 +78,7 @@ public:
         }
         
         m_protectedRegions[alignedAddr] = info;
-        return Result<void>::success();
+        return Result<void>::Success();
     }
     
     Result<void> removeGuardPage(Address address, size_t size) {
@@ -103,7 +105,7 @@ public:
         }
         
         m_protectedRegions.erase(it);
-        return Result<void>::success();
+        return Result<void>::Success();
     }
     
     void setGuardPageCallback(GuardPageCallback callback) {
@@ -145,7 +147,7 @@ public:
         m_accessCount.fetch_add(1);
         
         GuardPageAccess access;
-        access.address = reinterpret_cast<Address>(
+        access.address = static_cast<Address>(
             exceptionInfo->ExceptionRecord->ExceptionInformation[1]
         );
         access.isWrite = (exceptionInfo->ExceptionRecord->ExceptionInformation[0] == 1);

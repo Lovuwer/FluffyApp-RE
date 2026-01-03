@@ -125,7 +125,7 @@ Result<bool> CertificatePinner::verify(
 Result<std::string> computeSPKIHash(ByteSpan cert_der) {
     // Parse DER certificate
     const unsigned char* p = cert_der.data();
-    X509* cert = d2i_X509(nullptr, &p, cert_der.size());
+    X509* cert = d2i_X509(nullptr, &p, static_cast<long>(cert_der.size()));
     if (!cert) {
         return ErrorCode::CertificateInvalid;
     }
