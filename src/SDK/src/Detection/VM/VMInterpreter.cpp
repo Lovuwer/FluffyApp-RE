@@ -659,7 +659,8 @@ private:
                     tls_canary_address = nullptr;
                     
                     // Define VEH handler that will set the canary flag
-                    auto veh_handler = [](PEXCEPTION_POINTERS ex) -> LONG {
+                    // Note: Lambda captures the thread_local variables by reference
+                    auto veh_handler = +[](PEXCEPTION_POINTERS ex) -> LONG {
                         if (ex->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION) {
                             // Store the faulting address to verify we were called first
                             tls_canary_address = ex->ExceptionRecord->ExceptionAddress;
