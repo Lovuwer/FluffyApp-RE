@@ -648,6 +648,73 @@ private:
                     break;
                 }
                 
+                case Opcode::OP_TEST_EXCEPTION: {
+#ifdef _WIN32
+                    // Thread-local storage for canary verification
+                    thread_local volatile void* tls_canary_address = nullptr;
+                    thread_local volatile bool tls_canary_set = false;
+                    
+                    // Reset canary state
+                    tls_canary_set = false;
+                    tls_canary_address = nullptr;
+                    
+                    // Define VEH handler that will set the canary flag
+                    // Note: Lambda captures the thread_local variables by reference
+                    auto veh_handler = +[](PEXCEPTION_POINTERS ex) -> LONG {
+                        if (ex->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION) {
+                            // Store the faulting address to verify we were called first
+                            tls_canary_address = ex->ExceptionRecord->ExceptionAddress;
+                            tls_canary_set = true;
+                            // Let SEH handle the actual recovery
+                            return EXCEPTION_CONTINUE_SEARCH;
+                        }
+                        return EXCEPTION_CONTINUE_SEARCH;
+                    };
+                    
+                    // Register VEH handler with priority 1 (first to be called)
+                    PVOID handler_handle = AddVectoredExceptionHandler(1, veh_handler);
+                    
+                    uint64_t result = 1;  // Default: integrity OK
+                    
+                    if (handler_handle) {
+                        // Create guard page for controlled exception
+                        SYSTEM_INFO si;
+                        GetSystemInfo(&si);
+                        LPVOID guard_page = VirtualAlloc(nullptr, si.dwPageSize, 
+                                                        MEM_COMMIT | MEM_RESERVE, PAGE_NOACCESS);
+                        
+                        if (guard_page) {
+                            __try {
+                                // Trigger controlled access violation
+                                volatile uint8_t probe = *static_cast<uint8_t*>(guard_page);
+                                (void)probe;  // Suppress unused warning
+                            }
+                            __except(EXCEPTION_EXECUTE_HANDLER) {
+                                // Exception was handled - check if our VEH was called first
+                                // The VEH should have been called before this SEH handler
+                                if (!tls_canary_set) {
+                                    // VEH handler was NOT called, meaning another VEH swallowed it
+                                    result = 0;
+                                    detection_flags_ |= (1ULL << 8);  // Set VEH hijacking flag
+                                }
+                            }
+                            
+                            // Cleanup guard page
+                            VirtualFree(guard_page, 0, MEM_RELEASE);
+                        }
+                        
+                        // Remove VEH handler
+                        RemoveVectoredExceptionHandler(handler_handle);
+                    }
+                    
+                    if (!push(result)) return false;
+#else
+                    // Non-Windows always passes
+                    if (!push(1)) return false;
+#endif
+                    break;
+                }
+                
                 default:
                     // Unknown opcode
                     return false;

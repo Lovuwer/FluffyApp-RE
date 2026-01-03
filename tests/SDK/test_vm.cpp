@@ -735,3 +735,150 @@ TEST(VMInterpreterTests, MoveConstructor) {
     VMOutput output = vm2.execute(bytecode);
     EXPECT_EQ(output.result, VMResult::Halted);
 }
+
+// ============================================================================
+// OP_TEST_EXCEPTION Tests (Anti-VEH Canary)
+// ============================================================================
+
+/**
+ * Test that OP_TEST_EXCEPTION returns 1 under normal conditions
+ * (no external VEH handlers present)
+ */
+TEST(VMInterpreterTests, OpTestExceptionNormalConditions) {
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::OP_TEST_EXCEPTION),
+        static_cast<uint8_t>(Opcode::HALT)
+    };
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMInterpreter vm;
+    VMOutput output = vm.execute(bytecode);
+    
+    EXPECT_EQ(output.result, VMResult::Halted);
+    // Flag bit 8 should NOT be set (no VEH hijacking)
+    EXPECT_EQ(output.detection_flags & (1ULL << 8), 0ULL);
+}
+
+#ifdef _WIN32
+/**
+ * Test that OP_TEST_EXCEPTION detects VEH hijacking when a malicious
+ * VEH handler swallows exceptions
+ */
+TEST(VMInterpreterTests, OpTestExceptionDetectsVehHijacking) {
+    // Install a malicious VEH handler that swallows access violations
+    // This simulates an attacker's VEH handler
+    auto malicious_veh = [](PEXCEPTION_POINTERS ex) -> LONG {
+        if (ex->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION) {
+            // Swallow the exception - don't let it propagate
+            // Skip past the faulting instruction by a conservative amount
+            // In practice, attackers would decode the instruction properly
+            #ifdef _WIN64
+            ex->ContextRecord->Rip += 8;  // Skip conservatively (mov reg, [mem] can be up to 7 bytes)
+            #else
+            ex->ContextRecord->Eip += 8;  // Skip conservatively
+            #endif
+            return EXCEPTION_CONTINUE_EXECUTION;
+        }
+        return EXCEPTION_CONTINUE_SEARCH;
+    };
+    
+    // Register malicious VEH handler with priority 1 (first)
+    PVOID malicious_handler = AddVectoredExceptionHandler(1, malicious_veh);
+    ASSERT_NE(malicious_handler, nullptr);
+    
+    // Create bytecode with OP_TEST_EXCEPTION
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::OP_TEST_EXCEPTION),
+        static_cast<uint8_t>(Opcode::HALT)
+    };
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMInterpreter vm;
+    VMOutput output = vm.execute(bytecode);
+    
+    // Clean up malicious handler
+    RemoveVectoredExceptionHandler(malicious_handler);
+    
+    // Should detect VEH hijacking
+    EXPECT_EQ(output.result, VMResult::Halted);
+    // Flag bit 8 SHOULD be set (VEH hijacking detected)
+    EXPECT_NE(output.detection_flags & (1ULL << 8), 0ULL);
+}
+
+/**
+ * Test that OP_TEST_EXCEPTION still passes when there's a benign VEH
+ * handler that doesn't interfere with exception propagation
+ */
+TEST(VMInterpreterTests, OpTestExceptionWithBenignVeh) {
+    // Install a benign VEH handler that logs but doesn't swallow exceptions
+    auto benign_veh = [](PEXCEPTION_POINTERS ex) -> LONG {
+        if (ex->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION) {
+            // Just log and let it propagate
+            return EXCEPTION_CONTINUE_SEARCH;
+        }
+        return EXCEPTION_CONTINUE_SEARCH;
+    };
+    
+    // Register benign VEH handler
+    PVOID benign_handler = AddVectoredExceptionHandler(0, benign_veh);
+    ASSERT_NE(benign_handler, nullptr);
+    
+    // Create bytecode with OP_TEST_EXCEPTION
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::OP_TEST_EXCEPTION),
+        static_cast<uint8_t>(Opcode::HALT)
+    };
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMInterpreter vm;
+    VMOutput output = vm.execute(bytecode);
+    
+    // Clean up benign handler
+    RemoveVectoredExceptionHandler(benign_handler);
+    
+    // Should pass - benign handler doesn't interfere
+    EXPECT_EQ(output.result, VMResult::Halted);
+    // Flag bit 8 should NOT be set
+    EXPECT_EQ(output.detection_flags & (1ULL << 8), 0ULL);
+}
+
+/**
+ * Performance test: OP_TEST_EXCEPTION should complete in < 100μs
+ */
+TEST(VMInterpreterTests, OpTestExceptionPerformance) {
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::OP_TEST_EXCEPTION),
+        static_cast<uint8_t>(Opcode::HALT)
+    };
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMInterpreter vm;
+    
+    // Run multiple times to get average
+    const int iterations = 10;
+    int64_t total_us = 0;
+    
+    for (int i = 0; i < iterations; ++i) {
+        VMOutput output = vm.execute(bytecode);
+        ASSERT_EQ(output.result, VMResult::Halted);
+        total_us += output.elapsed.count();
+    }
+    
+    int64_t avg_us = total_us / iterations;
+    
+    // Should complete in < 100μs on average
+    EXPECT_LT(avg_us, 100) << "OP_TEST_EXCEPTION took " << avg_us << "μs (expected < 100μs)";
+}
+#endif // _WIN32
