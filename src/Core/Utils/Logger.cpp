@@ -264,8 +264,8 @@ LogLevel Logger::FromSpdlogLevel(spdlog::level::level_enum level) {
     }
 }
 
-std::string Logger::FormatMessage(LogLevel level, std::string_view message,
-                                 const char* file, int line) const {
+std::string Logger::FormatMessage([[maybe_unused]] LogLevel level, std::string_view message,
+                                 [[maybe_unused]] const char* file, [[maybe_unused]] int line) const {
     // This method is kept for compatibility but no longer used
     // spdlog handles formatting internally
     return std::string(message);

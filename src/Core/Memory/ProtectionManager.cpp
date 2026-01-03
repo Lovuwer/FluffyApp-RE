@@ -20,6 +20,9 @@ namespace Sentinel {
 namespace Core {
 namespace Memory {
 
+// Forward declaration for friend
+static LONG WINAPI vehHandler(EXCEPTION_POINTERS* exceptionInfo);
+
 // Global state for VEH handler
 namespace {
     std::mutex g_handlerMutex;
@@ -32,6 +35,8 @@ namespace {
  */
 class ProtectionManager::Impl {
 public:
+    // Friend declaration to allow VEH handler access
+    friend LONG WINAPI vehHandler(EXCEPTION_POINTERS*);
     Impl() {
         installVEH();
     }
@@ -76,7 +81,7 @@ public:
         }
         
         m_protectedRegions[alignedAddr] = info;
-        return Result<void>::success();
+        return Result<void>::Success();
     }
     
     Result<void> removeGuardPage(Address address, size_t size) {
@@ -103,7 +108,7 @@ public:
         }
         
         m_protectedRegions.erase(it);
-        return Result<void>::success();
+        return Result<void>::Success();
     }
     
     void setGuardPageCallback(GuardPageCallback callback) {
@@ -145,9 +150,7 @@ public:
         m_accessCount.fetch_add(1);
         
         GuardPageAccess access;
-        access.address = reinterpret_cast<Address>(
-            exceptionInfo->ExceptionRecord->ExceptionInformation[1]
-        );
+        access.address = static_cast<Address>(exceptionInfo->ExceptionRecord->ExceptionInformation[1]);
         access.isWrite = (exceptionInfo->ExceptionRecord->ExceptionInformation[0] == 1);
         access.isExecute = (exceptionInfo->ExceptionRecord->ExceptionInformation[0] == 8);
         access.threadId = GetCurrentThreadId();
@@ -210,23 +213,24 @@ private:
         m_protectedRegions.clear();
     }
     
-    static LONG WINAPI vehHandler(EXCEPTION_POINTERS* exceptionInfo) {
-        std::lock_guard<std::mutex> lock(g_handlerMutex);
-        
-        if (g_activeManager && 
-            g_activeManager->handleException(exceptionInfo)) {
-            return EXCEPTION_CONTINUE_EXECUTION;
-        }
-        
-        return EXCEPTION_CONTINUE_SEARCH;
-    }
-    
     mutable std::mutex m_mutex;
     std::unordered_map<Address, ProtectionInfo> m_protectedRegions;
     GuardPageCallback m_callback;
     std::atomic<size_t> m_accessCount{0};
     std::atomic<bool> m_vehInstalled{false};
 };
+
+// Static VEH handler function (outside of class)
+static LONG WINAPI vehHandler(EXCEPTION_POINTERS* exceptionInfo) {
+    std::lock_guard<std::mutex> lock(g_handlerMutex);
+    
+    if (g_activeManager && 
+        g_activeManager->handleException(exceptionInfo)) {
+        return EXCEPTION_CONTINUE_EXECUTION;
+    }
+    
+    return EXCEPTION_CONTINUE_SEARCH;
+}
 
 // ============================================================================
 // ProtectionManager Public Interface

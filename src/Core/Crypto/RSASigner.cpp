@@ -40,7 +40,7 @@ public:
     
     Result<void> loadPrivateKey(ByteSpan derKey) {
         const unsigned char* p = derKey.data();
-        auto pkey = EVPPKeyPtr(d2i_PrivateKey(EVP_PKEY_RSA, nullptr, &p, derKey.size()));
+        auto pkey = EVPPKeyPtr(d2i_PrivateKey(EVP_PKEY_RSA, nullptr, &p, static_cast<long>(derKey.size())));
         if (!pkey) {
             SENTINEL_LOG_ERROR("Failed to parse RSA private key");
             return ErrorCode::InvalidKey;
@@ -59,7 +59,7 @@ public:
     
     Result<void> loadPublicKey(ByteSpan derKey) {
         const unsigned char* p = derKey.data();
-        auto pkey = EVPPKeyPtr(d2i_PUBKEY(nullptr, &p, derKey.size()));
+        auto pkey = EVPPKeyPtr(d2i_PUBKEY(nullptr, &p, static_cast<long>(derKey.size())));
         if (!pkey) {
             SENTINEL_LOG_ERROR("Failed to parse RSA public key");
             return ErrorCode::InvalidKey;

@@ -301,7 +301,7 @@ public:
         
         // Set timeouts (in milliseconds)
         // Use the request timeout for both connection and total
-        long timeoutMs = signedRequest.timeout.count();
+        long timeoutMs = static_cast<long>(signedRequest.timeout.count());
         curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, timeoutMs);
         curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeoutMs);
         

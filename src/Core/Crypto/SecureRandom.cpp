@@ -16,6 +16,11 @@
 
 #include <Sentinel/Core/Crypto.hpp>
 
+#include <cstring>
+#include <algorithm>
+#include <mutex>
+#include <atomic>
+
 #ifdef _WIN32
 #include <windows.h>
 #include <bcrypt.h>
@@ -25,16 +30,11 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <cerrno>
-#include <mutex>
-#include <atomic>
 #ifdef __linux__
 #include <sys/syscall.h>
 #include <linux/random.h>
 #endif
 #endif
-
-#include <cstring>
-#include <algorithm>
 
 namespace Sentinel::Crypto {
 

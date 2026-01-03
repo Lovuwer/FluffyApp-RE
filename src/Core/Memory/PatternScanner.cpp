@@ -175,23 +175,28 @@ Result<std::vector<PatternScanner::ScanResult>> PatternScanner::scan(
             ScanResult result;
             result.address = baseAddress + offset;
             
-            // Safely copy matched bytes
+            // Safely copy matched bytes - use separate flag to avoid RAII in __try block
             result.matchedBytes.resize(pattern.size());
+            bool copySuccess = false;
 #ifdef _WIN32
             __try {
-#endif
                 std::memcpy(result.matchedBytes.data(), current, pattern.size());
-#ifdef _WIN32
-            } __except(EXCEPTION_EXECUTE_HANDLER) {
-                // Memory became inaccessible, skip this result
-                continue;
+                copySuccess = true;
+            } __except(GetExceptionCode() == STATUS_ACCESS_VIOLATION ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
+                // Memory access violation - skip this result
+                copySuccess = false;
             }
+#else
+            std::memcpy(result.matchedBytes.data(), current, pattern.size());
+            copySuccess = true;
 #endif
             
-            results.push_back(std::move(result));
-            
-            if (maxResults > 0 && results.size() >= maxResults) {
-                break;
+            if (copySuccess) {
+                results.push_back(std::move(result));
+                
+                if (maxResults > 0 && results.size() >= maxResults) {
+                    break;
+                }
             }
         }
     }
