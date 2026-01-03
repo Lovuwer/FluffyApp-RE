@@ -67,6 +67,8 @@ struct HeartbeatConfig {
 
 /**
  * @brief Heartbeat status information
+ * 
+ * Contains metrics and state for replay protection and monitoring.
  */
 struct HeartbeatStatus {
     /// Whether heartbeat thread is running
@@ -78,7 +80,9 @@ struct HeartbeatStatus {
     /// Number of failed heartbeat attempts
     uint64_t failureCount = 0;
     
-    /// Current sequence number
+    /// Current sequence number (REPLAY PROTECTION)
+    /// This monotonically increasing counter is included in each heartbeat.
+    /// Server must reject heartbeats with sequence <= last_seen_sequence.
     uint64_t sequenceNumber = 0;
     
     /// Timestamp of last successful heartbeat
@@ -96,6 +100,27 @@ struct HeartbeatStatus {
  * 
  * Provides periodic heartbeat transmission to detect client liveness.
  * Critical for detecting process termination and thread suspension attacks.
+ * 
+ * REPLAY PROTECTION (STAB-009):
+ * ==============================
+ * Each heartbeat includes:
+ * 1. Sequence Number: Monotonically increasing counter that prevents
+ *    replay of old heartbeats. Server must reject sequence <= last_seen.
+ * 2. Timestamp: UTC milliseconds since epoch for freshness validation.
+ *    Server should reject timestamps outside ±60s window.
+ * 3. Session Token: Authentication token (signed via RequestSigner).
+ * 
+ * Server-Side Requirements:
+ * - Maintain last-seen sequence number per client
+ * - Reject duplicate or old sequence numbers
+ * - Validate timestamp freshness (±60s window)
+ * - Verify cryptographic signature
+ * 
+ * Client-Side Behavior:
+ * - Sequence resets to 0 on start() (new session)
+ * - Sequence increments on every send attempt (success or failure)
+ * - Timestamp generated fresh for each heartbeat
+ * - No client-side replay detection (server's responsibility)
  * 
  * Features:
  * - Configurable interval with random jitter
@@ -187,8 +212,87 @@ public:
     /**
      * @brief Get heartbeat status
      * @return Current status information
+     * 
+     * HEARTBEAT STATUS QUERY API (STAB-007):
+     * =======================================
+     * This API allows games to monitor heartbeat health and react to failures.
+     * 
+     * Status Information:
+     * - isRunning: Whether heartbeat thread is active
+     * - successCount: Total successful heartbeats sent
+     * - failureCount: Total failed heartbeat attempts
+     * - sequenceNumber: Current sequence number (replay protection)
+     * - lastSuccess: Timestamp of last successful heartbeat
+     * - lastFailure: Timestamp of last failed heartbeat
+     * - lastError: Last error code encountered
+     * 
+     * Usage Example:
+     * ```cpp
+     * auto status = heartbeat.getStatus();
+     * 
+     * // Check if heartbeat is healthy
+     * if (status.failureCount > 10) {
+     *     // Too many failures - warn player
+     *     ShowWarning("Network connection unstable");
+     * }
+     * 
+     * // Check time since last success
+     * auto now = Clock::now();
+     * auto elapsed = now - status.lastSuccess;
+     * if (std::chrono::duration_cast<Seconds>(elapsed).count() > 300) {
+     *     // No successful heartbeat in 5 minutes - force disconnect
+     *     DisconnectPlayer("Anti-cheat heartbeat timeout");
+     * }
+     * ```
+     * 
+     * Thread Safety:
+     * This method is thread-safe and can be called from any thread.
+     * Returns a snapshot of the current status at the time of the call.
      */
     [[nodiscard]] HeartbeatStatus getStatus() const noexcept;
+    
+    /**
+     * @brief Check if heartbeat is healthy
+     * @return true if heartbeat is running with recent success
+     * 
+     * CONVENIENCE METHOD (STAB-007):
+     * Checks if heartbeat is in a healthy state:
+     * - Heartbeat thread is running
+     * - Has at least one successful heartbeat
+     * - Last success was within the last 5 minutes
+     * - Failure rate is below 50%
+     * 
+     * This is a convenience method that provides a simple yes/no answer
+     * about heartbeat health. For detailed status, use getStatus().
+     * 
+     * Usage Example:
+     * ```cpp
+     * if (!heartbeat.isHealthy()) {
+     *     LogWarning("Heartbeat unhealthy - check network connection");
+     * }
+     * ```
+     */
+    [[nodiscard]] bool isHealthy() const noexcept;
+    
+    /**
+     * @brief Get heartbeat failure rate
+     * @return Failure rate as percentage (0.0 to 100.0)
+     * 
+     * CONVENIENCE METHOD (STAB-007):
+     * Calculates the percentage of failed heartbeats:
+     * failureRate = (failureCount / (successCount + failureCount)) * 100
+     * 
+     * Returns 0.0 if no heartbeats have been attempted yet.
+     * 
+     * Usage Example:
+     * ```cpp
+     * double failureRate = heartbeat.getFailureRate();
+     * if (failureRate > 20.0) {
+     *     LogWarning("High heartbeat failure rate: %.1f%%", failureRate);
+     * }
+     * ```
+     */
+    [[nodiscard]] double getFailureRate() const noexcept;
     
     /**
      * @brief Update configuration

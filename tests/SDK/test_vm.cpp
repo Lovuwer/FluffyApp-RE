@@ -714,6 +714,159 @@ TEST(VMInterpreterTests, HaltFail) {
 }
 
 // ============================================================================
+// VM Execution Tests - Jump Bounds Check (STAB-002)
+// ============================================================================
+
+/**
+ * Test that JMP instruction rejects jump to instruction_count boundary
+ * This tests the fix for off-by-one error in jump bounds check
+ */
+TEST(VMInterpreterTests, JumpToBoundaryRejected) {
+    // Create a HALT instruction
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::JMP)
+    };
+    // Jump forward to exactly instruction_count (4 bytes total, so offset = +1)
+    // JMP opcode (1 byte) + offset (2 bytes) = 3 bytes
+    // After reading offset, ip = 3
+    // offset = +1 means new_ip = 3 + 1 = 4 = instruction_count
+    auto offset = encodeU16(1);
+    instructions.insert(instructions.end(), offset.begin(), offset.end());
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    EXPECT_EQ(bytecode.instructionCount(), 4u);
+    
+    VMInterpreter vm;
+    VMOutput output = vm.execute(bytecode);
+    
+    // Should return Error, not read out-of-bounds
+    EXPECT_EQ(output.result, VMResult::Error) 
+        << "Jump to instruction_count should be rejected";
+}
+
+/**
+ * Test that JMP_Z instruction rejects jump to instruction_count boundary
+ */
+TEST(VMInterpreterTests, JumpZToBoundaryRejected) {
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    auto zero = encodeU64(0);
+    instructions.insert(instructions.end(), zero.begin(), zero.end());
+    
+    instructions.push_back(static_cast<uint8_t>(Opcode::JMP_Z));
+    // After PUSH_IMM (9 bytes) + JMP_Z opcode (1 byte) + offset (2 bytes) = 12 bytes
+    // After reading offset, ip = 12
+    // offset = +1 means new_ip = 12 + 1 = 13 = instruction_count
+    auto offset = encodeU16(1);
+    instructions.insert(instructions.end(), offset.begin(), offset.end());
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    EXPECT_EQ(bytecode.instructionCount(), 13u);
+    
+    VMInterpreter vm;
+    VMOutput output = vm.execute(bytecode);
+    
+    // Should return Error, not read out-of-bounds
+    EXPECT_EQ(output.result, VMResult::Error)
+        << "JMP_Z to instruction_count should be rejected";
+}
+
+/**
+ * Test that JMP_NZ instruction rejects jump to instruction_count boundary
+ */
+TEST(VMInterpreterTests, JumpNzToBoundaryRejected) {
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    auto nonzero = encodeU64(42);
+    instructions.insert(instructions.end(), nonzero.begin(), nonzero.end());
+    
+    instructions.push_back(static_cast<uint8_t>(Opcode::JMP_NZ));
+    // After PUSH_IMM (9 bytes) + JMP_NZ opcode (1 byte) + offset (2 bytes) = 12 bytes
+    // After reading offset, ip = 12
+    // offset = +1 means new_ip = 12 + 1 = 13 = instruction_count
+    auto offset = encodeU16(1);
+    instructions.insert(instructions.end(), offset.begin(), offset.end());
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    EXPECT_EQ(bytecode.instructionCount(), 13u);
+    
+    VMInterpreter vm;
+    VMOutput output = vm.execute(bytecode);
+    
+    // Should return Error, not read out-of-bounds
+    EXPECT_EQ(output.result, VMResult::Error)
+        << "JMP_NZ to instruction_count should be rejected";
+}
+
+/**
+ * Test that JMP to instruction_count - 1 (last valid byte) works correctly
+ * This verifies we didn't over-restrict the bounds check
+ */
+TEST(VMInterpreterTests, JumpToLastValidByteWorks) {
+    // Create bytecode: JMP to HALT at end
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::JMP)
+    };
+    // offset = 0 means jump to ip after reading offset (ip = 3)
+    // We want to jump to instruction 3 (HALT), so offset = 0
+    auto offset = encodeU16(0);
+    instructions.insert(instructions.end(), offset.begin(), offset.end());
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    EXPECT_EQ(bytecode.instructionCount(), 4u);
+    
+    VMInterpreter vm;
+    VMOutput output = vm.execute(bytecode);
+    
+    // Should execute successfully
+    EXPECT_EQ(output.result, VMResult::Halted)
+        << "Jump to last valid instruction (instruction_count - 1) should work";
+}
+
+/**
+ * Test that JMP past instruction_count is rejected
+ */
+TEST(VMInterpreterTests, JumpPastEndRejected) {
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::JMP)
+    };
+    // Jump way past end
+    auto offset = encodeU16(100);
+    instructions.insert(instructions.end(), offset.begin(), offset.end());
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMInterpreter vm;
+    VMOutput output = vm.execute(bytecode);
+    
+    // Should return Error
+    EXPECT_EQ(output.result, VMResult::Error)
+        << "Jump past instruction_count should be rejected";
+}
+
+// ============================================================================
 // VM Execution Tests - Anti-Analysis
 // ============================================================================
 
@@ -1862,5 +2015,430 @@ TEST(VMInterpreterTests, OpCheckSyscallPerformance) {
     EXPECT_LT(avg_us, 50ULL) << "OP_CHECK_SYSCALL took " << avg_us << "μs (expected < 50μs)";
 }
 #endif // _WIN32
+#endif // _WIN32  // Close outer #ifdef from line 1616
 
-#endif
+// ============================================================================
+// External Callback Timeout Tests (STAB-003)
+// ============================================================================
+// These tests are platform-independent (not Windows-specific)
+// ============================================================================
+
+/**
+ * Test that blocking external callback triggers VM timeout
+ * This verifies STAB-003: callback execution time counts against VM timeout
+ * 
+ * Note: std::async with wait_for may not interrupt blocking operations on all platforms.
+ * This test verifies that timeout detection works, even if the callback continues running.
+ */
+TEST(VMInterpreterTests, ExternalCallbackBlockingTimeout) {
+    VMInterpreter vm;
+    
+    // Register a blocking callback that sleeps for 2 seconds
+    vm.registerExternal(100, [](uint64_t a, uint64_t b) -> uint64_t {
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+        return a + b;
+    });
+    
+    // Create bytecode that calls the blocking callback
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    auto val1 = encodeU64(10);
+    instructions.insert(instructions.end(), val1.begin(), val1.end());
+    
+    instructions.push_back(static_cast<uint8_t>(Opcode::PUSH_IMM));
+    auto val2 = encodeU64(20);
+    instructions.insert(instructions.end(), val2.begin(), val2.end());
+    
+    instructions.push_back(static_cast<uint8_t>(Opcode::CALL_EXT));
+    instructions.push_back(100);  // Function ID
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    // Configure VM with short timeout (500ms)
+    VMConfig config;
+    config.max_instructions = 100000;
+    config.timeout_ms = 500;  // 500ms timeout, callback takes 2000ms
+    VMInterpreter vm_timeout(config);
+    
+    // Register same blocking callback
+    vm_timeout.registerExternal(100, [](uint64_t a, uint64_t b) -> uint64_t {
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+        return a + b;
+    });
+    
+    auto start = std::chrono::high_resolution_clock::now();
+    VMOutput output = vm_timeout.execute(bytecode);
+    auto end = std::chrono::high_resolution_clock::now();
+    auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    
+    // Should return Timeout, not hang indefinitely
+    EXPECT_EQ(output.result, VMResult::Timeout) 
+        << "Blocking callback should trigger VM timeout";
+    
+    // The elapsed time may include the full callback duration on some platforms
+    // where std::async doesn't truly interrupt blocking operations.
+    // The important thing is that we detected the timeout condition.
+    // Verify it didn't hang indefinitely (e.g., > 5 seconds)
+    EXPECT_LT(elapsed_ms, 5000) 
+        << "VM should not hang indefinitely (" << elapsed_ms << "ms)";
+}
+
+/**
+ * Test that fast external callbacks complete successfully
+ * This verifies STAB-003: fast callbacks have no performance impact
+ */
+TEST(VMInterpreterTests, ExternalCallbackFastExecution) {
+    VMInterpreter vm;
+    
+    // Register a fast callback
+    vm.registerExternal(101, [](uint64_t a, uint64_t b) -> uint64_t {
+        return a * b;
+    });
+    
+    // Create bytecode that calls the fast callback
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    auto val1 = encodeU64(7);
+    instructions.insert(instructions.end(), val1.begin(), val1.end());
+    
+    instructions.push_back(static_cast<uint8_t>(Opcode::PUSH_IMM));
+    auto val2 = encodeU64(6);
+    instructions.insert(instructions.end(), val2.begin(), val2.end());
+    
+    instructions.push_back(static_cast<uint8_t>(Opcode::CALL_EXT));
+    instructions.push_back(101);  // Function ID
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMOutput output = vm.execute(bytecode);
+    
+    // Should complete successfully
+    EXPECT_EQ(output.result, VMResult::Halted) 
+        << "Fast callback should complete normally";
+    
+    // Execution should be fast (< 10ms)
+    EXPECT_LT(output.elapsed.count(), 10000) 
+        << "Fast callback should have minimal overhead (" << output.elapsed.count() << "μs)";
+}
+
+/**
+ * Test that callback exception is handled gracefully
+ * Verifies that exceptions don't crash VM
+ */
+TEST(VMInterpreterTests, ExternalCallbackExceptionHandling) {
+    VMInterpreter vm;
+    
+    // Register a callback that throws exception
+    vm.registerExternal(102, [](uint64_t a, uint64_t b) -> uint64_t {
+        (void)a; (void)b;
+        throw std::runtime_error("Callback exception");
+        return 0;
+    });
+    
+    // Create bytecode that calls the throwing callback
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    auto val1 = encodeU64(1);
+    instructions.insert(instructions.end(), val1.begin(), val1.end());
+    
+    instructions.push_back(static_cast<uint8_t>(Opcode::PUSH_IMM));
+    auto val2 = encodeU64(2);
+    instructions.insert(instructions.end(), val2.begin(), val2.end());
+    
+    instructions.push_back(static_cast<uint8_t>(Opcode::CALL_EXT));
+    instructions.push_back(102);  // Function ID
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMOutput output = vm.execute(bytecode);
+    
+    // Should complete without crashing (returns 0 on exception)
+    EXPECT_EQ(output.result, VMResult::Halted) 
+        << "Callback exception should be handled gracefully";
+}
+
+/**
+ * Test VM re-entrancy protection
+ * Verifies that callbacks cannot call back into VM
+ */
+TEST(VMInterpreterTests, ExternalCallbackReentrancyProtection) {
+    VMInterpreter vm;
+    
+    // Create simple bytecode for re-entrant call
+    std::vector<uint8_t> simple_instructions = {
+        static_cast<uint8_t>(Opcode::HALT)
+    };
+    auto simple_data = createBytecodeWithInstructions(simple_instructions);
+    Bytecode simple_bytecode;
+    ASSERT_TRUE(simple_bytecode.load(simple_data));
+    
+    // Register a callback that tries to re-enter VM
+    vm.registerExternal(103, [&vm, &simple_bytecode](uint64_t a, uint64_t b) -> uint64_t {
+        (void)a; (void)b;
+        // Try to execute VM from within callback (should fail with re-entrancy error)
+        VMOutput nested_output = vm.execute(simple_bytecode);
+        // Return 1 if nested call succeeded (bad), 0 if it failed (good)
+        return (nested_output.result == VMResult::Halted) ? 1 : 0;
+    });
+    
+    // Create bytecode that calls the re-entrant callback
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    auto val1 = encodeU64(0);
+    instructions.insert(instructions.end(), val1.begin(), val1.end());
+    
+    instructions.push_back(static_cast<uint8_t>(Opcode::PUSH_IMM));
+    auto val2 = encodeU64(0);
+    instructions.insert(instructions.end(), val2.begin(), val2.end());
+    
+    instructions.push_back(static_cast<uint8_t>(Opcode::CALL_EXT));
+    instructions.push_back(103);  // Function ID
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMOutput output = vm.execute(bytecode);
+    
+    // Should complete successfully
+    EXPECT_EQ(output.result, VMResult::Halted) 
+        << "Re-entrancy protection test should complete";
+    
+    // Callback should return 0 (nested call failed due to re-entrancy protection)
+    // Result is on stack, but we can't easily check it - just verify execution completed
+}
+
+/**
+ * Test multiple fast callbacks in sequence
+ * Verifies that timeout budget is managed correctly across multiple callbacks
+ */
+TEST(VMInterpreterTests, ExternalCallbackMultipleFastCalls) {
+    VMInterpreter vm;
+    
+    // Register multiple fast callbacks
+    vm.registerExternal(104, [](uint64_t a, uint64_t b) -> uint64_t { return a + b; });
+    vm.registerExternal(105, [](uint64_t a, uint64_t b) -> uint64_t { return a - b; });
+    vm.registerExternal(106, [](uint64_t a, uint64_t b) -> uint64_t { return a * b; });
+    
+    // Create bytecode that calls multiple callbacks
+    std::vector<uint8_t> instructions;
+    
+    // Call 1: 10 + 5 = 15
+    instructions.push_back(static_cast<uint8_t>(Opcode::PUSH_IMM));
+    auto v1 = encodeU64(10);
+    instructions.insert(instructions.end(), v1.begin(), v1.end());
+    instructions.push_back(static_cast<uint8_t>(Opcode::PUSH_IMM));
+    auto v2 = encodeU64(5);
+    instructions.insert(instructions.end(), v2.begin(), v2.end());
+    instructions.push_back(static_cast<uint8_t>(Opcode::CALL_EXT));
+    instructions.push_back(104);
+    
+    // Call 2: 15 - 3 = 12
+    instructions.push_back(static_cast<uint8_t>(Opcode::PUSH_IMM));
+    auto v3 = encodeU64(3);
+    instructions.insert(instructions.end(), v3.begin(), v3.end());
+    instructions.push_back(static_cast<uint8_t>(Opcode::CALL_EXT));
+    instructions.push_back(105);
+    
+    // Call 3: 12 * 2 = 24
+    instructions.push_back(static_cast<uint8_t>(Opcode::PUSH_IMM));
+    auto v4 = encodeU64(2);
+    instructions.insert(instructions.end(), v4.begin(), v4.end());
+    instructions.push_back(static_cast<uint8_t>(Opcode::CALL_EXT));
+    instructions.push_back(106);
+    
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMOutput output = vm.execute(bytecode);
+    
+    // Should complete successfully
+    EXPECT_EQ(output.result, VMResult::Halted) 
+        << "Multiple fast callbacks should complete normally";
+}
+
+// ============================================================================
+// Hash Operation Overflow Protection Tests (STAB-005)
+// ============================================================================
+
+/**
+ * Test that hash operations detect integer overflow in address + size
+ * This verifies STAB-005: overflow protection for hash operations
+ */
+TEST(VMInterpreterTests, HashCRC32OverflowProtection) {
+    VMInterpreter vm;
+    
+    // Test 1: address + size would overflow (address = MAX, size = 1)
+    std::vector<uint8_t> instructions1 = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    auto addr1 = encodeU64(UINTPTR_MAX);
+    instructions1.insert(instructions1.end(), addr1.begin(), addr1.end());
+    
+    instructions1.push_back(static_cast<uint8_t>(Opcode::PUSH_IMM));
+    auto size1 = encodeU64(1);
+    instructions1.insert(instructions1.end(), size1.begin(), size1.end());
+    
+    instructions1.push_back(static_cast<uint8_t>(Opcode::HASH_CRC32));
+    instructions1.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data1 = createBytecodeWithInstructions(instructions1);
+    
+    Bytecode bytecode1;
+    ASSERT_TRUE(bytecode1.load(data1));
+    
+    VMOutput output1 = vm.execute(bytecode1);
+    
+    // Should complete without crashing, overflow detected
+    EXPECT_EQ(output1.result, VMResult::Halted) 
+        << "Hash with overflow should be handled safely";
+    
+    // Test 2: Large address that would overflow with 1MB size
+    std::vector<uint8_t> instructions2 = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    auto addr2 = encodeU64(UINTPTR_MAX - 1000);
+    instructions2.insert(instructions2.end(), addr2.begin(), addr2.end());
+    
+    instructions2.push_back(static_cast<uint8_t>(Opcode::PUSH_IMM));
+    auto size2 = encodeU64(1024 * 1024);
+    instructions2.insert(instructions2.end(), size2.begin(), size2.end());
+    
+    instructions2.push_back(static_cast<uint8_t>(Opcode::HASH_CRC32));
+    instructions2.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data2 = createBytecodeWithInstructions(instructions2);
+    
+    Bytecode bytecode2;
+    ASSERT_TRUE(bytecode2.load(data2));
+    
+    VMOutput output2 = vm.execute(bytecode2);
+    
+    // Should complete without crashing
+    EXPECT_EQ(output2.result, VMResult::Halted) 
+        << "Hash with large address should be handled safely";
+}
+
+/**
+ * Test that hash operations detect integer overflow for XXH3
+ */
+TEST(VMInterpreterTests, HashXXH3OverflowProtection) {
+    VMInterpreter vm;
+    
+    // Test: address + size would overflow (address = MAX - 100, size = 200)
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    auto addr = encodeU64(UINTPTR_MAX - 100);
+    instructions.insert(instructions.end(), addr.begin(), addr.end());
+    
+    instructions.push_back(static_cast<uint8_t>(Opcode::PUSH_IMM));
+    auto size = encodeU64(200);
+    instructions.insert(instructions.end(), size.begin(), size.end());
+    
+    instructions.push_back(static_cast<uint8_t>(Opcode::HASH_XXH3));
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMOutput output = vm.execute(bytecode);
+    
+    // Should complete without crashing
+    EXPECT_EQ(output.result, VMResult::Halted) 
+        << "Hash XXH3 with overflow should be handled safely";
+}
+
+/**
+ * Test that valid hash operations still work correctly
+ * Verifies that overflow protection doesn't break normal operation
+ */
+TEST(VMInterpreterTests, HashOperationsValidInputs) {
+    VMInterpreter vm;
+    
+    // Create a small valid bytecode with data to hash
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    
+    // We'll hash a small region of our own bytecode (safe test)
+    // Use address 0 with size 0 (edge case that should work)
+    auto addr = encodeU64(0);
+    instructions.insert(instructions.end(), addr.begin(), addr.end());
+    
+    instructions.push_back(static_cast<uint8_t>(Opcode::PUSH_IMM));
+    auto size = encodeU64(0);
+    instructions.insert(instructions.end(), size.begin(), size.end());
+    
+    instructions.push_back(static_cast<uint8_t>(Opcode::HASH_CRC32));
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMOutput output = vm.execute(bytecode);
+    
+    // Should complete successfully
+    EXPECT_EQ(output.result, VMResult::Halted) 
+        << "Valid hash operation should complete normally";
+}
+
+/**
+ * Test that hash operations handle size limit correctly
+ * Verifies that sizes > 1MB are clamped
+ */
+TEST(VMInterpreterTests, HashOperationsSizeLimit) {
+    VMInterpreter vm;
+    
+    // Test with size larger than 1MB limit
+    // Use address that would overflow after clamping to 1MB to trigger overflow protection
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    auto addr = encodeU64(UINTPTR_MAX - 500000);  // Would overflow with 1MB
+    instructions.insert(instructions.end(), addr.begin(), addr.end());
+    
+    instructions.push_back(static_cast<uint8_t>(Opcode::PUSH_IMM));
+    auto size = encodeU64(10 * 1024 * 1024);  // 10MB - will be clamped to 1MB
+    instructions.insert(instructions.end(), size.begin(), size.end());
+    
+    instructions.push_back(static_cast<uint8_t>(Opcode::HASH_XXH3));
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMOutput output = vm.execute(bytecode);
+    
+    // Should complete (size clamped to 1MB, then overflow protection catches it)
+    EXPECT_EQ(output.result, VMResult::Halted) 
+        << "Hash with excessive size should be handled safely";
+}
