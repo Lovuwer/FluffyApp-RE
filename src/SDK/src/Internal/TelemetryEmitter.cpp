@@ -131,6 +131,25 @@ void TelemetryEmitter::SetPerformanceMetrics(uint64_t scan_duration_us, size_t m
     current_memory_scanned_ = memory_scanned;
 }
 
+void TelemetryEmitter::ReportVMExecution(const VMExecutionMetrics& metrics) {
+    // VM execution metrics are stored for monitoring and analysis
+    // This is a lightweight operation - just store the metrics
+    // In a production implementation, this would send to a telemetry backend
+    
+    // For now, we could store these in a separate structure or log them
+    // The key is that we have the interface for production telemetry integration
+    
+    // Note: In production, you would:
+    // 1. Aggregate metrics locally
+    // 2. Periodically batch-send to telemetry backend
+    // 3. Apply additional sampling if needed
+    // 4. Compress and encrypt before transmission
+    
+    // This is a no-op implementation for now, but provides the interface
+    // for future telemetry backend integration
+    (void)metrics;  // Suppress unused parameter warning
+}
+
 bool TelemetryEmitter::IsDetectionRateAnomalous(DetectionType type) const {
     size_t index = TypeToIndex(type);
     return baselines_[index].is_anomalous;
