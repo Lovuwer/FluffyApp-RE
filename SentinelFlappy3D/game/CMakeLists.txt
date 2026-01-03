@@ -114,6 +114,59 @@ if(OpenGL_FOUND)
 endif()
 
 # ============================================================================
+# Sentinel SDK Integration (Step 5)
+# ============================================================================
+
+# Find Sentinel SDK from parent repository
+# The SDK is built as part of the main Sentinel project
+set(SENTINEL_SDK_DIR "${CMAKE_SOURCE_DIR}/../src/SDK")
+
+if(EXISTS "${SENTINEL_SDK_DIR}/include/SentinelSDK.hpp")
+    message(STATUS "Found Sentinel SDK at: ${SENTINEL_SDK_DIR}")
+    
+    # Add SDK include directory
+    target_include_directories(SentinelFlappy3D PRIVATE
+        "${SENTINEL_SDK_DIR}/include"
+        "${CMAKE_SOURCE_DIR}/../include"
+    )
+    
+    # Try to find built SDK library
+    find_library(SENTINEL_SDK_LIB
+        NAMES SentinelSDK SentinelSDK_static
+        PATHS "${CMAKE_SOURCE_DIR}/../build/lib"
+        NO_DEFAULT_PATH
+    )
+    
+    if(SENTINEL_SDK_LIB)
+        message(STATUS "Found Sentinel SDK library: ${SENTINEL_SDK_LIB}")
+        target_link_libraries(SentinelFlappy3D PRIVATE ${SENTINEL_SDK_LIB})
+        
+        # Find SentinelCore library (SDK dependency)
+        find_library(SENTINEL_CORE_LIB
+            NAMES SentinelCore
+            PATHS "${CMAKE_SOURCE_DIR}/../build/lib"
+            NO_DEFAULT_PATH
+        )
+        if(SENTINEL_CORE_LIB)
+            message(STATUS "Found Sentinel Core library: ${SENTINEL_CORE_LIB}")
+            target_link_libraries(SentinelFlappy3D PRIVATE ${SENTINEL_CORE_LIB})
+        endif()
+        
+        # Define that we're using the SDK
+        target_compile_definitions(SentinelFlappy3D PRIVATE SENTINEL_SDK_ENABLED)
+    else()
+        message(WARNING "Sentinel SDK library not found - using stub implementation")
+        message(WARNING "  Build the main Sentinel project first:")
+        message(WARNING "    cd ${CMAKE_SOURCE_DIR}/..")
+        message(WARNING "    cmake -B build -DSENTINEL_BUILD_SDK=ON")
+        message(WARNING "    cmake --build build --target SentinelSDK")
+    endif()
+else()
+    message(WARNING "Sentinel SDK headers not found at: ${SENTINEL_SDK_DIR}")
+    message(WARNING "  Using stub implementation only")
+endif()
+
+# ============================================================================
 # Platform-Specific Configuration
 # ============================================================================
 

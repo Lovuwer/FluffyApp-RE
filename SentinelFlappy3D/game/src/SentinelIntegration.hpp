@@ -2,7 +2,21 @@
 
 #include <string>
 
+// Forward declare Sentinel SDK types when enabled
+#ifdef SENTINEL_SDK_ENABLED
+namespace Sentinel { namespace SDK { struct ViolationEvent; } }
+using ViolationEvent = Sentinel::SDK::ViolationEvent;
+#else
+// Dummy type when SDK not enabled
+struct ViolationEvent {};
+#endif
+
 namespace SentinelFlappy3D {
+
+// Forward declare for friend
+#ifdef SENTINEL_SDK_ENABLED
+bool SentinelViolationHandlerFriend(const ViolationEvent* event, void* userData);
+#endif
 
 /**
  * Wrapper class for Sentinel SDK integration
@@ -37,7 +51,12 @@ private:
     int m_violationCount;
 
     // Violation callback (static for C API compatibility)
-    static bool ViolationHandler(const void* event, void* userData);
+    static bool ViolationHandler(const ViolationEvent* event, void* userData);
+    
+    // Friend the global handler so it can access private members
+#ifdef SENTINEL_SDK_ENABLED
+    friend bool SentinelViolationHandlerFriend(const ViolationEvent* event, void* userData);
+#endif
 };
 
 } // namespace SentinelFlappy3D
