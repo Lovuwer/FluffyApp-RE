@@ -714,6 +714,159 @@ TEST(VMInterpreterTests, HaltFail) {
 }
 
 // ============================================================================
+// VM Execution Tests - Jump Bounds Check (STAB-002)
+// ============================================================================
+
+/**
+ * Test that JMP instruction rejects jump to instruction_count boundary
+ * This tests the fix for off-by-one error in jump bounds check
+ */
+TEST(VMInterpreterTests, JumpToBoundaryRejected) {
+    // Create a HALT instruction
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::JMP)
+    };
+    // Jump forward to exactly instruction_count (4 bytes total, so offset = +1)
+    // JMP opcode (1 byte) + offset (2 bytes) = 3 bytes
+    // After reading offset, ip = 3
+    // offset = +1 means new_ip = 3 + 1 = 4 = instruction_count
+    auto offset = encodeU16(1);
+    instructions.insert(instructions.end(), offset.begin(), offset.end());
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    EXPECT_EQ(bytecode.instructionCount(), 4u);
+    
+    VMInterpreter vm;
+    VMOutput output = vm.execute(bytecode);
+    
+    // Should return Error, not read out-of-bounds
+    EXPECT_EQ(output.result, VMResult::Error) 
+        << "Jump to instruction_count should be rejected";
+}
+
+/**
+ * Test that JMP_Z instruction rejects jump to instruction_count boundary
+ */
+TEST(VMInterpreterTests, JumpZToBoundaryRejected) {
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    auto zero = encodeU64(0);
+    instructions.insert(instructions.end(), zero.begin(), zero.end());
+    
+    instructions.push_back(static_cast<uint8_t>(Opcode::JMP_Z));
+    // After PUSH_IMM (9 bytes) + JMP_Z opcode (1 byte) + offset (2 bytes) = 12 bytes
+    // After reading offset, ip = 12
+    // offset = +1 means new_ip = 12 + 1 = 13 = instruction_count
+    auto offset = encodeU16(1);
+    instructions.insert(instructions.end(), offset.begin(), offset.end());
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    EXPECT_EQ(bytecode.instructionCount(), 13u);
+    
+    VMInterpreter vm;
+    VMOutput output = vm.execute(bytecode);
+    
+    // Should return Error, not read out-of-bounds
+    EXPECT_EQ(output.result, VMResult::Error)
+        << "JMP_Z to instruction_count should be rejected";
+}
+
+/**
+ * Test that JMP_NZ instruction rejects jump to instruction_count boundary
+ */
+TEST(VMInterpreterTests, JumpNzToBoundaryRejected) {
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::PUSH_IMM)
+    };
+    auto nonzero = encodeU64(42);
+    instructions.insert(instructions.end(), nonzero.begin(), nonzero.end());
+    
+    instructions.push_back(static_cast<uint8_t>(Opcode::JMP_NZ));
+    // After PUSH_IMM (9 bytes) + JMP_NZ opcode (1 byte) + offset (2 bytes) = 12 bytes
+    // After reading offset, ip = 12
+    // offset = +1 means new_ip = 12 + 1 = 13 = instruction_count
+    auto offset = encodeU16(1);
+    instructions.insert(instructions.end(), offset.begin(), offset.end());
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    EXPECT_EQ(bytecode.instructionCount(), 13u);
+    
+    VMInterpreter vm;
+    VMOutput output = vm.execute(bytecode);
+    
+    // Should return Error, not read out-of-bounds
+    EXPECT_EQ(output.result, VMResult::Error)
+        << "JMP_NZ to instruction_count should be rejected";
+}
+
+/**
+ * Test that JMP to instruction_count - 1 (last valid byte) works correctly
+ * This verifies we didn't over-restrict the bounds check
+ */
+TEST(VMInterpreterTests, JumpToLastValidByteWorks) {
+    // Create bytecode: JMP to HALT at end
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::JMP)
+    };
+    // offset = 0 means jump to ip after reading offset (ip = 3)
+    // We want to jump to instruction 3 (HALT), so offset = 0
+    auto offset = encodeU16(0);
+    instructions.insert(instructions.end(), offset.begin(), offset.end());
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    EXPECT_EQ(bytecode.instructionCount(), 4u);
+    
+    VMInterpreter vm;
+    VMOutput output = vm.execute(bytecode);
+    
+    // Should execute successfully
+    EXPECT_EQ(output.result, VMResult::Halted)
+        << "Jump to last valid instruction (instruction_count - 1) should work";
+}
+
+/**
+ * Test that JMP past instruction_count is rejected
+ */
+TEST(VMInterpreterTests, JumpPastEndRejected) {
+    std::vector<uint8_t> instructions = {
+        static_cast<uint8_t>(Opcode::JMP)
+    };
+    // Jump way past end
+    auto offset = encodeU16(100);
+    instructions.insert(instructions.end(), offset.begin(), offset.end());
+    instructions.push_back(static_cast<uint8_t>(Opcode::HALT));
+    
+    auto data = createBytecodeWithInstructions(instructions);
+    
+    Bytecode bytecode;
+    ASSERT_TRUE(bytecode.load(data));
+    
+    VMInterpreter vm;
+    VMOutput output = vm.execute(bytecode);
+    
+    // Should return Error
+    EXPECT_EQ(output.result, VMResult::Error)
+        << "Jump past instruction_count should be rejected";
+}
+
+// ============================================================================
 // VM Execution Tests - Anti-Analysis
 // ============================================================================
 

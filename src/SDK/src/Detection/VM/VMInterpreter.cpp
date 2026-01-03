@@ -489,7 +489,7 @@ private:
                     int16_t offset = static_cast<int16_t>(readLE<uint16_t>(instructions + ip));
                     ip += 2;
                     size_t new_ip = static_cast<size_t>(static_cast<int64_t>(ip) + offset);
-                    if (new_ip > instruction_count) return false;
+                    if (new_ip >= instruction_count) return false;
                     ip = new_ip;
                     break;
                 }
@@ -502,7 +502,7 @@ private:
                     if (!pop(value)) return false;
                     if (value == 0) {
                         size_t new_ip = static_cast<size_t>(static_cast<int64_t>(ip) + offset);
-                        if (new_ip > instruction_count) return false;
+                        if (new_ip >= instruction_count) return false;
                         ip = new_ip;
                     }
                     break;
@@ -516,7 +516,7 @@ private:
                     if (!pop(value)) return false;
                     if (value != 0) {
                         size_t new_ip = static_cast<size_t>(static_cast<int64_t>(ip) + offset);
-                        if (new_ip > instruction_count) return false;
+                        if (new_ip >= instruction_count) return false;
                         ip = new_ip;
                     }
                     break;
