@@ -150,9 +150,7 @@ public:
         m_accessCount.fetch_add(1);
         
         GuardPageAccess access;
-        access.address = static_cast<Address>(
-            exceptionInfo->ExceptionRecord->ExceptionInformation[1]
-        );
+        access.address = static_cast<Address>(exceptionInfo->ExceptionRecord->ExceptionInformation[1]);
         access.isWrite = (exceptionInfo->ExceptionRecord->ExceptionInformation[0] == 1);
         access.isExecute = (exceptionInfo->ExceptionRecord->ExceptionInformation[0] == 8);
         access.threadId = GetCurrentThreadId();

@@ -182,8 +182,7 @@ Result<std::vector<PatternScanner::ScanResult>> PatternScanner::scan(
             __try {
                 std::memcpy(result.matchedBytes.data(), current, pattern.size());
                 copySuccess = true;
-            } __except(GetExceptionCode() == STATUS_ACCESS_VIOLATION ? 
-                       EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
+            } __except(GetExceptionCode() == STATUS_ACCESS_VIOLATION ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
                 // Memory access violation - skip this result
                 copySuccess = false;
             }
