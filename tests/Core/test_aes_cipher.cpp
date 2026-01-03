@@ -589,3 +589,212 @@ TEST(AESCipher, NonceUniqueness_10000Encryptions_AllUnique) {
     EXPECT_EQ(uniqueNonces.size(), iterations)
         << "Expected " << iterations << " unique nonces, but got " << uniqueNonces.size();
 }
+
+// ============================================================================
+// Counter-Based Nonce Tests (STAB-008)
+// ============================================================================
+
+/**
+ * Test that nonces use counter-based generation for guaranteed uniqueness
+ * This verifies STAB-008: hybrid counter + random nonce generation
+ */
+TEST(AESCipher, CounterBasedNonce_1MillionEncryptions_AllUnique) {
+    SecureRandom rng;
+    auto keyResult = rng.generateAESKey();
+    ASSERT_TRUE(keyResult.isSuccess());
+    
+    AESCipher cipher(keyResult.value());
+    
+    // Plaintext for testing
+    ByteBuffer plaintext = {0xAA, 0xBB, 0xCC};
+    
+    // Track unique nonces
+    std::set<ByteBuffer> uniqueNonces;
+    
+    // Perform 1 million encryptions to verify counter-based uniqueness
+    // With pure random nonces, we'd expect collisions due to birthday paradox
+    // Counter-based approach guarantees zero collisions up to 2^64 encryptions
+    constexpr size_t iterations = 1000000;
+    
+    for (size_t i = 0; i < iterations; ++i) {
+        auto encryptResult = cipher.encrypt(plaintext);
+        ASSERT_TRUE(encryptResult.isSuccess()) << "Encryption failed at iteration " << i;
+        
+        // Extract nonce (first 12 bytes)
+        const auto& ciphertext = encryptResult.value();
+        ASSERT_GE(ciphertext.size(), 12u);
+        
+        ByteBuffer nonce(ciphertext.begin(), ciphertext.begin() + 12);
+        
+        // Verify uniqueness
+        auto insertResult = uniqueNonces.insert(nonce);
+        EXPECT_TRUE(insertResult.second) 
+            << "Nonce collision at iteration " << i << " - counter-based nonce failed!";
+        
+        // Progress indicator for long test
+        if (i > 0 && i % 100000 == 0) {
+            std::cout << "Verified " << i << " unique nonces..." << std::endl;
+        }
+    }
+    
+    // Verify all nonces were unique
+    EXPECT_EQ(uniqueNonces.size(), iterations)
+        << "Counter-based nonce should produce " << iterations << " unique nonces";
+}
+
+/**
+ * Test that nonce counter increments monotonically
+ * This verifies STAB-008: counter portion of nonce increases with each encryption
+ */
+TEST(AESCipher, CounterBasedNonce_MonotonicCounterIncrement) {
+    SecureRandom rng;
+    auto keyResult = rng.generateAESKey();
+    ASSERT_TRUE(keyResult.isSuccess());
+    
+    AESCipher cipher(keyResult.value());
+    
+    ByteBuffer plaintext = {0x01, 0x02, 0x03};
+    
+    // Extract counter values from multiple encryptions
+    std::vector<uint64_t> counterValues;
+    constexpr size_t iterations = 100;
+    
+    for (size_t i = 0; i < iterations; ++i) {
+        auto encryptResult = cipher.encrypt(plaintext);
+        ASSERT_TRUE(encryptResult.isSuccess());
+        
+        const auto& ciphertext = encryptResult.value();
+        ASSERT_GE(ciphertext.size(), 12u);
+        
+        // Extract counter (first 8 bytes of nonce, little-endian)
+        uint64_t counter;
+        std::memcpy(&counter, ciphertext.data(), sizeof(uint64_t));
+        counterValues.push_back(counter);
+    }
+    
+    // Verify counter increments monotonically
+    for (size_t i = 1; i < counterValues.size(); ++i) {
+        EXPECT_EQ(counterValues[i], counterValues[i-1] + 1)
+            << "Counter should increment by 1, but at position " << i
+            << " got " << counterValues[i] << " (expected " << (counterValues[i-1] + 1) << ")";
+    }
+    
+    // Verify counter starts at 0
+    EXPECT_EQ(counterValues[0], 0u) << "Counter should start at 0";
+}
+
+/**
+ * Test that nonce counter resets on key change
+ * This verifies STAB-008: counter resets when key changes
+ */
+TEST(AESCipher, CounterBasedNonce_ResetsOnKeyChange) {
+    SecureRandom rng;
+    auto key1Result = rng.generateAESKey();
+    auto key2Result = rng.generateAESKey();
+    ASSERT_TRUE(key1Result.isSuccess());
+    ASSERT_TRUE(key2Result.isSuccess());
+    
+    AESCipher cipher(key1Result.value());
+    
+    ByteBuffer plaintext = {0x01, 0x02, 0x03};
+    
+    // Perform some encryptions with first key
+    for (int i = 0; i < 10; ++i) {
+        cipher.encrypt(plaintext);
+    }
+    
+    // Change key
+    cipher.setKey(key2Result.value());
+    
+    // Next encryption should have counter = 0
+    auto encryptResult = cipher.encrypt(plaintext);
+    ASSERT_TRUE(encryptResult.isSuccess());
+    
+    const auto& ciphertext = encryptResult.value();
+    ASSERT_GE(ciphertext.size(), 12u);
+    
+    // Extract counter
+    uint64_t counter;
+    std::memcpy(&counter, ciphertext.data(), sizeof(uint64_t));
+    
+    EXPECT_EQ(counter, 0u) << "Counter should reset to 0 after key change";
+}
+
+/**
+ * Test that nonces are thread-safe under concurrent encryption
+ * This verifies STAB-008: atomic counter ensures no race conditions
+ */
+TEST(AESCipher, CounterBasedNonce_ThreadSafe) {
+    SecureRandom rng;
+    auto keyResult = rng.generateAESKey();
+    ASSERT_TRUE(keyResult.isSuccess());
+    
+    AESCipher cipher(keyResult.value());
+    
+    ByteBuffer plaintext = {0xAA, 0xBB, 0xCC};
+    
+    // Shared set for nonces (protected by mutex)
+    std::set<ByteBuffer> uniqueNonces;
+    std::mutex nonceMutex;
+    
+    // Encrypt from multiple threads
+    constexpr int numThreads = 10;
+    constexpr int encryptionsPerThread = 1000;
+    
+    std::vector<std::thread> threads;
+    for (int t = 0; t < numThreads; ++t) {
+        threads.emplace_back([&cipher, &uniqueNonces, &nonceMutex, &plaintext]() {
+            for (int i = 0; i < encryptionsPerThread; ++i) {
+                auto encryptResult = cipher.encrypt(plaintext);
+                ASSERT_TRUE(encryptResult.isSuccess());
+                
+                const auto& ciphertext = encryptResult.value();
+                ByteBuffer nonce(ciphertext.begin(), ciphertext.begin() + 12);
+                
+                std::lock_guard<std::mutex> lock(nonceMutex);
+                auto insertResult = uniqueNonces.insert(nonce);
+                EXPECT_TRUE(insertResult.second) << "Nonce collision in thread-safe test!";
+            }
+        });
+    }
+    
+    // Wait for all threads
+    for (auto& thread : threads) {
+        thread.join();
+    }
+    
+    // Verify all nonces were unique
+    size_t expectedCount = numThreads * encryptionsPerThread;
+    EXPECT_EQ(uniqueNonces.size(), expectedCount)
+        << "Thread-safe counter should produce " << expectedCount << " unique nonces";
+}
+
+/**
+ * Test backward compatibility with existing decrypt tests
+ * This verifies STAB-008: decryption unchanged (nonce extracted from ciphertext)
+ */
+TEST(AESCipher, CounterBasedNonce_BackwardCompatibleDecryption) {
+    SecureRandom rng;
+    auto keyResult = rng.generateAESKey();
+    ASSERT_TRUE(keyResult.isSuccess());
+    
+    AESCipher cipher(keyResult.value());
+    
+    // Test data
+    ByteBuffer plaintext = {
+        0x54, 0x68, 0x69, 0x73, 0x20, 0x69, 0x73, 0x20,
+        0x61, 0x20, 0x74, 0x65, 0x73, 0x74, 0x21
+    };
+    
+    // Encrypt with counter-based nonce
+    auto encryptResult = cipher.encrypt(plaintext);
+    ASSERT_TRUE(encryptResult.isSuccess());
+    
+    // Decrypt should work exactly as before
+    auto decryptResult = cipher.decrypt(encryptResult.value());
+    ASSERT_TRUE(decryptResult.isSuccess());
+    
+    // Verify decrypted plaintext matches original
+    EXPECT_EQ(decryptResult.value(), plaintext)
+        << "Decryption should be backward compatible with counter-based nonces";
+}
