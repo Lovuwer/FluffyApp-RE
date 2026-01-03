@@ -96,6 +96,19 @@ struct EnvironmentContext {
  * - Minimum 3+ independent signals for enforcement
  * - Environment-aware whitelisting (overlays, VMs, cloud gaming)
  * - Severity degradation for single signals
+ * 
+ * THREAD SAFETY:
+ * - All public methods acquire mutex_ before accessing state_
+ * - ProcessViolation() must NOT be called from within ProcessViolation() callback
+ * 
+ * MEMORY SAFETY: 
+ * - ViolationEvent.module_name is copied, not referenced
+ * - Signals vector is bounds-checked before access
+ * - Empty input is handled gracefully (returns Info severity)
+ * 
+ * KNOWN LIMITATIONS:
+ * - Maximum 1000 signals retained (oldest evicted)
+ * - Time decay requires periodic ProcessViolation() calls
  */
 class CorrelationEngine {
 public:
