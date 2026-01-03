@@ -19,6 +19,7 @@
 #include <Sentinel/Core/ErrorCodes.hpp>
 #include <string>
 #include <map>
+#include <array>
 #include <memory>
 #include <functional>
 #include <chrono>
@@ -134,6 +135,26 @@ struct CertificatePin {
 };
 
 /**
+ * CERTIFICATE PINNING:
+ * This client validates server certificates against embedded SPKI hashes. 
+ * 
+ * WHAT IT DOES:
+ * - Extracts Subject Public Key Info (SPKI) from server certificate
+ * - Computes SHA-256 hash of SPKI
+ * - Compares against hardcoded pin set
+ * - Rejects connection if no pins match
+ * 
+ * WHAT IT DOES NOT DO:
+ * - Does not check certificate expiration (OpenSSL does this)
+ * - Does not check revocation (would require OCSP/CRL)
+ * - Does not prevent key compromise (pins are public keys)
+ * 
+ * ROTATION:
+ * Two pins are embedded: primary and backup. When rotating:
+ * 1. Deploy new cert with backup key
+ * 2. Update SDK with new backup pin
+ * 3. Rotate backup to primary in next release
+ * 
  * @brief Certificate pinner for HTTPS connections
  */
 class CertPinner {
@@ -185,6 +206,38 @@ private:
     class Impl;
     std::unique_ptr<Impl> m_impl;
 };
+
+// ============================================================================
+// Default Certificate Pins
+// ============================================================================
+
+/**
+ * @brief Default pinned certificate hashes (SHA-256 SPKI) for production servers
+ * 
+ * These are example pins. In production, replace with actual server certificate
+ * SPKI hashes obtained from your production environment.
+ * 
+ * To compute SPKI hash of a certificate:
+ * openssl x509 -in cert.pem -pubkey -noout | \
+ *   openssl pkey -pubin -outform der | \
+ *   openssl dgst -sha256 -binary | \
+ *   openssl enc -base64
+ */
+namespace DefaultPins {
+    /// Primary production certificate SPKI hash
+    constexpr std::string_view PRIMARY_PIN = 
+        "sha256/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=";
+    
+    /// Backup certificate SPKI hash (for rotation)
+    constexpr std::string_view BACKUP_PIN = 
+        "sha256/BACKUP_CERT_HASH_FOR_ROTATION===================";
+    
+    /// Example pins array for convenience
+    constexpr std::array<std::string_view, 2> PRODUCTION_PINS = {
+        PRIMARY_PIN,
+        BACKUP_PIN
+    };
+}
 
 // ============================================================================
 // HTTP Client

@@ -229,6 +229,11 @@ public:
         configureTlsVerification(curl, true, true);
         
         // Configure certificate pinning if enabled
+#ifdef SENTINEL_DEBUG_DISABLE_PINNING
+        // Certificate pinning disabled for debug builds
+        SENTINEL_LOG_WARNING("Certificate pinning DISABLED (SENTINEL_DEBUG_DISABLE_PINNING defined)");
+        SENTINEL_LOG_WARNING("This build is NOT secure for production use!");
+#else
         if (signedRequest.enablePinning && m_pinningEnabled && m_certificatePinner) {
             CURLcode res1 = curl_easy_setopt(curl, CURLOPT_SSL_CTX_FUNCTION, sslContextCallback);
             CURLcode res2 = curl_easy_setopt(curl, CURLOPT_SSL_CTX_DATA, m_certificatePinner.get());
@@ -240,6 +245,7 @@ public:
                 SENTINEL_LOG_DEBUG("Certificate pinning enabled for request");
             }
         }
+#endif // SENTINEL_DEBUG_DISABLE_PINNING
         
         // Set URL
         curl_easy_setopt(curl, CURLOPT_URL, signedRequest.url.c_str());
