@@ -255,10 +255,9 @@ All 7 correlation engine tests crash with SIGSEGV (segmentation fault), indicati
 - ✅ STAB-005: Hash operation overflow protection (integer wraparound checks)
 
 **Known Limitations (Documented in VMInterpreter.hpp):**
-- External callbacks may continue after timeout (background thread)
-- Hash operations allocate memory proportional to size (capped at 1MB)
-- Bytecode with trailing bytes fails verification (defense-in-depth)
-- Timing-based detection has false positives in VMs (adjusted thresholds)
+- Callbacks may continue running in background thread after timeout
+- Memory reads are safe but may return stale data under race
+- RDTSC timing checks have hypervisor-adjusted thresholds
 
 **What's Missing:**
 - ❌ Bytecode compiler/assembler (server-side component)
