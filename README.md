@@ -1,4 +1,4 @@
-# Sentinel SDK
+# FluffyApp SDK
 
 A user-mode anti-cheat detection and telemetry SDK for Windows games.
 
