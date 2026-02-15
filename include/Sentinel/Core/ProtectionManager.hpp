@@ -122,7 +122,7 @@ public:
     [[nodiscard]] Result<MemoryProtection> getOriginalProtection(Address address) const;
 
 private:
-    class Impl;
+    struct Impl; // Forward declaration for pimpl idiom
     std::unique_ptr<Impl> m_impl;
 };
 
